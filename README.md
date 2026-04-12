@@ -1,8 +1,14 @@
 # Job Application Automation System
 
+[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
+[![Flask](https://img.shields.io/badge/Flask-Web_App-green.svg)](https://flask.palletsprojects.com/)
+[![Claude API](https://img.shields.io/badge/Claude-Sonnet_4.6-orange.svg)](https://www.anthropic.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Demo](https://img.shields.io/badge/Demo-Live-brightgreen.svg)](https://yihengz23-ai.github.io/job-apply/demo/)
+
 > 基于 Claude AI + Gmail API 的求职投递自动化系统，将单次投递耗时从 15-20 分钟压缩至约 10 秒。
 
-**[在线演示 (Interactive Demo)](https://yihengz23-ai.github.io/job-apply/demo/)**
+**[>>> 在线交互演示 (Interactive Demo) <<<](https://yihengz23-ai.github.io/job-apply/demo/)**
 
 ## Features
 
@@ -129,8 +135,6 @@ job-apply/
 
 MIT License — see [LICENSE](LICENSE)
 
-## Author
+## Built With
 
-**YOUR_NAME** — YOUR_UNIVERSITY
-
-Built with [Claude Code](https://claude.ai/code) + [Anthropic API](https://www.anthropic.com/)
+[Claude Code](https://claude.ai/code) + [Anthropic API](https://www.anthropic.com/) + [Gmail API](https://developers.google.com/gmail/api)
