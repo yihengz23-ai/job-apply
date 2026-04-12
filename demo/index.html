@@ -364,7 +364,7 @@ function demoSend(){
 // ═══ TAB 2: BOARD ═══
 function board(){
   document.getElementById('bMetrics').innerHTML=[mc('总投递',ST.total,'primary','100%'),mc('本周新增','+'+ST.week_new,'primary','83%'),mc('待跟进',ST.followup,'#ba1a1a','25%',false,'投递超过7天且状态仍为"已投递"的记录，建议发跟进邮件或标记为"无回复"')].join('');
-  let f=[...D];const fs=document.getElementById('fSt').value,ft=document.getElementById('fTy').value,fl=document.getElementById('fLo').value;
+  let f=[...D].sort((a,b)=>(b.at||'').localeCompare(a.at||''));const fs=document.getElementById('fSt').value,ft=document.getElementById('fTy').value,fl=document.getElementById('fLo').value;
   if(fs)f=f.filter(r=>r.st===fs);if(ft)f=f.filter(r=>r.ct===ft);if(fl)f=f.filter(r=>r.loc.includes(fl));
   document.getElementById('cnt').textContent=`显示 ${f.length} / ${D.length} 条`;
 
