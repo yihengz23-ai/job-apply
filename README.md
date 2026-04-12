@@ -2,7 +2,7 @@
 
 > 基于 Claude AI + Gmail API 的求职投递自动化系统，将单次投递耗时从 15-20 分钟压缩至约 10 秒。
 
-**[在线演示 (Interactive Demo)](https://yourusername.github.io/job-apply/demo/)**
+**[在线演示 (Interactive Demo)](https://yihengz23-ai.github.io/job-apply/demo/)**
 
 ## Features
 
@@ -13,17 +13,6 @@
 - **投递看板** — 全部投递记录可筛选、搜索、编辑状态/来源/行业/备注
 - **数据分析** — 投递趋势、状态分布、公司性质/城市/行业分布图表
 - **手机适配** — Cloudflare Tunnel 远程访问 + 响应式布局
-
-## Screenshots
-
-### 新投递 — AI 分析 JD & 邮件编辑
-![New Application](demo/screenshots/new.png)
-
-### 投递看板 — 记录管理 & 详情展开
-![Board](demo/screenshots/board.png)
-
-### 数据分析 — 趋势 & 分布
-![Analytics](demo/screenshots/analytics.png)
 
 ## Tech Stack
 
@@ -49,7 +38,7 @@
 ### Installation
 
 ```bash
-git clone https://github.com/yourusername/job-apply.git
+git clone https://github.com/yihengz23-ai/job-apply.git
 cd job-apply
 
 # Install dependencies
