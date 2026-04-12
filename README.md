@@ -10,6 +10,12 @@
 
 **[>>> 在线交互演示 (Interactive Demo) <<<](https://yihengz23-ai.github.io/job-apply/demo/)**
 
+## Screenshots
+
+| 新投递 — AI 分析 JD & 邮件编辑 | 投递看板 — 记录管理 & 筛选 | 数据分析 — 趋势 & 分布 |
+|:---:|:---:|:---:|
+| ![New](demo/screenshots/new.png) | ![Board](demo/screenshots/board.png) | ![Analytics](demo/screenshots/analytics.png) |
+
 ## Features
 
 - **AI 邮件生成** — 粘贴 JD，Claude 自动分析并生成个性化投递邮件（标题、正文、附件命名全部按 JD 要求）
