@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>求职投递自动化系统 — Interactive Demo</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<style>
+body{font-family:'Inter','PingFang SC',sans-serif;-webkit-font-smoothing:antialiased}
+.material-symbols-outlined{font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24;vertical-align:middle}
+.tab-content{display:none}.tab-content.active{display:block}
+.row-detail{display:none}.row-detail.open{display:table-row}
+.no-scrollbar::-webkit-scrollbar{display:none}
+@keyframes fade-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.animate-in{animation:fade-in .3s ease}
+@media(max-width:767px){
+  #sidebar{display:none!important}
+  #topbar{left:0!important;width:100%!important}
+  #mainContent{margin-left:0!important;padding-bottom:5rem!important}
+  #mobileNav{display:flex!important}
+}
+.sel{appearance:none;background-image:url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20fill%3D%22%23727785%22%20d%3D%22M7%2010l5%205%205-5z%22%2F%3E%3C%2Fsvg%3E');background-repeat:no-repeat;background-position:right .5rem center}
+</style>
+<script>tailwind.config={theme:{extend:{colors:{primary:'#005bbf','primary-container':'#1a73e8',surface:'#f8f9ff','on-surface':'#0d1c2e',tertiary:'#9e4300',error:'#ba1a1a'},fontFamily:{sans:['Inter','PingFang SC','sans-serif']}}}};</script>
+</head>
+<body class="bg-[#f8f9ff] text-[#0d1c2e]">
+
+<!-- Demo Banner -->
+<div class="fixed top-0 left-0 right-0 bg-gradient-to-r from-primary to-primary-container text-white text-center py-1.5 text-xs font-medium z-[70] flex items-center justify-center gap-2">
+  <span class="material-symbols-outlined text-xs">science</span>
+  交互演示 — 数据为模拟，不涉及真实 API 调用 ·
+  <a href="https://github.com/yourusername/job-apply" class="underline hover:no-underline">View Source on GitHub</a>
+</div>
+
+<!-- Sidebar -->
+<aside id="sidebar" class="fixed left-0 top-7 h-[calc(100vh-1.75rem)] w-64 bg-slate-50 flex flex-col py-6 z-50">
+  <div class="px-6 mb-8">
+    <div class="text-lg font-semibold flex items-center gap-2">
+      <span class="material-symbols-outlined text-primary" style="font-variation-settings:'FILL' 1">architecture</span>
+      求职管理系统
+    </div>
+    <div class="text-[10px] text-slate-400 mt-1">Automated Job Application System</div>
+  </div>
+  <nav class="flex-1 space-y-1 px-3">
+    <a onclick="go('new')" class="nav flex items-center gap-3 px-4 py-2.5 cursor-pointer rounded-xl transition-colors" data-t="new"><span class="material-symbols-outlined">add_box</span><span>新投递</span></a>
+    <a onclick="go('board')" class="nav flex items-center gap-3 px-4 py-2.5 cursor-pointer rounded-xl transition-colors" data-t="board"><span class="material-symbols-outlined">dashboard</span><span>投递看板</span></a>
+    <a onclick="go('analytics')" class="nav flex items-center gap-3 px-4 py-2.5 cursor-pointer rounded-xl transition-colors" data-t="analytics"><span class="material-symbols-outlined">analytics</span><span>数据分析</span></a>
+  </nav>
+  <div class="px-4 mt-auto space-y-3">
+    <button onclick="toast('演示模式：Gmail 同步不可用')" class="w-full py-2.5 bg-primary text-white rounded-xl text-sm font-medium flex items-center justify-center gap-2 hover:opacity-90"><span class="material-symbols-outlined text-sm">sync</span>Gmail 全量同步</button>
+    <div class="mt-4 pt-4 border-t border-slate-200 flex items-center gap-3">
+      <span class="material-symbols-outlined text-2xl text-slate-400">account_circle</span>
+      <span class="text-sm font-medium">XXX</span>
+    </div>
+  </div>
+</aside>
+
+<!-- Top Bar -->
+<header id="topbar" class="fixed top-7 right-0 w-[calc(100%-16rem)] h-14 bg-white/80 backdrop-blur-md z-40 flex justify-between items-center px-4 md:px-8 border-b border-slate-100">
+  <h1 id="title" class="text-lg font-bold tracking-tight">新投递 & AI 邮件生成</h1>
+  <div class="flex items-center gap-3">
+    <div class="relative hidden md:block"><span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
+      <input id="search" class="pl-10 pr-4 py-1.5 bg-slate-100 border-none rounded-full text-sm w-52 focus:ring-2 focus:ring-primary/20" placeholder="搜索公司或职位..." oninput="doSearch(this.value)"/></div>
+    <span class="text-[10px] bg-green-100 text-green-700 px-2.5 py-1 rounded-full font-bold">DEMO</span>
+  </div>
+</header>
+
+<!-- Main -->
+<main id="mainContent" class="ml-64 pt-[5.5rem] pb-12 px-4 md:px-8 min-h-screen"><div class="max-w-[1400px] mx-auto">
+
+<!-- ═══ TAB 1: NEW ═══ -->
+<div id="tab-new" class="tab-content active animate-in">
+  <!-- Dup Warning -->
+  <div id="dup" class="hidden mb-5 p-4 bg-red-50 rounded-2xl flex items-center gap-4 border border-red-200 animate-in">
+    <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-600"><span class="material-symbols-outlined">warning</span></div>
+    <div class="flex-1"><p class="text-red-800 font-semibold text-sm">重复投递风险提示</p><p class="text-red-600 text-xs mt-0.5">该公司（中信私募基金管理有限公司）已于 2026-04-06 投递过</p></div>
+    <button onclick="this.parentElement.classList.add('hidden')" class="text-xs font-bold text-red-600 hover:underline">忽略</button>
+  </div>
+  <div class="grid grid-cols-12 gap-5 md:gap-8">
+    <div class="col-span-12 md:col-span-7 space-y-4">
+      <!-- URL -->
+      <section class="bg-white rounded-2xl p-5 border shadow-sm">
+        <h2 class="text-sm font-bold flex items-center gap-2 mb-3"><span class="material-symbols-outlined text-primary text-sm">link</span>链接投递（微信公众号 / 网页）</h2>
+        <div class="flex gap-3">
+          <input id="urlIn" class="flex-1 bg-slate-50 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20" placeholder="粘贴招聘链接，支持微信公众号文章..."/>
+          <button onclick="demoFetch()" id="fetchBtn" class="px-5 py-2.5 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 flex items-center gap-2"><span class="material-symbols-outlined text-sm">download</span>抓取</button>
+        </div>
+        <!-- Multi-job -->
+        <div id="multiJob" class="hidden mt-3 animate-in">
+          <p class="text-xs text-slate-500 mb-2">检测到 2 个岗位，请选择：</p>
+          <select onchange="toast('已切换到 '+this.options[this.selectedIndex].text)" class="w-full bg-slate-50 border-none rounded-xl text-sm px-4 py-2.5 sel">
+            <option>云锋基金 - 科技实习生 · 上海/北京</option><option>云锋基金 - 医疗实习生 · 上海</option>
+          </select>
+        </div>
+      </section>
+      <!-- JD -->
+      <section class="bg-slate-100/50 rounded-2xl p-5 flex flex-col min-h-[180px] md:min-h-[260px]">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-bold flex items-center gap-2"><span class="material-symbols-outlined text-primary text-sm">description</span>JD 文本</h2>
+          <span class="text-[9px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-bold uppercase">Claude Sonnet 4.6</span>
+        </div>
+        <textarea id="jd" class="flex-1 bg-white border-none rounded-xl p-4 text-sm leading-relaxed resize-none focus:ring-2 focus:ring-primary/20 shadow-sm" placeholder="粘贴 JD 或通过链接自动抓取..."></textarea>
+        <div class="mt-3 flex gap-3">
+          <button onclick="demoAnalyze()" id="aBtn" class="flex-1 py-3 bg-primary text-white rounded-xl font-bold text-sm hover:shadow-xl transition-all flex items-center justify-center gap-2"><span class="material-symbols-outlined">psychology</span>分析 JD 并预览</button>
+          <button onclick="location.reload()" class="px-4 bg-slate-200 rounded-xl hover:bg-slate-300 flex items-center gap-1 text-sm text-slate-600"><span class="material-symbols-outlined text-base">delete</span>清空</button>
+        </div>
+        <div id="aStatus" class="hidden mt-3 p-3 rounded-xl text-sm"></div>
+      </section>
+      <!-- Cards -->
+      <section id="cards" class="hidden grid grid-cols-3 md:grid-cols-6 gap-2 animate-in"></section>
+    </div>
+    <!-- Email -->
+    <div class="col-span-12 md:col-span-5">
+      <section class="bg-white rounded-2xl overflow-hidden flex flex-col shadow-xl border">
+        <div class="bg-slate-900 px-5 py-3 flex items-center justify-between">
+          <h3 class="text-white text-sm font-medium flex items-center gap-2"><span class="material-symbols-outlined text-sm">mail</span>邮件编辑</h3>
+          <div class="flex gap-1.5"><div class="w-2 h-2 rounded-full bg-red-400/30"></div><div class="w-2 h-2 rounded-full bg-yellow-400/30"></div><div class="w-2 h-2 rounded-full bg-green-400/30"></div></div>
+        </div>
+        <div id="emailArea" class="flex-1 p-5 space-y-3">
+          <div class="flex items-center gap-3 pb-3 border-b"><span class="text-xs font-bold text-slate-400 w-12">收件人</span><input id="eTo" class="flex-1 text-sm bg-transparent border-none p-0 focus:ring-0 font-medium" placeholder="等待分析..."/></div>
+          <div class="flex items-center gap-3 pb-3 border-b"><span class="text-xs font-bold text-slate-400 w-12">主题</span><input id="eSub" class="flex-1 text-sm bg-transparent border-none p-0 focus:ring-0 font-medium" placeholder="等待分析..."/></div>
+          <textarea id="eBody" class="w-full h-[120px] md:h-[200px] bg-transparent border-none focus:ring-0 resize-none text-sm leading-relaxed no-scrollbar" placeholder="等待 JD 分析结果..."></textarea>
+          <div id="attArea" class="hidden pt-3 border-t border-dashed border-slate-200 space-y-2">
+            <p class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">附件</p>
+            <label class="flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-lg cursor-pointer hover:bg-blue-100"><input type="checkbox" checked class="rounded text-primary"/><span class="material-symbols-outlined text-blue-600 text-base">description</span><span id="attResume" class="text-xs font-medium text-blue-800"></span><span class="text-[10px] text-blue-400 ml-auto">PDF</span></label>
+            <label id="attRpt" class="flex items-center gap-2 px-3 py-2 bg-orange-50 rounded-lg cursor-pointer hover:bg-orange-100" style="display:none"><input type="checkbox" checked class="rounded text-orange-500" onchange="document.getElementById('cRpt').textContent=this.checked?'是':'否'"/><span class="material-symbols-outlined text-orange-600 text-base">lab_profile</span><span class="text-xs font-medium text-orange-800">XXX-行业研究报告.pdf</span><span class="text-[10px] text-orange-400 ml-auto">PDF</span></label>
+          </div>
+        </div>
+        <!-- Apply URL -->
+        <div id="applyUrl" class="hidden px-5 pb-3"><a href="#" class="w-full py-2.5 bg-slate-900 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-slate-800"><span class="material-symbols-outlined text-sm">open_in_new</span>打开投递页面（飞书）</a></div>
+        <div class="p-5 bg-slate-50 border-t space-y-3">
+          <div class="flex gap-3">
+            <button onclick="demoSend()" id="sendBtn" class="flex-1 py-3 bg-primary text-white rounded-2xl font-bold flex items-center justify-center gap-2 shadow-xl shadow-primary/30 hover:scale-[1.01] active:scale-95 transition-all disabled:opacity-50" disabled><span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1">send</span>一键发送</button>
+            <button onclick="toast('演示：投递已记录')" id="recBtn" class="flex-1 py-3 bg-slate-200 text-slate-700 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-300 disabled:opacity-50" disabled><span class="material-symbols-outlined">bookmark_add</span>记录投递</button>
+          </div>
+          <p class="text-[10px] text-center text-slate-400">一键发送 = 邮件投递 ｜ 记录投递 = 网站投递（不发邮件）</p>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ TAB 2: BOARD ═══ -->
+<div id="tab-board" class="tab-content">
+  <section id="bMetrics" class="grid grid-cols-3 gap-3 md:gap-5 mb-5"></section>
+  <section class="mb-5 flex gap-3 items-center flex-wrap">
+    <select id="fSt" onchange="board()" class="bg-slate-100 border-none rounded-xl text-sm pl-4 pr-10 py-2 sel"><option value="">所有状态</option><option>已投递</option><option>已电联</option><option>约面试</option><option>面试中</option><option>offer</option><option>拒绝</option></select>
+    <select id="fTy" onchange="board()" class="bg-slate-100 border-none rounded-xl text-sm pl-4 pr-10 py-2 sel"><option value="">公司性质</option><option>PE</option><option>VC</option><option>FA/投行</option></select>
+    <select id="fLo" onchange="board()" class="bg-slate-100 border-none rounded-xl text-sm pl-4 pr-10 py-2 sel"><option value="">地点</option><option>上海</option><option>北京</option><option>深圳</option></select>
+    <div class="ml-auto text-xs text-slate-400 font-medium" id="cnt"></div>
+  </section>
+  <div class="hidden md:block bg-slate-100/50 rounded-2xl overflow-x-auto"><table class="w-full text-left min-w-[900px]"><thead><tr class="text-slate-400 text-[11px] font-bold uppercase tracking-widest border-b border-slate-200"><th class="px-5 py-4 min-w-[140px]">公司名称</th><th class="px-5 py-4 min-w-[170px]">职位</th><th class="px-5 py-4 min-w-[70px]">状态</th><th class="px-5 py-4 min-w-[90px]">地点</th><th class="px-5 py-4 min-w-[80px]">行业</th><th class="px-5 py-4 min-w-[90px]">发布时间</th><th class="px-5 py-4 min-w-[130px] text-right">投递时间</th></tr></thead><tbody id="bTbl" class="text-sm"></tbody></table></div>
+  <div class="md:hidden space-y-3" id="bCards"></div>
+</div>
+
+<!-- ═══ TAB 3: ANALYTICS ═══ -->
+<div id="tab-analytics" class="tab-content">
+  <div id="aMetrics" class="grid grid-cols-3 md:grid-cols-6 gap-3 md:gap-5 mb-6"></div>
+  <div class="grid grid-cols-12 gap-4 md:gap-8 mb-8">
+    <div class="col-span-12 md:col-span-8 bg-white p-4 md:p-8 rounded-2xl">
+      <div class="flex justify-between items-center mb-6"><div><h3 class="text-lg font-semibold">投递趋势分析</h3><p class="text-xs text-slate-400">每日新增 + 累计投递</p></div>
+        <div class="flex gap-4 text-xs text-slate-400"><span class="flex items-center gap-1.5"><div class="w-3 h-3 rounded bg-primary/30"></div>每日</span><span class="flex items-center gap-1.5"><div class="w-3 h-0.5 bg-orange-500"></div>累计</span></div>
+      </div>
+      <div class="relative"><div id="trend" class="h-56 flex items-end gap-1 md:gap-2 relative z-10"></div><canvas id="cumLine" class="absolute inset-0 w-full h-56 pointer-events-none z-20"></canvas><div id="tip" class="hidden absolute z-30 bg-slate-900 text-white text-xs rounded-xl px-4 py-3 shadow-2xl pointer-events-none max-w-[220px]"></div></div>
+    </div>
+    <div class="col-span-12 md:col-span-4 bg-white p-4 md:p-8 rounded-2xl flex flex-col items-center">
+      <h3 class="text-lg font-semibold w-full mb-1">状态分布</h3><p class="text-xs text-slate-400 w-full mb-6">全周期追踪</p>
+      <div id="ring" class="relative w-40 h-40 mb-6"></div><div id="legend" class="w-full grid grid-cols-2 gap-2"></div>
+    </div>
+  </div>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-8">
+    <div class="bg-white p-5 md:p-8 rounded-2xl"><h3 class="text-lg font-semibold mb-5">公司性质</h3><div id="typB"></div></div>
+    <div class="bg-white p-5 md:p-8 rounded-2xl"><h3 class="text-lg font-semibold mb-5">城市分布</h3><div id="locB"></div></div>
+    <div class="bg-white p-5 md:p-8 rounded-2xl"><h3 class="text-lg font-semibold mb-5">行业方向</h3><div id="indB"></div></div>
+  </div>
+</div>
+
+</div></main>
+
+<!-- Toast -->
+<div id="toast" class="fixed top-12 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl text-sm font-medium transition-all -translate-y-20 opacity-0 z-[60] max-w-[90vw] text-center"></div>
+
+<!-- Mobile Nav -->
+<nav id="mobileNav" class="hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-50 justify-around items-center py-2 px-4">
+  <button onclick="go('new')" class="mt flex flex-col items-center gap-0.5 py-1 px-3" data-t="new"><span class="material-symbols-outlined text-xl">add_box</span><span class="text-[10px] font-medium">新投递</span></button>
+  <button onclick="go('board')" class="mt flex flex-col items-center gap-0.5 py-1 px-3" data-t="board"><span class="material-symbols-outlined text-xl">dashboard</span><span class="text-[10px] font-medium">看板</span></button>
+  <button onclick="go('analytics')" class="mt flex flex-col items-center gap-0.5 py-1 px-3" data-t="analytics"><span class="material-symbols-outlined text-xl">analytics</span><span class="text-[10px] font-medium">分析</span></button>
+</nav>
+
+<script>
+// ═══ DATA ═══
+const D=[
+{id:'1',cn:'复星锐正资本',ct:'VC',jt:'投资实习生（风险投资方向）',loc:'北京/上海/深圳',ind:'硬科技/AI',st:'已投递',at:'2026-04-05 18:47',em:'hezhou@fosun.com',sub:'投资实习生申请-XXX-XXX大学-XXX专业',body:'何总您好，\n\n我是XXX，XXX大学XXX学院硕士在读，本科毕业于XXX大学本科，现投递复星锐正资本投资实习生（风险投资方向）一职。可实习起止时间为即日起至2026年10月，每周可到岗5天。\n\n此前在XX资本有两段股权投资实习经历，主要参与硬科技方向（航空航天、碳陶瓷制动盘、掩模版等）的行业研究与公司分析，协助完成需求测算、竞争格局梳理及估值辅助工作；另在XX公司担任AI产品经理实习，对AI在to\nB场景的落地挑战（客户信任、私有化部署、合规流程等）有一定实地观察。\n\n附件中另附一份我过往完成的行业研究样本，供参考。\n\nXXX\n',jd:'职位名称：\n投资实习生（风险投资方向）\n工作地点：\n北京/上海/深圳\n实习时长：\n3-6个月（可协商延长）\n职位类型：\n全职实习（每周3天）\n职位描述：\n一、行业研究与分析\n1. 协助团队对硬科技、人工智能、消费出海等前沿领域进行深度研究，撰写行业报告及投资备忘录\n2. 跟踪全球技术创新趋势，分析产业链上下游竞争格局及潜在投资机会\n二、项目挖掘与筛选\n1. 参与初创企业数据库搭建，通过公开渠道、行业会议等途径挖掘优质项目\n2. 初步评估项目商业计划书（BP），提炼核心价值与风险点\n三、尽职调查支持\n1. 协助团队完成财务模型搭建、市场容量测算及竞品分析\n2. 整理技术专利、团队背景、客户访谈等尽调材料，支持投资决策\n四、投后管理协助\n1. 跟踪已投企业运营数据，参与投后会议记录及关键问题反馈\n2. 协助设计退出策略，分析IPO、并购等路径可行性\n五、其他支持性工作\n1. 整理投资案例库，维护内部知识管理系统\n2. 协助筹备投资人会议、行业论坛等活动\n任职要求：\n一、学历背景：\n硕士、MBA或工科博士在读/应届（专业包括但不限于金融、计算机、电子工程等）\n二、技能与经验：\n（一）硬技能：\n1. 熟练使用Excel/PPT搭建分析模型，掌握Python/SQL者优先\n2. 熟悉VC常用分析工具（PitchBook、Crunchbase）或行业数据库（Wind、Bloomberg）\n（二）软技能：\n1. 极强的逻辑思维与快速学习能力，能高效处理多线程任务\n2. 优秀的中英文书面及口头表达能力（需提交英文分析报告样例）\n（三）加分项：\n1. 有早期项目孵化、创业大赛获奖或科技企业实习经历\n2. 对某一垂直领域（如AI、具身智能、消费出海、高端装备）有深度认知\n薪酬与福利：\n一、薪资结构：\n研究生160元/天，MBA300元/天，餐补统一30元/天。\n二、职业发展支持：\n1. 导师制培养：由资深投资人一对一指导，参与完整项目流程\n2. 转正机会：表现优异者优先获得全职Offer\n申请方式：\n一、申请材料：\n1. 中英文简历（注明可实习起止时间及每周到岗天数）。\n2. 1份行业分析报告或投资备忘录（PDF格式，中英文不限）。\n二、投递邮箱：\nhezhou@fosun.com\n（邮件标题：投资实习生申请-姓名-学校-专业）\n公司介绍：\n复星锐正资本成立于2013年，北京和上海双总部。作为一家植根中国、布局全球，兼具产业资源优势的股权投资机构，复星锐正专注于AI科技和新消费领域的投资，为企业带来全阶段资本助力。同时，复星锐正通过将复星健康、快乐、富足、智造四大板块的生态资源赋能企业，促进产业协同，帮助企业发挥最大潜能，实现企业成长的跨越式、国际化发展。\n复星锐正致力于在科技商业时代，做全球商业领袖的最重要投资人。截至目前，复星锐正管理的资产总规模已达百亿人民币，并长期聚焦于全球主要经济增长区域中高成长、高科技企业的投资，实现了“以顶尖技术为横、新兴市场为纵”的全球坐标布局：既投资于美国等前沿技术创新领地，又快速布局中国、印度、东南亚等高成长新兴市场，打造出具有影响力的全球化产业创新生态\n复星锐正资本招实习生（投递时需提供1份行研报告/投资memo）\n南槽\n\n职位名称：\n投资实习生（风险投资方向）\n工作地点：\n北京/上海/深圳\n实习时长：\n3-6个月（可协商延长）\n职位类型：\n全职实习（每周3天）\n职位描述：\n一、行业研究与分析\n1. 协助团队对硬科技、人工智能、消费出海等前沿领域进行深度研究，撰写行业报告及投资备忘录\n2. 跟踪全球技术创新趋势，分析产业链上下游竞争格局及潜在投资机会\n二、项目挖掘与筛选\n1. 参与初创企业数据库搭建，通过公开渠道、行业会议等途径挖掘优质项目\n2. 初步评估项目商业计划书（BP），提炼核心价值与风险点\n三、尽职调查支持\n1. 协助团队完成财务模型搭建、市场容量测算及竞品分析\n2. 整理技术专利、团队背景、客户访谈等尽调材料，支持投资决策\n四、投后管理协助\n1. 跟踪已投企业运营数据，参与投后会议记录及关键问题反馈\n2. 协助设计退出策略，分析IPO、并购等路径可行性\n五、其他支持性工作\n1. 整理投资案例库，维护内部知识管理系统\n2. 协助筹备投资人会议、行业论坛等活动\n任职要求：\n一、学历背景：\n硕士、MBA或工科博士在读/应届（专业包括但不限于金融、计算机、电子工程等）\n二、技能与经验：\n（一）硬技能：\n1. 熟练使用Excel/PPT搭建分析模型，掌握Python/SQL者优先\n2. 熟悉VC常用分析工具（PitchBook、Crunchbase）或行业数据库（Wind、Bloomberg）\n（二）软技能：\n1. 极强的逻辑思维与快速学习能力，能高效处理多线程任务\n2. 优秀的中英文书面及口头表达能力（需提交英文分析报告样例）\n（三）加分项：\n1. 有早期项目孵化、创业大赛获奖或科技企业实习经历\n2. 对某一垂直领域（如AI、具身智能、消费出海、高端装备）有深度认知\n薪酬与福利：\n一、薪资结构：\n研究生160元/天，MBA300元/天，餐补统一30元/天。\n二、职业发展支持：\n1. 导师制培养：由资深投资人一对一指导，参与完整项目流程\n2. 转正机会：表现优异者优先获得全职Offer\n申请方式：\n一、申请材料：\n1. 中英文简历（注明可实习起止时间及每周到岗天数）。\n2. 1份行业分析报告或投资备忘录（PDF格式，中英文不限）。\n二、投递邮箱：\nhezhou@fosun.com\n（邮件标题：投资实习生申请-姓名-学校-专业）\n公司介绍：\n复星锐正资本成立于2013年，北京和上海双总部。作为一家植根中国、布局全球，兼具产业资源优势的股权投资机构，复星锐正专注于AI科技和新消费领域的投资，为企业带来全阶段资本助力。同时，复星锐正通过将复星健康、快乐、富足、智造四大板块的生态资源赋能企业，促进产业协同，帮助企业发挥最大潜能，实现企业成长的跨越式、国际化发展。\n复星锐正致力于在科技商业时代，做全球商业领袖的最重要投资人。截至目前，复星锐正管理的资产总规模已达百亿人民币，并长期聚焦于全球主要经济增长区域中高成长、高科技企业的投资，实现了“以顶尖技术为横、新兴市场为纵”的全球坐标布局：既投资于美国等前沿技术创新领地，又快速布局中国、印度、东南亚等高成长新兴市场，打造出具有影响力的全球化产业创新生态\n\n复星锐正资本招实习生（投递时需提供1份行研报告/投资memo）\n南槽\n\n职位名称：\n投资实习生（风险投资方向）\n工作地点：\n北京/上海/深圳\n实习时长：\n3-6个月（可协商延长）\n职位类型：\n全职实习（每周3天）\n职位描述：\n一、行业研究与分析\n1. 协助团队对硬科技、人工智能、消费出海等前沿领域进行深度研究，撰写行业报告及投资备忘录\n2. 跟踪全球技术创新趋势，分析产业链上下游竞争格局及潜在投资机会\n二、项目挖掘与筛选\n1. 参与初创企业数据库搭建，通过公开渠道、行业会议等途径挖掘优质项目\n2. 初步评估项目商业计划书（BP），提炼核心价值与风险点\n三、尽职调查支持\n1. 协助团队完成财务模型搭建、市场容量测算及竞品分析\n2. 整理技术专利、团队背景、客户访谈等尽调材料，支持投资决策\n四、投后管理协助\n1. 跟踪已投企业运营数据，参与投后会议记录及关键问题反馈\n2. 协助设计退出策略，分析IPO、并购等路径可行性\n五、其他支持性工作\n1. 整理投资案例库，维护内部知识管理系统\n2. 协助筹备投资人会议、行业论坛等活动\n任职要求：\n一、学历背景：\n硕士、MBA或工科博士在读/应届（专业包括但不限于金融、计算机、电子工程等）\n二、技能与经验：\n（一）硬技能：\n1. 熟练使用Excel/PPT搭建分析模型，掌握Python/SQL者优先\n2. 熟悉VC常用分析工具（PitchBook、Crunchbase）或行业数据库（Wind、Bloomberg）\n（二）软技能：\n1. 极强的逻辑思维与快速学习能力，能高效处理多线程任务\n2. 优秀的中英文书面及口头表达能力（需提交英文分析报告样例）\n（三）加分项：\n1. 有早期项目孵化、创业大赛获奖或科技企业实习经历\n2. 对某一垂直领域（如AI、具身智能、消费出海、高端装备）有深度认知\n薪酬与福利：\n一、薪资结构：\n研究生160元/天，MBA300元/天，餐补统一30元/天。\n二、职业发展支持：\n1. 导师制培养：由资深投资人一对一指导，参与完整项目流程\n2. 转正机会：表现优异者优先获得全职Offer\n申请方式：\n一、申请材料：\n1. 中英文简历（注明可实习起止时间及每周到岗天数）。\n2. 1份行业分析报告或投资备忘录（PDF格式，中英文不限）。\n二、投递邮箱：\nhezhou@fosun.com\n（邮件标题：投资实习生申请-姓名-学校-专业）\n公司介绍：\n复星锐正资本成立于2013年，北京和上海双总部。作为一家植根中国、布局全球，兼具产业资源优势的股权投资机构，复星锐正专注于AI科技和新消费领域的投资，为企业带来全阶段资本助力。同时，复星锐正通过将复星健康、快乐、富足、智造四大板块的生态资源赋能企业，促进产业协同，帮助企业发挥最大潜能，实现企业成长的跨越式、国际化发展。\n复星锐正致力于在科技商业时代，做全球商业领袖的最重要投资人。截至目前，复星锐正管理的资产总规模已达百亿人民币，并长期聚焦于全球主要经济增长区域中高成长、高科技企业的投资，实现了“以顶尖技术为横、新兴市场为纵”的全球坐标布局：既投资于美国等前沿技术创新领地，又快速布局中国、印度、东南亚等高成长新兴市场，打造出具有影响力的全球化产业创新生态\n\n微信扫一扫\n关注该公众号',notes:'',rpt:true,src:'南槽（公众号）',upd:'2026-04-06 18:33',pd:'2026-03-20'},
+{id:'2',cn:'中信私募基金管理有限公司',ct:'国资PE',jt:'新材料投资团队实习生',loc:'北京市朝阳区',ind:'新材料',st:'已投递',at:'2026-04-06 18:33',em:'heyh@invest.citic',sub:'新材料投资团队实习生-XXX-XXX大学XXX专业硕士/XXX大学本科-可立即到岗、周实习5天，实习6个月',body:'您好，\n\n我是XXX，XXX大学XXX学院硕士在读，本科毕业于XXX大学本科，现申请中信私募基金新材料投资团队实习生岗位。\n\n此前我在XX资本完成了两段股权投资方向的实习，参与过碳陶瓷制动盘、航空航天材料、掩模版等硬科技赛道的行业研究与公司分析，协助完成需求测算、竞争格局梳理及估值辅助工作，对新材料一级市场的研究逻辑有一定积累。此外，我通过XX水泥相关经历对重资产制造业的技改投资、能耗约束与政策环境有第一手观察。\n\n附件中另附一份我过往完成的硬科技方向研究样本，供参考。简历及研究样本已一并附上，期待进一步沟通。\n\nXXX',jd:'中信私募基金管理有限公司-新材料投资团队实习生（北京onsite）\n【岗位职责】\n1. 协助执行重点项目，进行信息搜集分析、行业访谈、材料撰写等\n2. 协助筛选、分析项目投资机会，评估项目价值\n3. 协助撰写行业细分赛道研究报告\n4. 协助跟踪行业动态、政策\n5. 其他交办的任务\n【招聘要求】\n1. 清北等重点院校在读，具有工科背景\n2. 具有新材料投资实习经历，对一级市场投资业务熟悉者优先\n3. 研究生或本科三年级以上在读，具备良好的专业理论知识，成绩优异者优先\n4. 具有较强的数据整理、分析能力，有较强的文字功底与逻辑条理\n5. 熟练运用 Excel，Word，PPT，Wind等软件工具\n6. 投递者需确保3个月及以上实习期，一周至少3天线下支持，需尽快到岗\n7. 实习津贴200元/天，可开实习证明，暂无转正机会\n【办公地点】北京市朝阳区京城大厦\n【投递邮箱】heyh@invest.citic\n【邮件&简历命名】投递岗位-姓名-本科/研究生学校及专业-到岗时间、周实习X天，实习X个月\n中信私募基金招实习生（要求清北等重点院校在读）\n南槽\n\n中信私募基金管理有限公司-新材料投资团队实习生（北京onsite）\n【岗位职责】\n1. 协助执行重点项目，进行信息搜集分析、行业访谈、材料撰写等\n2. 协助筛选、分析项目投资机会，评估项目价值\n3. 协助撰写行业细分赛道研究报告\n4. 协助跟踪行业动态、政策\n5. 其他交办的任务\n【招聘要求】\n1. 清北等重点院校在读，具有工科背景\n2. 具有新材料投资实习经历，对一级市场投资业务熟悉者优先\n3. 研究生或本科三年级以上在读，具备良好的专业理论知识，成绩优异者优先\n4. 具有较强的数据整理、分析能力，有较强的文字功底与逻辑条理\n5. 熟练运用 Excel，Word，PPT，Wind等软件工具\n6. 投递者需确保3个月及以上实习期，一周至少3天线下支持，需尽快到岗\n7. 实习津贴200元/天，可开实习证明，暂无转正机会\n【办公地点】北京市朝阳区京城大厦\n【投递邮箱】heyh@invest.citic\n【邮件&简历命名】投递岗位-姓名-本科/研究生学校及专业-到岗时间、周实习X天，实习X个月\n\n中信私募基金招实习生（要求清北等重点院校在读）\n南槽\n\n中信私募基金管理有限公司-新材料投资团队实习生（北京onsite）\n【岗位职责】\n1. 协助执行重点项目，进行信息搜集分析、行业访谈、材料撰写等\n2. 协助筛选、分析项目投资机会，评估项目价值\n3. 协助撰写行业细分赛道研究报告\n4. 协助跟踪行业动态、政策\n5. 其他交办的任务\n【招聘要求】\n1. 清北等重点院校在读，具有工科背景\n2. 具有新材料投资实习经历，对一级市场投资业务熟悉者优先\n3. 研究生或本科三年级以上在读，具备良好的专业理论知识，成绩优异者优先\n4. 具有较强的数据整理、分析能力，有较强的文字功底与逻辑条理\n5. 熟练运用 Excel，Word，PPT，Wind等软件工具\n6. 投递者需确保3个月及以上实习期，一周至少3天线下支持，需尽快到岗\n7. 实习津贴200元/天，可开实习证明，暂无转正机会\n【办公地点】北京市朝阳区京城大厦\n【投递邮箱】heyh@invest.citic\n【邮件&简历命名】投递岗位-姓名-本科/研究生学校及专业-到岗时间、周实习X天，实习X个月\n\n微信扫一扫\n关注该公众号',notes:'',rpt:true,src:'南槽（公众号）',upd:'2026-04-06 18:33',pd:'2026-03-27'},
+{id:'3',cn:'软银中国资本',ct:'外资风险投资基金（美元+人民币）',jt:'投资团队实习生',loc:'上海/北京/深圳/新加坡（可线上）',ind:'AI/新能源',st:'已投递',at:'2026-04-07 04:09',em:'sbcvc_recruit@126.com',sub:'实习申请 - XXX｜XXX大学',body:'您好，\n\n我是XXX，XXX大学硕士在读，可立即到岗，实习期可达6个月。此前在XX资本有两段投资实习经历，参与过航空航天、掩模版、电解铝等方向的行业研究与公司分析；在XX公司有AI产品经理实习经历，对AI在to B场景的落地有实际了解。目前申请软银中国资本实习生岗位，欢迎参考附件简历。\n\n\n\nXXX',jd:'**软银中国资本 投资团队 实习生招聘**\n\n**公司简介：**\n\n软银中国资本成立于2000年，是国内外知名的风险投资基金，专注于投资高成长，高科技企业，曾成功投资了阿里巴巴，分众传媒，万国数据，华大基因，迪安诊断等一系列优秀的科技企业。目前软银中国资本管理着多支美元和人民币基金，投资领域包括TMT，医疗健康，先进制造，芯片半导体等行业，投资阶段覆盖早期，成长期与中后期各个阶段，基金在上海，北京，深圳，新加坡等地皆设有办公室。\n\n详情可参考企业官网：http://www.sbcvc.com\n\n**招聘岗位：实习生**（可接受在校生兼职，实习期3-6个月，可接受线上实习）\n\n**投资领域：** AI/机器人，新能源，先进制造等\n\n**主要工作职责：**\n\n• 协助与投资相关的工作，包括尽职调查，数据梳理，项目评估等\n• 研究与梳理行业的趋势与投资机会\n\n**岗位要求：**\n\n• 国内外知名大学本科及以上学历，优先考虑理工科专业\n• 拥有较强的自我驱动力，能够积极主动的完成工作，并具有团队协作精神与很强的快速学习能力\n• 具有较好的沟通能力和信息梳理能力\n• 良好的英文阅读能力，能够读懂海外公司的官网信息等\n\n简历投递请发送到邮箱：sbcvc_recruit@126.com，并在邮件中注明可开始工作的日期\n\n---\n\n**Stanley**\n中国大陆 中国大陆\n\n（微信二维码图案）\n\n扫一扫上面的二维码图案，加我为朋友',notes:'',rpt:false,src:'南槽（公众号）',upd:'2026-04-07 04:09',pd:'2026-03-30'},
+{id:'4',cn:'方源资本',ct:'本土PE',jt:'投后实习生',loc:'上海静安',ind:'综合',st:'已投递',at:'2026-04-11 00:56',em:'fanyining0509@sina.com',sub:'投后实习生-XXX-XXX大学-XXX专业硕士-5天-可立即到岗-6个月',body:'您好，\n\n我是XXX，XXX大学硕士在读，四月中下旬可到岗，每周可出勤5天，可实习6个月，希望申请方源资本投后实习生岗位。\n\n此前我在XX资本有两段股权投资实习经历，参与过航空航天、先进材料等方向的行业研究和公司分析，具备基本的数据整理、行业调研和报告撰写能力。同时我在XX水泥有过实业端的实习，对重资产企业的运营和管理有一定的直接观察。\n\n附件为个人简历，请查阅。\n\nXXX',jd:'【职位名称】方源资本投后实习生招聘\n【实习地点】上海静安\n【岗位职责】\n1. 协助团队完成基金相关领域的投后运营管理和分析，以及投前运营尽调和研究\n2. 参与相关项目会议、现场调研、协助数据整理和会议纪要以及其他文书和报告工作\n3. 根据业务发展需要，完成指定工作任务安排\n【职位要求】\n1. 有MBB等头部咨询实习经历优先\n2. 具有行业研究分析的基本能力，如问题分析能力、基本excel/thinkcell技能；熟练使用SQL优先\n3. 良好的沟通能力，能够较好地配合团队工作\n4. 时间：四月中下旬入职\n5. 实习时长：6个月以上，每周出勤4-5天\n【联系方式】\n感兴趣的同学请将简历发送至fanyining0509@sina.com\n邮件主题和简历按“投后实习生-姓名-学校-专业学历-每周可实习几天-最早入职时间-可实习时长”命名',notes:'',rpt:false,src:'南槽（公众号）',upd:'2026-04-11 00:56',pd:'2026-04-09'},
+{id:'5',cn:'基石资本',ct:'本土PE/VC',jt:'投资分析师（应届生）',loc:'上海',ind:'综合',st:'已投递',at:'2026-04-11 00:59',em:'wangtingting1@stonevc.com',sub:'投资分析师申请 - XXX｜XXX大学',body:'您好，\n\n我是XXX，XXX大学硕士在读，本科毕业于XXX大学本科，理工科与商科复合背景，可在上海线下实习，可立即到岗。\n\n此前我在XX资本完成了两段股权投资实习，参与了航空航天、半导体材料等方向的行业研究与公司分析，协助撰写投资材料；在XX公司担任AI产品经理实习期间，深度参与了AI工具在企业侧的落地推进，对大模型在to B场景的实际应用有直接认识。\n\n简历已附于附件，期待进一步沟通。\n\nXXX',jd:'公司介绍：\n基石资本是中国最早的创业投资与私募股权投资机构之一，发端于2001年，核心团队拥有逾20年投资管理经验。公司总部位于深圳，在北京、上海、合肥、南京、长沙、武汉、香港及硅谷设有分部。基石资本累计资产管理规模逾900亿元,管理资产涵盖天使、VC、PE、并购、定向增发等类型,投资阶段覆盖企业全生命周期。\n招聘岗位：\n投资分析师（应届生招聘）\n工作地点：\n上海\n岗位职责：\n1. 协助开展目标行业研究，收集和分析行业数据，撰写研究报告，挖掘投资机会\n2. 支持投资团队完成尽职调查，收集整理目标企业相关信息，制作投资建议书、PPT、项目文档等投资材料\n3. 协助建立AI工作流程、充分运用AI工具提升效率\n岗位要求：\n1. 理工科+金融复合学历背景者优先\n2. 积极拥抱AI，掌握AI知识和技能，熟悉大语言模型、AI工具应用，有AI项目经验者优先\n3. 具备良好的财务分析能力、逻辑思维能力和文字表达能力\n4. 工作细致认真，责任心强，善于学习，有良好的沟通协作能力\n5. 有PE/VC、投行、咨询实习经历者优先\n投递邮箱：\nwangtingting1@stonevc.com',notes:'',rpt:false,src:'南槽（公众号）',upd:'2026-04-11 00:59',pd:'2026-04-01'},
+{id:'6',cn:'云锋基金',ct:'本土美元VC/PE',jt:'科技实习生',loc:'未注明',ind:'科技',st:'已投递',at:'2026-04-11 01:03',em:'hr@yfcapital.com',sub:'【科技实习生】-XXX',body:'您好，\n\n我是XXX，XXX大学硕士在读，现投递云锋基金科技实习生岗位，可立即到岗，每周可到岗5天。\n\n此前我在XX资本完成了两段股权投资实习，参与了航空航天、半导体材料（掩模版）等方向的行业研究与公司分析，协助完成需求测算、估值辅助及投资材料撰写；另在XX公司担任AI产品经理实习，从企业内部视角观察了AI在to B场景落地的实际问题，对客户信任、私有化部署、垂直数据积累等核心议题有一手认知。\n\n附件中另附一份我过往完成的行业研究样本，供参考。\n\nXXX',jd:'岗位一：云锋基金-科技实习生招聘\n【岗位职责】\n1. 行业与公司研究：协助完成细分行业分析，撰写研究报告；对目标公司进行基本面分析，包括财务数据、商业模式、核心竞争力等\n2. 项目支持：参与尽调流程，整理财务、法律、业务等尽调资料；协助搭建财务模型及估值分析；制作投资备忘录、PPT等材料\n3. 市场动态跟踪：监测宏观经济、政策变化及行业动态，输出简报；整理可比公司及交易案例数据库\n4. 其他支持：参与内部会议并整理会议纪要；协助团队完成其他临时性工作\n【任职要求】\n1. 本科/硕士/博士在读，具备金融、经济、会计或理工科专业背景；有券商/PE/VC/咨询相关实习经历\n2. 具有扎实的金融知识和财务基础，具备一定的行业研究功底和洞察力，有PE/VC科技AI相关项目经验者优先\n3. 熟练使用Excel、PPT，具备基础财务建模能力；熟悉Wind、Bloomberg、Capital IQ等工具者加分\n4. 对股权投资有强烈兴趣，具备快速学习能力和抗压能力；逻辑清晰，注重细节，具备独立研究和团队协作能力\n【简历投递】\n投递邮箱：hr@yfcapital.com\n邮件主题：【科技实习生】-姓名\n简历标题：学校-专业名称-毕业时间-姓名\n*过往研究材料：请同步提供过往研究材料（PPT/word/excel，可脱敏）',notes:'',rpt:true,src:'南槽（公众号）',upd:'2026-04-11 01:03',pd:'2026-03-24'},
+{id:'7',cn:'易界DealGlobe',ct:'精品投行（中英跨境并购）',jt:'投行实习生',loc:'上海/伦敦',ind:'TMT',st:'已投递',at:'2026-04-11 01:04',em:'careers@dealglobe.com',sub:'实习申请 - XXX｜XXX大学',body:'您好，\n\n我是XXX，XXX大学硕士在读，希望申请易界DealGlobe的投行实习生岗位，可在上海线下实习，可立即到岗，可实习6个月。\n\n此前我在XX资本有两段股权投资实习经历，参与过航空航天、半导体材料等方向的行业研究与公司分析，协助完成了估值辅助和投资材料整理工作；在XXX大学本科的学习背景也让我具备一定的财务建模与数据分析基础。\n\n简历见附件，期待进一步沟通。\n\nXXX',jd:'易界招实习生（上海/伦敦，团队来自瑞银、美林、Rothschild、华平）\n公司名称：易界DealGlobe\n\n公司介绍：\n\n易界DealGlobe是中国领先的并购交易精品投行，于2014年创立于英国伦敦，目前易界DealGlobe在伦敦和上海设有两个办公室，持有英国FCA牌照。易界DealGlobe核心业务分为三大板块：并购交易、结构化融资、投资。自成立以来，易界DealGlobe已经执行20多笔交易，其中完成签约的并购金额超55亿美元。\n\n易界Dealglobe由经验丰富的管理层所领导，拥有担任买方与卖方顾问的丰富经验，为促进交易的成功执行提供了深刻的见解。团队来自瑞银、美林、德意志银行、Rothschild、华平、Advent等知名机构，在欧洲乃至全球拥有丰富的人脉。\n\n招聘职位：投行实习生（签订实习合同）\n\n实习地点：中国上海/英国伦敦\n\n招聘待遇：\n\n（1）中国onsite 200/天 remote 100/天\n\n（2）英国 薪资面议\n\n实习时长：至少3个月及以上 可开具实习证明\n\n联系方式：Careers@dealglobe.com\n\n职位描述：\n\n1. 收集和综合有关公司、行业和政府的财务和运营信息并开展行业深度研究、公司研究\n\n2. 深度参与项目执行，协助组内完成并购及投融资项目相关的公司Pitchbook、商业计划书及项目相关文件\n\n3. 创建和更新估值和财务模型\n\n4. 收集市场数据，分析行业趋势和协助交易评估\n\n5. 参加团队讨论和客户会议，会议纪要及进行部分文稿演示\n\n岗位要求：\n\n1. 经济/会计/金融/法律等相关专业背景在校研究生，英语流利\n\n2. 具有投行、PE/VC、咨询公司等相关行业实习经验\n\n3. 了解估值方法和应用，具有良好的财务和计算机技能\n\n4. 强的分析能力、掌握Capital IQ, Wind以及MS Office等常用软件\n\n5. 高度的敬业精神及良好的职业素养，具有较强的抗压能力及自驱力，能全职实习3个月及以上者优先',notes:'',rpt:false,src:'南槽（公众号）',upd:'2026-04-11 01:04',pd:'2026-03-24'},
+{id:'8',cn:'成为资本',ct:'美元VC',jt:'投资实习生（硬科技/半导体/AI方向）',loc:'上海市徐汇区',ind:'硬科技/半导体',st:'已投递',at:'2026-04-11 01:08',em:'talent@chengwei.com',sub:'投资实习生申请 - XXX｜XXX大学',body:'您好，\n\n我是XXX，XXX大学硕士在读，可立即到岗，每周可到岗5天，可在上海线下实习，实习期可达6个月。我在XX资本有两段股权投资实习经历，参与过航空航天、半导体掩模版、碳陶瓷制动盘等硬科技方向的行业研究与公司分析，协助进行项目前期研判和投资材料准备；此外也在XX公司有AI产品经理实习经历，对AI在to B场景的落地有一定实操认识。\n\n附件为个人简历，请查阅。\n\nXXX',jd:'多个hc：成为资本招实习生（投资案例：汉庭、优酷、哈啰、华兴资本）\n成为资本(ChengweiCapital)创立于1999年，是最早投资中国本土企业的国际风险投资公司之一。其秉承着少而精、重投入、发掘并培育独角兽企业的独到投资理念，打造出中国第一家常青基金(Evergreen Fund)，具备雄厚的资本和永久的存续期。\n\n过去20年，成为资本涉足高端制造、互联网、集成电路、企业服务及生命科学等行业，累计总投资额超过20亿美元。成为资本在中国已投资超过150家科技企业，其中17家已成功上市，如舜宇光学、瑞声科技、阳光电源、汉庭酒店、优酷、华兴资本、创新奇智、Roivant Sciences等。目前投资组合中还包括：哈啰出行、百布、极飞科技、Sila Nano、赛昉科技、新光维医疗、纽脉医疗等独角兽公司Position 1：投资实习生（AI方向HC1、硬科技方向HC1、半导体方向HC1，日常实习）\n\nResponsibilities:\n1、跟踪、分析行业发展趋势，搜集信息并撰写行业分析报告；\n2、深度参与投资项目的执行，协助进行项目的前期研判、参与尽调并撰写纪要、协助准备相关投资材料等；\n\nRequirement:\n1、硕士及以上学历，理工科及金融复合背景或相关经验的优先；\n2、强自驱力，热爱风险投资行业；\n3、具备一线投资机构/投行实习经验；具备独立行业研究能力和优秀的沟通能力。\n4、可立即到岗者优先，仅接受on-site实习；\n5、稳定在岗实习3-6个月，每周在岗不少于3天；Location:上海市徐汇区简历投递：talent@chengwei.com',notes:'',rpt:false,src:'南槽（公众号）',upd:'2026-04-11 01:08',pd:'2026-03-18'},
+{id:'9',cn:'高鹄资本',ct:'精品FA/投行（一级市场）',jt:'分析师/实习生',loc:'上海/北京/深圳',ind:'AI/具身智能',st:'已投递',at:'2026-04-11 01:36',em:'',sub:'',body:'',jd:'自2017年成立以来，高鹄资本已完成100多项交易，累计交易规模超2000亿元人民币，长期服务MiniMax、Sudo、千寻智能、维他动力、原力灵机、逐际动力、墨奇智能、极壳科技、VITURE、新石器无人车等一批AI、具身智能、前沿科技与全球化领域的行业领军企业，并助力MiniMax、涂鸦智能、叮咚买菜、网易云音乐等多家长期客户成功上市。在36氪、钛媒体、企名片、第一新声等权威机构发布的FA榜单中，高鹄资本包揽了人工智能、具身智能、出海与全球化等多个核心赛道的重要奖项。\n\n一、分析师/实习生（可转正）\n\n工作地点：上海/北京/深圳\n\n关注方向：人工智能｜前沿科技｜消费出海\n\n工作内容：\n1. 执行或协助行业与公司研究，持续跟进技术演进与产业趋势\n2. 梳理赛道、筛选项目、发掘交易机会，参与融资建议书制作\n3. 参与交易执行：BP、数据包、财务模型、投资人对接、尽调等\n4. 协助维护投资人关系，对接资金端与资产端资源\n\n任职要求：\n1. 海内外知名高校本科及以上学历，有投行/FA/VCPE/咨询相关经历者优先\n2. 对一级市场充满热情，认可投资与投行的长期价值创造\n3. 具备良好的商业洞察力、学习能力与团队协作精神\n4. 实习生需保证4个月以上、每周至少4–5天，以获得完整项目体验\n\n实习生转正机制：优秀实习生将获得优先留用、优先转正机会，是进入精品投行、长期深耕一级市场的高质量路径之一。\n\n投递方式：\n请扫描下方二维码，或点击官网链接投递简历：https://xj2ghnrcdq.jobs.feishu.cn/index\n\n简历命名格式：【投递岗位＋学校＋姓名＋最快入职时间＋（实习生）可实习X个月/每周X天】\n\n如你有行业研究报告、分析作品或相关成果，欢迎一并附上，帮助我们更快了解你。',notes:'',rpt:false,src:'南槽（公众号）',upd:'2026-04-11 01:36',pd:'2026-03-14',url:'https://xj2ghnrcdq.jobs.feishu.cn/index'},
+{id:'10',cn:'红杉中国（Hongshan）',ct:'头部美元/人民币双币VC/PE',jt:'投资实习生',loc:'上海',ind:'综合',st:'已投递',at:'2026-04-11 01:48',em:'njiang@hongshan.com',sub:'XXX-XXX大学-2026.12-可立即到岗',body:'您好，\n\n我是XXX，XXX大学硕士在读，可立即到岗，每周可到岗5天，可持续实习6个月。我在XX资本有两段股权投资实习经历，覆盖航空航天、半导体（掩模版）、碳陶瓷制动盘等方向，参与过行业需求测算、公司研究及投资材料支持。此前在家族企业XX水泥的经历也让我对重资产产业的运营逻辑和Capex有第一手认识。\n\n附件为个人简历，请查阅。\n\nXXX',jd:'顶级PE！红杉中国 投资实习生招聘\n\n极职Zenith\n\n2026年4月10日 20:00\n广东\n\n在小说阅读器读本章\n\n去阅读\n\n红杉中国招聘投资实习生【上海】\n在这里，你将会:·进行桌面研究，收集行业数据，梳理行业趋势，研究领先公司发展历史，产出行业分析报告·参与各类一手调研环节，进行专家访谈，用户调研，产业链调研等研究工作·参与行业和标的公司的数据跟踪·根据具体工作表现，酌情参与项目尽调，交易执行、搭模型等工作\n\n我们希望你:·有强烈的好奇心和求知欲，具备独立思考能力·热爱投资和研究，并且致力于投身这份事业·具备扎实的行业研究、信息检索整合及财务分析技能·一周可on site 4/5天，连续3到6个月或更长实习期·Top 投资机构/咨询公司实习经验者优先考虑工作地点:上海恒隆广场同学你好\n本期岗位申请方式如下:\n\n【简历投递】 \n\n【红杉】\n感兴趣可发送简历至:\nnjiang@hongshan.com\n进一步交流，谢谢。邮件标题:姓名-学校-毕业时间-最早可入职时间\n\n资源宝贵，请认真准备\n分享不易，请不吝转发',notes:'',rpt:false,src:'',upd:'2026-04-11 01:48',pd:'2026-04-10'},
+{id:'11',cn:'正势达（MTX Partners）',ct:'本土PE/并购基金',jt:'投资研究团队实习生',loc:'上海长宁区',ind:'工业/食品饮料/环保',st:'已投递',at:'2026-04-11 01:54',em:'jessica.tsai@mtxpartners.com',sub:'投研实习生+XXX+XXX大学+2026届+每周5天共6个月',body:'Jessica总您好，\n\n我是XXX，XXX大学硕士在读，2026届，每周可到岗5天，可实习6个月，可立即到岗，工作地点上海。\n\n此前在XX资本完成两段股权投资实习，参与了航空航天、碳陶瓷制动盘、掩模版等方向的行业研究与标的分析，有一定的公司研究和材料产出经验。\n\n附件附上简历，供参考。\n\nXXX',jd:'【友推实习机会】\n正势达是专注一级市场私募股权并购的公司，标的以中小型工业企业为主。公司利用自身全球化网络、资本渠道以及行业经验，为被投企业提供家族传承、业务全球扩张以及A加持等赋能。核心团队成员有来自工业及科技财富五百强企业的高管、美元并购基金、上市公司并购负责人，成功交割多起美金并购重组项目。\n岗位名称：投资研究团队实习生\n工作地点：上海长宁区\n\n【职位描述】：\n1、支持团队研究分析食品饮料、电力设备、环保水务等方向的发展趋势以及重点公司标的，产出相应的研究报告\n2、协助团队在重点领域进行Deal Sourcing,建设项目网络\n3、协助团队完成重点项目的投资支持工作\n4、协助团队完成市场信息收集、纪要整理等工作\n5、带教老师来自一线美元基金、世界五百强及美国藤校\n\n【职位要求】：\n1、国内外重点高校本科生及以上，具备一定经济、金融知识；\n2、聪明好学，主动积极，逻辑思维能力强，对世界有强烈探知欲；\n3、有咨询/投行/FA/投资机构/商分/战略/四大等研究和分析类实习经验优先\n4、具有较好的英文听说读写能力\n5、一周至少实习3天，3个月以上，立即到岗者优先。实习优秀有留用机会。\n【薪资待遇】\n1、薪资150元/天。\n【应聘渠道】：请发送简历至jessica.tsai@mtxpartners.com，可附上过往产出的投研报告。\n\n请于简历及邮件主题注明【投研实习生+姓名+学校+202X届+每周x天共x月】',notes:'',rpt:false,src:'',upd:'2026-04-11 01:54',pd:''},
+{id:'12',cn:'方源资本',ct:'外资PE',jt:'Off-cycle Intern',loc:'上海',ind:'综合',st:'已投递',at:'2026-04-11 02:02',em:'stellaliang@fountainvest.com',sub:'XXX大学-硕士在读-XXX-XXX专业-6个月',body:'您好，\n\n我是XXX，XXX大学硕士在读，可在上海线下实习，4月下旬可尽快入职，每周可全职投入，可实习6个月。我此前在XX资本有两段PE实习经历，覆盖航空航天、先进材料、电解铝等方向，参与过行业研究、公司分析、需求测算及估值辅助工作。此外，我在XX水泥有过直接的重资产产业运营观察，对传统行业的投资逻辑有一定感性认识。\n\n简历请见附件，期待进一步沟通。\n\nXXX',jd:'方源资本上海办公室招募Off-cycle Intern\n希望4月下旬尽快入职，全职实习4-6个月，要求候选人可以在上海线下工作，每周有充裕的时间投入，具备在高强度工作下的抗压能力。Prefer大三及以上年级、有外资投行或Top PE实习经验的同学。\n感兴趣者烦请发送简历至：stellaliang@fountainvest.com，邮件主题及CV命名为“学校-年级-姓名-专业-可实习时长”',notes:'',rpt:false,src:'南槽（公众号）',upd:'2026-04-11 02:02',pd:'2026-03-04'},
+];
+
+const ST={total:12,companies:11,week_new:9,followup:0,
+  status_dist:{"已投递": 12},
+  type_dist:{"VC": 3, "PE": 6, "FA/投行": 3},
+  loc_dist:{"上海": 10, "北京": 1, "未注明": 1},
+  industry_dist:{"硬科技": 2, "AI": 3, "新材料": 1, "新能源": 1, "科技": 1, "TMT": 1, "半导体": 1, "具身智能": 1, "工业": 1, "食品饮料": 1, "环保": 1},
+  daily:{"04/05": 1, "04/06": 1, "04/07": 1, "04/11": 9},
+  daily_detail:{"04/05": ["复星锐正资本"], "04/06": ["中信私募基金管理有限公司"], "04/07": ["软银中国资本"], "04/11": ["方源资本", "基石资本", "云锋基金", "易界DealGlobe", "成为资本", "高鹄资本", "红杉中国（Hongshan）", "正势达（MTX Partners）", "方源资本"]}};
+
+// ═══ CORE ═══
+let cur='new';
+function go(t){cur=t;document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));document.getElementById('tab-'+t).classList.add('active');document.querySelectorAll('.nav').forEach(e=>{e.className=e.dataset.t===t?'nav flex items-center gap-3 px-4 py-2.5 cursor-pointer rounded-xl text-slate-900 font-medium border-l-4 border-blue-600 bg-slate-200/30':'nav flex items-center gap-3 px-4 py-2.5 cursor-pointer rounded-xl text-slate-500 hover:text-slate-700 hover:bg-slate-200/50 transition-colors'});document.querySelectorAll('.mt').forEach(e=>{e.classList.toggle('text-primary',e.dataset.t===t);e.classList.toggle('text-slate-500',e.dataset.t!==t)});document.getElementById('title').textContent={new:'新投递 & AI 邮件生成',board:'投递追踪看板',analytics:'数据分析概览'}[t];if(t==='board')board();if(t==='analytics')analytics()}
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.remove('-translate-y-20','opacity-0');setTimeout(()=>t.classList.add('-translate-y-20','opacity-0'),3500)}
+function badge(s){const m={已投递:'bg-blue-100 text-blue-700',已电联:'bg-indigo-100 text-indigo-700',约面试:'bg-orange-100 text-orange-700',面试中:'bg-amber-100 text-amber-800',offer:'bg-green-100 text-green-700',拒绝:'bg-red-100 text-red-700',无回复:'bg-slate-100 text-slate-500'};return`<span class="px-3 py-1 rounded-full text-[11px] font-bold whitespace-nowrap ${m[s]||'bg-slate-100'}">${s}</span>`}
+function esc(t){if(!t)return'暂无';return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br/>')}
+function mc(l,v,c,w='0%',hl=false,tip=''){const tc=c.startsWith('#')?`style="color:${c}"`:`class="text-${c}"`;const ta=tip?`title="${tip}" style="cursor:help"`:"";
+  return`<div class="bg-white p-5 rounded-2xl flex flex-col justify-between h-28 hover:shadow-sm transition-all" ${ta}><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">${l}</p><h3 class="text-3xl font-bold" ${tc}>${v}</h3><div class="h-1 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-primary rounded-full" style="width:${w}"></div></div></div>`}
+
+// ═══ TAB 1: NEW ═══
+const JD_DEMO=`中信私募基金管理有限公司-新材料投资团队实习生（北京onsite）
+【岗位职责】
+1. 协助执行重点项目，进行信息搜集分析、行业访谈、材料撰写等
+2. 协助筛选、分析项目投资机会，评估项目价值
+3. 协助撰写行业细分赛道研究报告
+4. 协助跟踪行业动态、政策
+5. 其他交办的任务
+【招聘要求】
+1. 清北等重点院校在读，具有工科背景
+2. 具有新材料投资实习经历，对一级市场投资业务熟悉者优先
+3. 研究生或本科三年级以上在读，具备良好的专业理论知识，成绩优异者优先
+4. 具有较强的数据整理、分析能力，有较强的文字功底与逻辑条理
+5. 熟练运用 Excel，Word，PPT，Wind等软件工具
+6. 投递者需确保3个月及以上实习期，一周至少3天线下支持，需尽快到岗
+7. 实习津贴200元/天，可开实习证明，暂无转正机会
+【办公地点】北京市朝阳区京城大厦
+【投递邮箱】heyh@invest.citic
+【邮件&简历命名】投递岗位-姓名-本科/研究生学校及专业-到岗时间、周实习X天，实习X个月
+中信私募基金招实习生（要求清北等重点院校在读）
+南槽
+
+中信私募基金管理有限公司-新材料投资团队实习生（北京onsite）
+【岗位职责】
+1. 协助执行重点项目，进行信息搜集分析、行业访谈、材料撰写等
+2. 协助筛选、分析项目投资机会，评估项目价值
+3. 协助撰写行业细分赛道研究报告
+4. 协助跟踪行业动态、政策
+5. 其他交办的任务
+【招聘要求】
+1. 清北等重点院校在读，具有工科背景
+2. 具有新材料投资实习经历，对一级市场投资业务熟悉者优先
+3. 研究生或本科三年级以上在读，具备良好的专业理论知识，成绩优异者优先
+4. 具有较强的数据整理、分析能力，有较强的文字功底与逻辑条理
+5. 熟练运用 Excel，Word，PPT，Wind等软件工具
+6. 投递者需确保3个月及以上实习期，一周至少3天线下支持，需尽快到岗
+7. 实习津贴200元/天，可开实习证明，暂无转正机会
+【办公地点】北京市朝阳区京城大厦
+【投递邮箱】heyh@invest.citic
+【邮件&简历命名】投递岗位-姓名-本科/研究生学校及专业-到岗时间、周实习X天，实习X个月
+
+中信私募基金招实习生（要求清北等重点院校在读）
+南槽
+
+中信私募基金管理有限公司-新材料投资团队实习生（北京onsite）
+【岗位职责】
+1. 协助执行重点项目，进行信息搜集分析、行业访谈、材料撰写等
+2. 协助筛选、分析项目投资机会，评估项目价值
+3. 协助撰写行业细分赛道研究报告
+4. 协助跟踪行业动态、政策
+5. 其他交办的任务
+【招聘要求】
+1. 清北等重点院校在读，具有工科背景
+2. 具有新材料投资实习经历，对一级市场投资业务熟悉者优先
+3. 研究生或本科三年级以上在读，具备良好的专业理论知识，成绩优异者优先
+4. 具有较强的数据整理、分析能力，有较强的文字功底与逻辑条理
+5. 熟练运用 Excel，Word，PPT，Wind等软件工具
+6. 投递者需确保3个月及以上实习期，一周至少3天线下支持，需尽快到岗
+7. 实习津贴200元/天，可开实习证明，暂无转正机会
+【办公地点】北京市朝阳区京城大厦
+【投递邮箱】heyh@invest.citic
+【邮件&简历命名】投递岗位-姓名-本科/研究生学校及专业-到岗时间、周实习X天，实习X个月
+
+微信扫一扫
+关注该公众号`;
+
+function demoFetch(){
+  const b=document.getElementById('fetchBtn');b.disabled=true;b.innerHTML='<span class="material-symbols-outlined animate-spin text-sm">progress_activity</span> 抓取中...';
+  setTimeout(()=>{
+    document.getElementById('jd').value=JD_DEMO;
+    toast('已抓取：南槽（公众号）· 来源已自动填入');
+    b.disabled=false;b.innerHTML='<span class="material-symbols-outlined text-sm">download</span> 抓取';
+  },1500);
+}
+
+function demoAnalyze(){
+  const jd=document.getElementById('jd').value;
+  if(jd.trim().length<20){toast('请先粘贴或抓取 JD');return}
+  const b=document.getElementById('aBtn'),s=document.getElementById('aStatus');
+  b.disabled=true;b.innerHTML='<span class="material-symbols-outlined animate-spin">progress_activity</span> Claude 分析中...';
+  s.textContent='正在调用 Claude Sonnet 4.6 分析 JD...';s.className='mt-3 p-3 rounded-xl text-sm bg-blue-50 text-blue-700 animate-in';
+
+  setTimeout(()=>{
+    const c=document.getElementById('cards');
+    c.innerHTML=[
+      ['公司名','中信私募基金管理有限公司','',''],
+      ['岗位','新材料投资团队实习生','',''],
+      ['地点','北京市朝阳区','',''],
+      ['性质','PE（国资）','',''],
+      ['行业','新材料','indigo','indigo'],
+      ['附报告','是','orange','orange'],
+    ].map(([l,v,bg,tc])=>`<div class="${bg?'bg-'+bg+'-50 border-'+bg+'-200':'bg-white'} p-3 rounded-2xl shadow-sm border flex flex-col gap-1"><span class="text-[10px] ${tc?'text-'+tc+'-600':'text-slate-400'} font-bold uppercase">${l}</span><span id="${l==='附报告'?'cRpt':''}" class="text-sm font-bold ${tc?'text-'+tc+'-700':''}truncate">${v}</span></div>`).join('');
+    c.classList.remove('hidden');
+
+    document.getElementById('dup').classList.remove('hidden');
+    document.getElementById('eTo').value='heyh@invest.citic';
+    document.getElementById('eSub').value='新材料投资团队实习生-XXX-XXX大学XXX专业硕士/XXX大学本科-可立即到岗、周实习5天，实习6个月'
+    document.getElementById('eBody').value='您好，\n\n我是XXX，XXX大学XXX学院硕士在读，本科毕业于XXX大学本科，现申请中信私募基金新材料投资团队实习生岗位。\n\n此前我在XX资本完成了两段股权投资方向的实习，参与过碳陶瓷制动盘、航空航天材料、掩模版等硬科技赛道的行业研究与公司分析，协助完成需求测算、竞争格局梳理及估值辅助工作，对新材料一级市场的研究逻辑有一定积累。此外，我通过XX水泥相关经历对重资产制造业的技改投资、能耗约束与政策环境有第一手观察。\n\n附件中另附一份我过往完成的硬科技方向研究样本，供参考。简历及研究样本已一并附上，期待进一步沟通。\n\nXXX'
+    document.getElementById('attArea').classList.remove('hidden');
+    document.getElementById('attResume').textContent='新材料投资团队实习生-XXX-XXX大学XXX专业-可立即到岗.pdf'
+    document.getElementById('attRpt').style.display='flex';
+    document.getElementById('sendBtn').disabled=false;document.getElementById('recBtn').disabled=false;
+    b.disabled=false;b.innerHTML='<span class="material-symbols-outlined">psychology</span> 分析 JD 并预览';
+    s.textContent='✓ 分析完成 — 检测到重复投递 · 公司信息、邮件、附件已就绪';s.className='mt-3 p-3 rounded-xl text-sm bg-green-50 text-green-700';
+    c.scrollIntoView({behavior:'smooth',block:'center'});
+  },2200);
+}
+
+function demoSend(){
+  if(!confirm('演示模式：确认模拟发送？'))return;
+  const b=document.getElementById('sendBtn');b.disabled=true;b.innerHTML='<span class="material-symbols-outlined animate-spin">progress_activity</span> 发送中...';
+  setTimeout(()=>{b.innerHTML='<span class="material-symbols-outlined">check_circle</span> 已发送';toast('演示：邮件已模拟发送，记录已保存')},1200);
+}
+
+// ═══ TAB 2: BOARD ═══
+function board(){
+  document.getElementById('bMetrics').innerHTML=[mc('总投递',ST.total,'primary','100%'),mc('本周新增','+'+ST.week_new,'primary','83%'),mc('待跟进',ST.followup,'#ba1a1a','25%',false,'投递超过7天且状态仍为"已投递"的记录，建议发跟进邮件或标记为"无回复"')].join('');
+  let f=[...D];const fs=document.getElementById('fSt').value,ft=document.getElementById('fTy').value,fl=document.getElementById('fLo').value;
+  if(fs)f=f.filter(r=>r.st===fs);if(ft)f=f.filter(r=>r.ct===ft);if(fl)f=f.filter(r=>r.loc.includes(fl));
+  document.getElementById('cnt').textContent=`显示 ${f.length} / ${D.length} 条`;
+
+  document.getElementById('bTbl').innerHTML=f.map(r=>`
+    <tr class="group hover:bg-white/60 cursor-pointer border-b border-slate-100" onclick="document.getElementById('d${r.id}').classList.toggle('open')">
+      <td class="px-5 py-4"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold text-xs">${r.cn[0]}</div><span class="font-semibold">${r.cn}</span></div></td>
+      <td class="px-5 py-4">${r.jt}</td><td class="px-5 py-4">${badge(r.st)}</td>
+      <td class="px-5 py-4 text-slate-400">${r.loc}</td><td class="px-5 py-4 text-slate-500">${r.ind}</td>
+      <td class="px-5 py-4 text-slate-400 whitespace-nowrap">${r.pd||'—'}</td>
+      <td class="px-5 py-4 text-right text-slate-400 whitespace-nowrap">${r.at}</td>
+    </tr>
+    <tr id="d${r.id}" class="row-detail"><td colspan="7" class="p-0">
+      <div class="mx-4 mb-4 rounded-2xl border bg-white/80 overflow-hidden animate-in">
+        <div class="grid grid-cols-12">
+          <div class="col-span-4 p-5 border-r bg-slate-50/50 space-y-3">
+            <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">编辑投递信息</h4>
+            <div><label class="text-[11px] font-bold text-slate-400 block mb-1">状态</label><select class="w-full bg-slate-100 border-none rounded-xl text-sm py-2 px-3">${['已投递','已电联','约面试','面试中','offer','拒绝','无回复'].map(s=>`<option ${s===r.st?'selected':''}>${s}</option>`).join('')}</select></div>
+            <div><label class="text-[11px] font-bold text-slate-400 block mb-1">来源</label><input class="w-full bg-slate-100 border-none rounded-xl text-sm py-2 px-3" value="${r.src||''}"/></div>
+            <div><label class="text-[11px] font-bold text-slate-400 block mb-1">行业</label><input class="w-full bg-slate-100 border-none rounded-xl text-sm py-2 px-3" value="${r.ind}"/></div>
+            <div><label class="text-[11px] font-bold text-slate-400 block mb-1">备注</label><textarea class="w-full bg-slate-100 border-none rounded-xl text-sm py-2 px-3 resize-none" rows="2" placeholder="面试时间、联系人...">${r.notes||''}</textarea></div>
+            ${r.url?`<div><label class="text-[11px] font-bold text-slate-400 block mb-1">投递链接</label><a href="#" class="text-xs text-primary hover:underline flex items-center gap-1"><span class="material-symbols-outlined text-sm">open_in_new</span>飞书投递页面</a></div>`:''}
+            <div class="flex gap-3 pt-1"><button onclick="toast('演示：已保存')" class="flex-1 bg-primary text-white py-2 rounded-xl text-xs font-bold">保存</button><button onclick="toast('演示：已删除')" class="px-4 border-2 border-red-200 text-red-600 rounded-xl text-xs font-bold hover:bg-red-50">删除</button></div>
+          </div>
+          <div class="col-span-8 p-5 space-y-4">
+            <div class="flex gap-4 text-[10px] text-slate-400">${r.upd?`<span>状态更新于 ${r.upd}</span>`:''} ${r.pd?`<span>岗位发布 ${r.pd}</span>`:''}</div>
+            <div class="grid grid-cols-2 gap-5">
+              <div><h4 class="text-xs font-bold text-slate-400 uppercase mb-2">JD 原文</h4><div class="bg-slate-50 p-4 rounded-xl text-xs leading-relaxed max-h-[200px] overflow-y-auto no-scrollbar">${esc(r.jd)}</div></div>
+              <div><h4 class="text-xs font-bold text-slate-400 uppercase mb-2">发送邮件</h4>
+                <div class="bg-blue-50/50 p-4 rounded-xl text-xs leading-relaxed max-h-[200px] overflow-y-auto no-scrollbar border border-blue-100">
+                  ${r.em?`<div class="mb-1.5 pb-1.5 border-b border-blue-100 text-blue-400">收件人：${r.em}</div>`:''}
+                  ${r.sub?`<div class="mb-1.5 pb-1.5 border-b border-blue-100 text-blue-400">标题：${esc(r.sub)}</div>`:''}
+                  ${esc(r.body||(r.url?'网站投递，无邮件':'暂无'))}
+                </div>
+                <div class="mt-2 pt-2 border-t border-slate-100 space-y-1">
+                  <p class="text-[10px] font-bold text-slate-400 uppercase">附件</p>
+                  <div class="flex items-center gap-2 px-2 py-1 bg-blue-50 rounded-lg"><span class="material-symbols-outlined text-blue-600 text-sm">description</span><span class="text-[11px] text-blue-800 truncate max-w-[200px]">${r.sub||'XXX-简历'}.pdf</span></div>
+                  ${r.rpt?'<div class="flex items-center gap-2 px-2 py-1 bg-orange-50 rounded-lg"><span class="material-symbols-outlined text-orange-600 text-sm">lab_profile</span><span class="text-[11px] text-orange-800">XXX-行业研究报告.pdf</span></div>':''}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </td></tr>`).join('');
+
+  // Mobile
+  document.getElementById('bCards').innerHTML=f.map(r=>`
+    <div class="bg-white rounded-xl p-4 shadow-sm border" onclick="this.querySelector('.md').classList.toggle('hidden')">
+      <div class="flex items-center justify-between mb-2"><div class="flex items-center gap-2"><div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold text-xs">${r.cn[0]}</div><div><p class="font-semibold text-sm">${r.cn}</p><p class="text-xs text-slate-400">${r.jt}</p></div></div>${badge(r.st)}</div>
+      <div class="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-400"><span>${r.loc}</span><span>${r.ind}</span><span>${r.at}</span></div>
+      <div class="md hidden mt-3 pt-3 border-t space-y-2 animate-in">
+        ${r.notes?`<p class="text-xs text-slate-600">📝 ${r.notes}</p>`:''}
+        ${r.em?`<p class="text-[11px] text-slate-400">收件人：${r.em}</p>`:''}
+        ${r.jd?`<div class="bg-slate-50 p-3 rounded-lg text-[11px] leading-relaxed max-h-[150px] overflow-y-auto">${esc(r.jd)}</div>`:''}
+        ${r.body?`<div class="bg-blue-50 p-3 rounded-lg text-[11px] leading-relaxed max-h-[150px] overflow-y-auto">${esc(r.body)}</div>`:''}
+      </div>
+    </div>`).join('');
+}
+
+// ═══ TAB 3: ANALYTICS ═══
+function analytics(){
+  const s=ST,resp=(s.status_dist['已电联']||0)+(s.status_dist['约面试']||0)+(s.status_dist['面试中']||0)+(s.status_dist['offer']||0);
+  const rate=s.total?Math.round(resp/s.total*100)+'%':'—';
+  document.getElementById('aMetrics').innerHTML=[mc('总投递',s.total,'primary','100%'),mc('覆盖公司',s.companies,'slate-500','80%'),mc('有回应',resp,'green-600',resp/s.total*100+'%'),mc('回应率',rate,'primary',rate),mc('Offer',0,'green-600','0%'),mc('待跟进',s.followup,'#ba1a1a','25%',false,'投递超过7天且状态仍为"已投递"的记录，建议发跟进邮件或标记为"无回复"')].join('');
+
+  // Trend with cumulative
+  const d=s.daily,dd=s.daily_detail,days=Object.keys(d).sort(),mx=Math.max(...Object.values(d),1);
+  let cum=0;const cumD=days.map(k=>{cum+=d[k];return cum});const cmx=Math.max(...cumD,1);
+  document.getElementById('trend').innerHTML=days.map((k,i)=>`
+    <div class="flex-1 h-full flex flex-col items-center justify-end gap-2 group cursor-pointer" onmouseenter="showTip(event,'${k}',${d[k]},${cumD[i]})" onmouseleave="hideTip()" ontouchstart="showTip(event,'${k}',${d[k]},${cumD[i]})">
+      <div class="relative w-full"><div class="text-[10px] font-bold text-primary text-center opacity-0 group-hover:opacity-100 transition-opacity mb-1">${d[k]}</div>
+      <div class="w-full bg-primary/20 group-hover:bg-primary/50 rounded-t transition-colors min-h-[4px]" style="height:${d[k]/mx*180}px"></div></div>
+      <span class="text-[10px] text-slate-400">${k}</span></div>`).join('');
+
+  // Cumulative line
+  const cv=document.getElementById('cumLine'),tr=document.getElementById('trend');
+  if(cv&&days.length>1){const rc=tr.getBoundingClientRect();cv.width=rc.width;cv.height=rc.height;const c=cv.getContext('2d'),ch=cv.height-30,bw=cv.width/days.length;
+    c.clearRect(0,0,cv.width,cv.height);c.beginPath();c.strokeStyle='#f97316';c.lineWidth=2;c.setLineDash([6,3]);
+    days.forEach((k,i)=>{const x=bw*i+bw/2,y=ch-(cumD[i]/cmx*ch*.85);i===0?c.moveTo(x,y):c.lineTo(x,y)});c.stroke();
+    c.setLineDash([]);days.forEach((k,i)=>{const x=bw*i+bw/2,y=ch-(cumD[i]/cmx*ch*.85);c.beginPath();c.arc(x,y,3,0,Math.PI*2);c.fillStyle='#f97316';c.fill()});
+    c.font='bold 11px Inter';c.fillStyle='#f97316';c.fillText(cumD[cumD.length-1]+'',bw*(days.length-1)+bw/2+8,ch-(cumD[cumD.length-1]/cmx*ch*.85)+4);
+  }
+
+  // Ring
+  const sd=s.status_dist,tot=Object.values(sd).reduce((a,b)=>a+b,0)||1;
+  const col={已投递:'#3b82f6',约面试:'#f59e0b',面试中:'#f97316',offer:'#22c55e',拒绝:'#ef4444',已电联:'#6366f1',无回复:'#cbd5e1'};
+  let off=0;const C=2*Math.PI*40;let rr=`<circle cx="50" cy="50" r="40" fill="transparent" stroke="#e6eeff" stroke-width="12"/>`;
+  for(const[k,v]of Object.entries(sd)){const da=(v/tot)*C;rr+=`<circle cx="50" cy="50" r="40" fill="transparent" stroke="${col[k]||'#94a3b8'}" stroke-width="12" stroke-dasharray="${da} ${C}" stroke-dashoffset="${-off}"/>`;off+=da}
+  document.getElementById('ring').innerHTML=`<svg class="w-full h-full -rotate-90" viewBox="0 0 100 100">${rr}</svg><div class="absolute inset-0 flex flex-col items-center justify-center"><span class="text-3xl font-bold">${tot}</span><span class="text-[10px] text-slate-400 font-bold">TOTAL</span></div>`;
+  document.getElementById('legend').innerHTML=Object.entries(sd).map(([k,v])=>`<div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full" style="background:${col[k]||'#94a3b8'}"></div><span class="text-xs">${k} (${v})</span></div>`).join('');
+
+  // Bars
+  const bar=(id,data,color)=>{const m=Math.max(...Object.values(data),1);document.getElementById(id).innerHTML=Object.entries(data).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="mb-3"><div class="flex justify-between text-xs font-medium mb-1"><span>${k}</span><span class="text-slate-400">${v}</span></div><div class="h-1.5 bg-slate-100 rounded-full overflow-hidden"><div class="h-full ${color} rounded-full" style="width:${v/m*100}%"></div></div></div>`).join('')};
+  bar('typB',s.type_dist,'bg-primary');bar('locB',s.loc_dist,'bg-primary');bar('indB',s.industry_dist,'bg-indigo-500');
+}
+
+// Tooltip
+function showTip(e,day,cnt,cum){const t=document.getElementById('tip'),dd=ST.daily_detail;t.innerHTML=`<div class="font-bold mb-1">${day}（当日 ${cnt} 家 / 累计 ${cum} 家）</div><div class="text-slate-300">${(dd[day]||[]).join('、')}</div>`;t.classList.remove('hidden');const p=document.getElementById('trend').parentElement.getBoundingClientRect();t.style.left=Math.min(e.clientX-p.left+10,p.width-230)+'px';t.style.top=Math.max(e.clientY-p.top-80,0)+'px'}
+function hideTip(){document.getElementById('tip').classList.add('hidden')}
+
+// Search
+function doSearch(q){if(cur!=='board')return;q=q.toLowerCase();document.querySelectorAll('#bTbl tr:not(.row-detail)').forEach(tr=>tr.style.display=tr.textContent.toLowerCase().includes(q)?'':'none');document.querySelectorAll('#bCards>div').forEach(c=>c.style.display=c.textContent.toLowerCase().includes(q)?'':'none')}
+
+// Init
+go('new');
+</script>
+</body>
+</html>

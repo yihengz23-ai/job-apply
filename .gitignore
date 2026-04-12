@@ -1,0 +1,27 @@
+# Secrets
+.env
+credentials.json
+token.json
+
+# Personal data
+records.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
+
+# Cloudflare tunnel
+cloudflared
