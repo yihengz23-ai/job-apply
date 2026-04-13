@@ -191,7 +191,7 @@ def api_fetch_url():
             return jsonify({"error": "页面内容为空或无法抓取"}), 400
         # 判断是否有多个岗位（检测"岗位一""岗位二"或多个邮箱等信号）
         import re
-        multi_signals = re.findall(r'岗位[一二三四五六七八九十\d]|职位[一二三四五六七八九十\d]|[一二三四]、.*?(?:实习|岗位|招聘)', content)
+        multi_signals = re.findall(r'岗位[一二三四五六七八九十\d]|职位[一二三四五六七八九十\d]|方向[一二三四五六七八九十\d]|[一二三四]、.*?(?:实习|岗位|招聘|方向)', content)
         email_matches = re.findall(r'[\w.+-]+@[\w.-]+\.\w+', content)
         has_multi = len(multi_signals) >= 2 or len(set(email_matches)) >= 2
 
