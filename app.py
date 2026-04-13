@@ -268,6 +268,7 @@ def api_send():
                                      result.get("resume_filename", "YOUR_NAME-YOUR_UNIVERSITY-简历.pdf")),
             attach_report=result.get("attach_report", False),
             report_filename=result.get("report_filename", ""),
+            cc_email=data.get("cc_email", result.get("cc_email", "")),
         )
         edited = {**result,
                   "to_email": to_email,

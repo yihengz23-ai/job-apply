@@ -188,6 +188,10 @@ outline:'#727785','on-surface':'#0d1c2e',tertiary:'#9e4300',
             <span class="text-xs font-bold text-slate-400 w-12">收件人</span>
             <input id="emailTo" class="flex-1 text-sm bg-transparent border-none p-0 focus:ring-0 font-medium" placeholder="等待分析..."/>
           </div>
+          <div id="ccRow" class="hidden flex items-center gap-4 pb-3 border-b">
+            <span class="text-xs font-bold text-slate-400 w-12">抄送</span>
+            <input id="emailCc" class="flex-1 text-sm bg-transparent border-none p-0 focus:ring-0 font-medium" placeholder=""/>
+          </div>
           <div class="flex items-center gap-4 pb-3 border-b">
             <span class="text-xs font-bold text-slate-400 w-12">主题</span>
             <input id="emailSub" class="flex-1 text-sm bg-transparent border-none p-0 focus:ring-0 font-medium" placeholder="等待分析..."/>
@@ -243,7 +247,7 @@ outline:'#727785','on-surface':'#0d1c2e',tertiary:'#9e4300',
     <select id="filterStatus" onchange="loadBoard()" class="bg-slate-100 border-none rounded-xl text-sm pl-4 pr-10 py-2 focus:ring-2 focus:ring-primary/20 appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20fill%3D%22%23727785%22%20d%3D%22M7%2010l5%205%205-5z%22%2F%3E%3C%2Fsvg%3E')] bg-no-repeat bg-[right_0.5rem_center]">
       <option value="">所有状态</option>
       <option>已投递</option><option>已电联</option>
-      <option>约面试</option><option>面试中</option><option>offer</option><option>拒绝</option><option>无回复</option>
+      <option>面试中</option><option>offer</option><option>拒绝</option><option>无回复</option>
     </select>
     <select id="filterType" onchange="loadBoard()" class="bg-slate-100 border-none rounded-xl text-sm pl-4 pr-10 py-2 focus:ring-2 focus:ring-primary/20 appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20fill%3D%22%23727785%22%20d%3D%22M7%2010l5%205%205-5z%22%2F%3E%3C%2Fsvg%3E')] bg-no-repeat bg-[right_0.5rem_center]">
       <option value="">公司性质</option>
@@ -377,7 +381,7 @@ function showToast(msg, ms=4000) {
 function statusBadge(s) {
   const map = {
     '已投递':'bg-blue-100 text-blue-700',
-    '已电联':'bg-indigo-100 text-indigo-700','约面试':'bg-orange-100 text-orange-700',
+    '已电联':'bg-indigo-100 text-indigo-700',
     '面试中':'bg-amber-100 text-amber-800','offer':'bg-green-100 text-green-700',
     '拒绝':'bg-red-100 text-red-700','无回复':'bg-slate-100 text-slate-500',
   };
@@ -480,6 +484,16 @@ async function analyzeJD() {
     // 手机上自动滚到结果
     setTimeout(() => document.getElementById('infoCards').scrollIntoView({behavior:'smooth', block:'center'}), 100);
     document.getElementById('emailTo').value = data.result.to_email || '';
+    // CC
+    const cc = data.result.cc_email || '';
+    if (cc) {
+      document.getElementById('emailCc').value = cc;
+      document.getElementById('ccRow').classList.remove('hidden');
+      document.getElementById('ccRow').classList.add('flex');
+    } else {
+      document.getElementById('ccRow').classList.add('hidden');
+      document.getElementById('ccRow').classList.remove('flex');
+    }
     document.getElementById('emailSub').value = data.result.email_subject || '';
     document.getElementById('emailBody').value = data.result.email_body || '';
     document.getElementById('sendBtn').disabled = false;
@@ -586,6 +600,7 @@ async function sendEmail() {
         body: document.getElementById('emailBody').value,
         resume_filename: analysisResult.resume_filename,
         attach_resume: document.getElementById('chkResume').checked,
+        cc_email: document.getElementById('emailCc')?.value || '',
       })});
     showToast('发送成功！');
     btn.innerHTML = '<span class="material-symbols-outlined">check_circle</span> 已发送';
@@ -665,7 +680,7 @@ async function loadBoard() {
               <div>
                 <label class="text-[11px] font-bold text-slate-400 block mb-1">状态</label>
                 <select id="edit-status-${r.id}" class="w-full bg-slate-100 border-none rounded-xl text-sm py-2 px-3">
-                  ${['已投递','已电联','约面试','面试中','offer','拒绝','无回复'].map(s => `<option ${s===r.status?'selected':''}>${s}</option>`).join('')}
+                  ${['已投递','已电联','面试中','offer','拒绝','无回复'].map(s => `<option ${s===r.status?'selected':''}>${s}</option>`).join('')}
                 </select>
               </div>
               <div>
@@ -758,7 +773,7 @@ async function loadBoard() {
           <div>
             <label class="text-[10px] font-bold text-slate-400 block mb-1">状态</label>
             <select id="mob-status-${r.id}" class="w-full bg-slate-50 border-none rounded-lg text-xs py-1.5 px-2">
-              ${['已投递','已电联','约面试','面试中','offer','拒绝','无回复'].map(s=>`<option ${s===r.status?'selected':''}>${s}</option>`).join('')}
+              ${['已投递','已电联','面试中','offer','拒绝','无回复'].map(s=>`<option ${s===r.status?'selected':''}>${s}</option>`).join('')}
             </select>
           </div>
           <div>
@@ -847,7 +862,7 @@ async function loadAnalytics() {
   const stats = await safeFetch('/api/stats');
 
   // Metrics
-  const responded = Object.entries(stats.status_dist||{}).filter(([k])=>['已电联','约面试','面试中','offer'].includes(k)).reduce((a,[,v])=>a+v,0);
+  const responded = Object.entries(stats.status_dist||{}).filter(([k])=>['已电联','面试中','offer'].includes(k)).reduce((a,[,v])=>a+v,0);
   const responseRate = stats.total ? Math.round(responded/stats.total*100)+'%' : '—';
   const offerCount = (stats.status_dist||{})['offer'] || 0;
   document.getElementById('analyticsMetrics').innerHTML = [
@@ -931,7 +946,7 @@ async function loadAnalytics() {
   // Status ring (SVG donut)
   const sd = stats.status_dist || {};
   const total = Object.values(sd).reduce((a,b)=>a+b, 0) || 1;
-  const colors = {'已投递':'#3b82f6','约面试':'#f59e0b','面试中':'#f97316','offer':'#22c55e','拒绝':'#ef4444','已电联':'#6366f1','无回复':'#cbd5e1'};
+  const colors = {'已投递':'#3b82f6','面试中':'#f97316','offer':'#22c55e','拒绝':'#ef4444','已电联':'#6366f1','无回复':'#cbd5e1'};
   let offset = 0;
   const C = 2 * Math.PI * 40;
   let rings = `<circle cx="50" cy="50" r="40" fill="transparent" stroke="#e6eeff" stroke-width="12"/>`;

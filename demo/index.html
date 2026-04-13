@@ -148,7 +148,7 @@ body{font-family:'Inter','PingFang SC',sans-serif;-webkit-font-smoothing:antiali
 <div id="tab-board" class="tab-content">
   <section id="bMetrics" class="grid grid-cols-3 gap-3 md:gap-5 mb-5"></section>
   <section class="mb-5 flex gap-3 items-center flex-wrap">
-    <select id="fSt" onchange="board()" class="bg-slate-100 border-none rounded-xl text-sm pl-4 pr-10 py-2 sel"><option value="">所有状态</option><option>已投递</option><option>已电联</option><option>约面试</option><option>面试中</option><option>offer</option><option>拒绝</option></select>
+    <select id="fSt" onchange="board()" class="bg-slate-100 border-none rounded-xl text-sm pl-4 pr-10 py-2 sel"><option value="">所有状态</option><option>已投递</option><option>已电联</option><option>面试中</option><option>面试中</option><option>offer</option><option>拒绝</option></select>
     <select id="fTy" onchange="board()" class="bg-slate-100 border-none rounded-xl text-sm pl-4 pr-10 py-2 sel"><option value="">公司性质</option><option>PE</option><option>VC</option><option>FA/投行</option></select>
     <select id="fLo" onchange="board()" class="bg-slate-100 border-none rounded-xl text-sm pl-4 pr-10 py-2 sel"><option value="">地点</option><option>上海</option><option>北京</option><option>深圳</option></select>
     <div class="ml-auto text-xs text-slate-400 font-medium" id="cnt"></div>
@@ -219,7 +219,7 @@ const ST={total:10,companies:10,week_new:9,followup:0,
 let cur='new';
 function go(t){cur=t;document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));document.getElementById('tab-'+t).classList.add('active');document.querySelectorAll('.nav').forEach(e=>{e.className=e.dataset.t===t?'nav flex items-center gap-3 px-4 py-2.5 cursor-pointer rounded-xl text-slate-900 font-medium border-l-4 border-blue-600 bg-slate-200/30':'nav flex items-center gap-3 px-4 py-2.5 cursor-pointer rounded-xl text-slate-500 hover:text-slate-700 hover:bg-slate-200/50 transition-colors'});document.querySelectorAll('.mt').forEach(e=>{e.classList.toggle('text-primary',e.dataset.t===t);e.classList.toggle('text-slate-500',e.dataset.t!==t)});document.getElementById('title').textContent={new:'新投递 & AI 邮件生成',board:'投递追踪看板',analytics:'数据分析概览'}[t];if(t==='board')board();if(t==='analytics')analytics()}
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.remove('-translate-y-20','opacity-0');setTimeout(()=>t.classList.add('-translate-y-20','opacity-0'),3500)}
-function badge(s){const m={已投递:'bg-blue-100 text-blue-700',已电联:'bg-indigo-100 text-indigo-700',约面试:'bg-orange-100 text-orange-700',面试中:'bg-amber-100 text-amber-800',offer:'bg-green-100 text-green-700',拒绝:'bg-red-100 text-red-700',无回复:'bg-slate-100 text-slate-500'};return`<span class="px-3 py-1 rounded-full text-[11px] font-bold whitespace-nowrap ${m[s]||'bg-slate-100'}">${s}</span>`}
+function badge(s){const m={已投递:'bg-blue-100 text-blue-700',已电联:'bg-indigo-100 text-indigo-700',面试中:'bg-orange-100 text-orange-700',面试中:'bg-amber-100 text-amber-800',offer:'bg-green-100 text-green-700',拒绝:'bg-red-100 text-red-700',无回复:'bg-slate-100 text-slate-500'};return`<span class="px-3 py-1 rounded-full text-[11px] font-bold whitespace-nowrap ${m[s]||'bg-slate-100'}">${s}</span>`}
 function esc(t){if(!t)return'暂无';return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\\n/g,'<br/>').replace(/\n/g,'<br/>')}
 function mc(l,v,c,w='0%',hl=false,tip=''){const tc=c.startsWith('#')?`style="color:${c}"`:`class="text-${c}"`;const ta=tip?`title="${tip}" style="cursor:help"`:"";
   return`<div class="bg-white p-5 rounded-2xl flex flex-col justify-between h-28 hover:shadow-sm transition-all" ${ta}><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">${l}</p><h3 class="text-3xl font-bold" ${tc}>${v}</h3><div class="h-1 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-primary rounded-full" style="width:${w}"></div></div></div>`}
@@ -381,7 +381,7 @@ function board(){
         <div class="grid grid-cols-12">
           <div class="col-span-4 p-5 border-r bg-slate-50/50 space-y-3">
             <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">编辑投递信息</h4>
-            <div><label class="text-[11px] font-bold text-slate-400 block mb-1">状态</label><select class="w-full bg-slate-100 border-none rounded-xl text-sm py-2 px-3">${['已投递','已电联','约面试','面试中','offer','拒绝','无回复'].map(s=>`<option ${s===r.st?'selected':''}>${s}</option>`).join('')}</select></div>
+            <div><label class="text-[11px] font-bold text-slate-400 block mb-1">状态</label><select class="w-full bg-slate-100 border-none rounded-xl text-sm py-2 px-3">${['已投递','已电联','面试中','offer','拒绝','无回复'].map(s=>`<option ${s===r.st?'selected':''}>${s}</option>`).join('')}</select></div>
             <div><label class="text-[11px] font-bold text-slate-400 block mb-1">来源</label><input class="w-full bg-slate-100 border-none rounded-xl text-sm py-2 px-3" value="${r.src||''}"/></div>
             <div><label class="text-[11px] font-bold text-slate-400 block mb-1">行业</label><input class="w-full bg-slate-100 border-none rounded-xl text-sm py-2 px-3" value="${r.ind}"/></div>
             <div><label class="text-[11px] font-bold text-slate-400 block mb-1">备注</label><textarea class="w-full bg-slate-100 border-none rounded-xl text-sm py-2 px-3 resize-none" rows="2" placeholder="面试时间、联系人...">${r.notes||''}</textarea></div>
@@ -426,7 +426,7 @@ function board(){
 
 // ═══ TAB 3: ANALYTICS ═══
 function analytics(){
-  const s=ST,resp=(s.status_dist['已电联']||0)+(s.status_dist['约面试']||0)+(s.status_dist['面试中']||0)+(s.status_dist['offer']||0);
+  const s=ST,resp=(s.status_dist['已电联']||0)+(s.status_dist['面试中']||0)+(s.status_dist['面试中']||0)+(s.status_dist['offer']||0);
   const rate=s.total?Math.round(resp/s.total*100)+'%':'—';
   document.getElementById('aMetrics').innerHTML=[mc('总投递',s.total,'primary','100%'),mc('覆盖公司',s.companies,'slate-500','80%'),mc('有回应',resp,'green-600',resp/s.total*100+'%'),mc('回应率',rate,'primary',rate),mc('Offer',0,'green-600','0%'),mc('待跟进',s.followup,'#ba1a1a','25%',false,'投递超过7天且状态仍为"已投递"的记录，建议发跟进邮件或标记为"无回复"')].join('');
 
@@ -450,7 +450,7 @@ function analytics(){
 
   // Ring
   const sd=s.status_dist,tot=Object.values(sd).reduce((a,b)=>a+b,0)||1;
-  const col={已投递:'#3b82f6',约面试:'#f59e0b',面试中:'#f97316',offer:'#22c55e',拒绝:'#ef4444',已电联:'#6366f1',无回复:'#cbd5e1'};
+  const col={已投递:'#3b82f6',面试中:'#f59e0b',面试中:'#f97316',offer:'#22c55e',拒绝:'#ef4444',已电联:'#6366f1',无回复:'#cbd5e1'};
   let off=0;const C=2*Math.PI*40;let rr=`<circle cx="50" cy="50" r="40" fill="transparent" stroke="#e6eeff" stroke-width="12"/>`;
   for(const[k,v]of Object.entries(sd)){const da=(v/tot)*C;rr+=`<circle cx="50" cy="50" r="40" fill="transparent" stroke="${col[k]||'#94a3b8'}" stroke-width="12" stroke-dasharray="${da} ${C}" stroke-dashoffset="${-off}"/>`;off+=da}
   document.getElementById('ring').innerHTML=`<svg class="w-full h-full -rotate-90" viewBox="0 0 100 100">${rr}</svg><div class="absolute inset-0 flex flex-col items-center justify-center"><span class="text-3xl font-bold">${tot}</span><span class="text-[10px] text-slate-400 font-bold">TOTAL</span></div>`;
