@@ -524,7 +524,7 @@ async function analyzeJD() {
     document.getElementById('chkResume').checked = true;
     document.getElementById('attachReport').classList.remove('hidden');
     document.getElementById('attachReport').style.display = 'flex';
-    document.getElementById('attachReportName').textContent = data.result.report_filename || 'YOUR_NAME-YOUR_RESEARCH_REPORT.pdf';
+    document.getElementById('attachReportName').textContent = data.result.report_filename || 'YOUR_NAME-YOUR_RESEARCH_SUBJECT研究报告.pdf';
     document.getElementById('chkReport').checked = !!data.result.attach_report;
     if (data.duplicate) {
       document.getElementById('dupText').textContent = `该公司（${data.duplicate.company}）已于 ${data.duplicate.sent_at} 投递过`;
@@ -740,7 +740,7 @@ async function loadBoard() {
                     ${r.attach_report === true || r.attach_report === '是' ? `
                     <div class="flex items-center gap-2 px-2.5 py-1.5 bg-orange-50 rounded-lg">
                       <span class="material-symbols-outlined text-orange-600 text-sm">lab_profile</span>
-                      <span class="text-[11px] text-orange-800">YOUR_NAME-YOUR_RESEARCH_REPORT.pdf</span>
+                      <span class="text-[11px] text-orange-800">YOUR_NAME-YOUR_RESEARCH_SUBJECT研究报告.pdf</span>
                     </div>` : ''}
                   </div>
                 </div>
@@ -1110,9 +1110,13 @@ document.getElementById('globalSearch').addEventListener('input', function(e) {
     tr.style.display = (!q || matched.has(rid)) ? '' : 'none';
   });
 
-  // 手机卡片
+  // 手机卡片：也用数据过滤（确保邮箱等隐藏字段可搜到）
   document.querySelectorAll('#boardCards > div').forEach(card => {
-    card.style.display = (!q || card.textContent.toLowerCase().includes(q)) ? '' : 'none';
+    const onclick = card.getAttribute('onclick') || '';
+    const idMatch = onclick.match(/toggleMobileDetail\('mob-([^']+)'\)/);
+    if (!idMatch) { card.style.display = ''; return; }
+    const rid = idMatch[1];
+    card.style.display = (!q || matched.has(rid)) ? '' : 'none';
   });
 });
 
