@@ -493,6 +493,7 @@ async function analyzeJD() {
     } else {
       document.getElementById('ccRow').classList.add('hidden');
       document.getElementById('ccRow').classList.remove('flex');
+      document.getElementById('emailCc').value = '';
     }
     document.getElementById('emailSub').value = data.result.email_subject || '';
     document.getElementById('emailBody').value = data.result.email_body || '';
@@ -544,6 +545,8 @@ function clearJD() {
   document.getElementById('jdInput').value = '';
   document.getElementById('urlInput').value = '';
   document.getElementById('emailTo').value = '';
+  document.getElementById('emailCc').value = '';
+  document.getElementById('ccRow').classList.add('hidden');
   document.getElementById('emailSub').value = '';
   document.getElementById('emailBody').value = '';
   document.getElementById('infoCards').classList.add('hidden');
@@ -600,7 +603,7 @@ async function sendEmail() {
         body: document.getElementById('emailBody').value,
         resume_filename: analysisResult.resume_filename,
         attach_resume: document.getElementById('chkResume').checked,
-        cc_email: document.getElementById('emailCc')?.value || '',
+        cc_email: document.getElementById('ccRow')?.classList.contains('hidden') ? '' : (document.getElementById('emailCc')?.value || ''),
       })});
     showToast('发送成功！');
     btn.innerHTML = '<span class="material-symbols-outlined">check_circle</span> 已发送';
