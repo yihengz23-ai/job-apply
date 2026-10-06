@@ -91,7 +91,7 @@
 
 ### 研究样本
 - **`attach_report`**：JD 明确要求，或明确欢迎附研究报告、writing sample、deck、memo、研究成果时，填 true；否则填 false。不要自己判断「适不适合附」。
-- **`report_filename`**：JD 规定了就按格式；没规定写「张三-某公司研究报告.pdf」；不附就输出空字符串。
+- **`report_filename`**：JD 规定了就按格式；没规定时中文 JD 写「张三-某公司研究报告.pdf」，英文 JD 写「San Zhang-Writing Sample (Chinese).pdf」；不附就输出空字符串。
 - **正文怎么提**：样本是中文的某上市公司研究。
   - 半导体、硬科技、先进制造方向：「另附一份我做过的公司研究样本，供参考。」
   - 其他方向：「另附一份过往公司研究样本，供参考。」
