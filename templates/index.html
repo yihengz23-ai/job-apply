@@ -3,20 +3,21 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>求职管理系统</title>
+<title>求职投递面板</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <style>
 body{font-family:'Inter','PingFang SC',sans-serif}
-.material-symbols-outlined{font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24;vertical-align:middle}
+.material-symbols-outlined{font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24;vertical-align:middle;font-size:1.15em}
 .tab-content{display:none}.tab-content.active{display:block}
 .row-detail{display:none}.row-detail.open{display:table-row}
 .no-scrollbar::-webkit-scrollbar{display:none}
-.glass{backdrop-filter:blur(12px);background:rgba(248,249,255,.8)}
-@keyframes fade-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-.animate-in{animation:fade-in .3s ease}
-/* 移动端：隐藏侧边栏，显示底部导航 */
+@keyframes fade-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.animate-in{animation:fade-in .25s ease}
+.field{width:100%;background:#f1f5f9;border:none;border-radius:.75rem;font-size:.875rem;padding:.5rem .75rem}
+.field:focus{outline:none;box-shadow:0 0 0 2px rgba(0,91,191,.2)}
+.chip{display:inline-flex;align-items:center;gap:.25rem;padding:.125rem .5rem;border-radius:9999px;font-size:11px;font-weight:600;white-space:nowrap}
 @media(max-width:767px){
   #sidebar{display:none!important}
   #topbar{left:0!important;width:100%!important}
@@ -25,1128 +26,791 @@ body{font-family:'Inter','PingFang SC',sans-serif}
 }
 </style>
 <script>
-tailwind.config={theme:{extend:{colors:{
-primary:'#005bbf','primary-container':'#1a73e8',surface:'#f8f9ff',
-'surface-low':'#eff4ff','surface-high':'#dce9ff','surface-container':'#e6eeff',
-outline:'#727785','on-surface':'#0d1c2e',tertiary:'#9e4300',
-'tertiary-fixed':'#ffdbcb','error':'#ba1a1a','error-container':'#ffdad6',
-},fontFamily:{sans:['Inter','PingFang SC','sans-serif']}}}}
+tailwind.config={theme:{extend:{colors:{primary:'#005bbf'},fontFamily:{sans:['Inter','PingFang SC','sans-serif']}}}}
 </script>
 </head>
 <body class="bg-[#f8f9ff] text-[#0d1c2e]">
 
 <!-- ═══ Sidebar ═══ -->
-<aside id="sidebar" class="fixed left-0 top-0 h-screen w-64 bg-slate-50 flex flex-col py-6 z-50">
-  <div class="px-6 mb-10">
+<aside id="sidebar" class="fixed left-0 top-0 h-screen w-64 bg-slate-50 flex flex-col py-6 z-50 border-r border-slate-100">
+  <div class="px-6 mb-8">
     <div class="text-lg font-semibold flex items-center gap-2">
-      <span class="material-symbols-outlined text-primary" style="font-variation-settings:'FILL' 1">architecture</span>
-      求职管理系统
+      <span class="material-symbols-outlined text-primary" style="font-variation-settings:'FILL' 1">send</span>求职投递面板
     </div>
-    <div class="text-xs text-slate-400 mt-1 uppercase tracking-widest">The Editorial Architect</div>
+    <div id="campaignLabel" class="text-xs text-slate-400 mt-1"></div>
   </div>
   <nav class="flex-1 space-y-1 px-3">
-    <a onclick="switchTab('new')" class="nav-link flex items-center gap-3 px-4 py-2 cursor-pointer transition-colors" data-tab="new">
-      <span class="material-symbols-outlined">add_box</span><span>新投递</span>
-    </a>
-    <a onclick="switchTab('board')" class="nav-link flex items-center gap-3 px-4 py-2 cursor-pointer transition-colors" data-tab="board">
-      <span class="material-symbols-outlined">dashboard</span><span>投递看板</span>
-    </a>
-    <a onclick="switchTab('analytics')" class="nav-link flex items-center gap-3 px-4 py-2 cursor-pointer transition-colors" data-tab="analytics">
-      <span class="material-symbols-outlined">analytics</span><span>数据分析</span>
-    </a>
+    <a class="nav-link flex items-center gap-3 px-4 py-2 cursor-pointer rounded-lg" data-tab="new"><span class="material-symbols-outlined">add_box</span><span>新投递</span></a>
+    <a class="nav-link flex items-center gap-3 px-4 py-2 cursor-pointer rounded-lg" data-tab="board"><span class="material-symbols-outlined">dashboard</span><span>投递看板</span></a>
+    <a class="nav-link flex items-center gap-3 px-4 py-2 cursor-pointer rounded-lg" data-tab="analytics"><span class="material-symbols-outlined">analytics</span><span>数据分析</span></a>
   </nav>
-  <div class="px-4 mt-auto space-y-3">
-    <button onclick="gmailSync()" class="w-full py-2 bg-primary text-white rounded-xl text-sm font-medium flex items-center justify-center gap-2 hover:opacity-90">
-      <span class="material-symbols-outlined text-sm">sync</span>Gmail 全量同步
-    </button>
-    <div class="mt-4 pt-4 border-t border-slate-200 flex items-center gap-3">
-      <span class="material-symbols-outlined text-2xl text-slate-400">account_circle</span>
-      <span class="text-sm font-medium">YOUR_NAME</span>
-    </div>
-    <!-- 公网链接 -->
-    <div id="tunnelInfo" class="hidden mt-3 p-2 bg-blue-50 rounded-lg">
-      <p class="text-[10px] text-blue-500 font-bold mb-1">手机访问链接</p>
-      <a id="tunnelUrl" href="#" target="_blank" class="text-[11px] text-blue-700 hover:underline break-all"></a>
-      <button onclick="navigator.clipboard.writeText(document.getElementById('tunnelUrl').href);showToast('链接已复制')" class="mt-1 text-[10px] text-blue-400 hover:text-blue-600 flex items-center gap-0.5">
-        <span class="material-symbols-outlined text-xs">content_copy</span>复制
-      </button>
+  <div class="px-4 mt-auto space-y-3 text-xs">
+    <div id="sysStatus" class="space-y-1.5 text-slate-500"></div>
+    <div id="tunnelInfo" class="hidden p-2 bg-blue-50 rounded-lg">
+      <p class="text-[10px] text-blue-500 font-bold mb-1">手机访问链接（含访问密钥，别外传）</p>
+      <a id="tunnelUrl" href="#" target="_blank" rel="noopener" class="text-[11px] text-blue-700 hover:underline break-all"></a>
+      <button id="copyTunnel" class="mt-1 text-[10px] text-blue-400 hover:text-blue-600 flex items-center gap-0.5"><span class="material-symbols-outlined text-xs">content_copy</span>复制</button>
     </div>
   </div>
 </aside>
 
 <!-- ═══ Top Bar ═══ -->
 <header id="topbar" class="fixed top-0 right-0 w-[calc(100%-16rem)] h-16 bg-white/80 backdrop-blur-md z-40 flex justify-between items-center px-4 md:px-8 border-b border-slate-100">
-  <h1 id="pageTitle" class="text-xl font-bold tracking-tight">新投递 & AI 邮件生成</h1>
-  <div class="flex items-center gap-4">
-    <div class="relative">
-      <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
-      <input id="globalSearch" class="pl-10 pr-4 py-1.5 bg-slate-100 border-none rounded-full text-sm w-64 focus:ring-2 focus:ring-primary/20" placeholder="搜索公司或职位..."/>
-    </div>
-  </div>
+  <h1 id="pageTitle" class="text-xl font-bold tracking-tight">新投递</h1>
+  <div id="topStatus" class="text-xs text-slate-400"></div>
 </header>
 
-<!-- ═══ Main Content ═══ -->
 <main id="mainContent" class="ml-64 pt-20 pb-12 px-4 md:px-8 min-h-screen">
-<div class="max-w-[1400px] mx-auto">
+<div class="max-w-[1440px] mx-auto">
 
 <!-- ─── Tab 1: 新投递 ─── -->
 <div id="tab-new" class="tab-content active animate-in">
-  <!-- Warning Banner (hidden by default) -->
-  <div id="dupWarning" class="hidden mb-6 p-4 bg-red-50 rounded-2xl flex items-center gap-4 border border-red-200">
-    <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-600">
-      <span class="material-symbols-outlined">warning</span>
-    </div>
-    <div class="flex-1">
-      <p class="text-red-800 font-semibold text-sm">重复投递风险提示</p>
-      <p id="dupText" class="text-red-600 text-xs mt-0.5"></p>
-    </div>
-    <button onclick="this.parentElement.classList.add('hidden')" class="text-xs font-bold text-red-600 hover:underline px-4">忽略</button>
-  </div>
-
-  <div class="grid grid-cols-12 gap-8">
-    <!-- Left: URL + JD Input -->
-    <div class="col-span-12 md:col-span-7 space-y-6">
-      <!-- URL Input -->
+  <div class="grid grid-cols-12 gap-6">
+    <div class="col-span-12 lg:col-span-7 space-y-5">
+      <!-- 链接 -->
       <section class="bg-white rounded-2xl p-5 border shadow-sm">
-        <h2 class="text-sm font-bold flex items-center gap-2 mb-3">
-          <span class="material-symbols-outlined text-primary text-sm">link</span>链接投递（微信公众号 / 网页）
-        </h2>
+        <h2 class="text-sm font-bold flex items-center gap-2 mb-3"><span class="material-symbols-outlined text-primary">link</span>链接抓取（公众号 / 网页）</h2>
         <div class="flex gap-3">
-          <input id="urlInput" class="flex-1 bg-slate-50 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20" placeholder="粘贴招聘链接，支持微信公众号文章..."/>
-          <button onclick="fetchURL()" id="fetchBtn" class="px-5 py-2.5 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-colors flex items-center gap-2">
-            <span class="material-symbols-outlined text-sm">download</span>抓取
-          </button>
+          <input id="urlInput" class="field flex-1" placeholder="粘贴招聘链接，公众号文章也行"/>
+          <button id="fetchBtn" class="px-5 py-2 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 flex items-center gap-1.5 whitespace-nowrap"><span class="material-symbols-outlined">download</span>抓取</button>
         </div>
-        <!-- Job Selection (hidden until multiple jobs found) -->
-        <div id="jobSelection" class="hidden mt-3 animate-in">
-          <p class="text-xs text-slate-500 mb-2">检测到多个岗位，请选择：</p>
-          <select id="jobSelect" onchange="selectJob()" class="w-full bg-slate-50 border-none rounded-xl text-sm px-4 py-2.5 focus:ring-2 focus:ring-primary/20"></select>
-        </div>
+        <div id="fetchInfo" class="hidden mt-3 text-xs text-slate-500"></div>
+        <div id="jobPicker" class="hidden mt-3 space-y-2"></div>
       </section>
-      <!-- JD Text Input -->
-      <section class="bg-slate-100/50 rounded-2xl p-6 flex flex-col min-h-[200px] md:min-h-[340px]">
+
+      <!-- JD -->
+      <section class="bg-slate-100/60 rounded-2xl p-5">
         <div class="flex items-center justify-between mb-3">
-          <h2 class="text-sm font-bold flex items-center gap-2">
-            <span class="material-symbols-outlined text-primary text-sm">description</span>JD 文本
-          </h2>
-          <span class="text-[9px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-bold uppercase">Claude Sonnet</span>
+          <h2 class="text-sm font-bold flex items-center gap-2"><span class="material-symbols-outlined text-primary">description</span>JD 原文</h2>
+          <span id="modelBadge" class="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-bold"></span>
         </div>
-        <textarea id="jdInput" class="flex-1 bg-white border-none rounded-xl p-5 text-sm leading-relaxed resize-none focus:ring-2 focus:ring-primary/20 shadow-sm" placeholder="粘贴 JD 文本，或通过上方链接自动抓取..."></textarea>
+        <textarea id="jdInput" class="w-full bg-white border-none rounded-xl p-4 text-sm leading-relaxed min-h-[220px] md:min-h-[300px] focus:ring-2 focus:ring-primary/20 shadow-sm" placeholder="粘贴 JD 全文，或用上面的链接自动抓取…"></textarea>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+          <label class="text-[11px] font-bold text-slate-500">招聘信息来源
+            <input id="sourceInput" class="field mt-1" placeholder="如：Case Mock（公众号）"/></label>
+          <label class="text-[11px] font-bold text-slate-500">岗位类型
+            <select id="posHint" class="field mt-1"><option value="">自动识别</option></select></label>
+          <label class="text-[11px] font-bold text-slate-500">简历版本
+            <select id="resumeHint" class="field mt-1"><option value="">自动（默认双语）</option></select></label>
+          <label class="text-[11px] font-bold text-slate-500">目标岗位（多岗位文章）
+            <input id="targetJob" class="field mt-1" placeholder="单岗位不用填"/></label>
+        </div>
+        <label class="block text-[11px] font-bold text-slate-500 mt-3">给 AI 的补充要求（可选，重新生成时也用这个）
+          <input id="extraInput" class="field mt-1" placeholder="如：重点写某段研究经历 / 再短一点 / 别提某段经历"/></label>
         <div class="mt-4 flex gap-3">
-          <button onclick="analyzeJD()" id="analyzeBtn" class="flex-1 py-3 bg-primary text-white rounded-xl font-bold text-sm hover:shadow-xl transition-all flex items-center justify-center gap-2">
-            <span class="material-symbols-outlined">psychology</span>分析 JD 并预览
-          </button>
-          <button onclick="clearJD()" class="px-4 bg-slate-200 rounded-xl hover:bg-slate-300 transition-colors flex items-center gap-1 text-sm text-slate-600">
-            <span class="material-symbols-outlined text-base">delete</span>清空
-          </button>
+          <button id="analyzeBtn" class="flex-1 py-3 bg-primary text-white rounded-xl font-bold text-sm hover:shadow-lg flex items-center justify-center gap-2"><span class="material-symbols-outlined">psychology</span>分析 JD 并写邮件</button>
+          <button id="clearBtn" class="px-4 bg-slate-200 rounded-xl hover:bg-slate-300 text-sm text-slate-600 flex items-center gap-1"><span class="material-symbols-outlined">delete</span>清空</button>
         </div>
         <div id="analyzeStatus" class="hidden mt-3 p-3 rounded-xl text-sm"></div>
       </section>
-      <!-- Company Info Cards (hidden until analysis) -->
-      <section id="infoCards" class="hidden grid grid-cols-3 md:grid-cols-6 gap-3 animate-in">
-        <div class="bg-white p-4 rounded-2xl shadow-sm border flex flex-col gap-1">
-          <span class="text-[10px] text-slate-400 font-bold uppercase">公司名</span>
-          <span id="card-company" class="text-sm font-bold truncate">—</span>
-        </div>
-        <div class="bg-white p-4 rounded-2xl shadow-sm border flex flex-col gap-1">
-          <span class="text-[10px] text-slate-400 font-bold uppercase">岗位</span>
-          <span id="card-job" class="text-sm font-bold truncate">—</span>
-        </div>
-        <div class="bg-white p-4 rounded-2xl shadow-sm border flex flex-col gap-1">
-          <span class="text-[10px] text-slate-400 font-bold uppercase">地点</span>
-          <span id="card-loc" class="text-sm font-bold truncate">—</span>
-        </div>
-        <div class="bg-white p-4 rounded-2xl shadow-sm border flex flex-col gap-1">
-          <span class="text-[10px] text-slate-400 font-bold uppercase">性质</span>
-          <span id="card-type" class="text-sm font-bold truncate">—</span>
-        </div>
-        <div class="bg-indigo-50 p-4 rounded-2xl shadow-sm border border-indigo-200 flex flex-col gap-1">
-          <span class="text-[10px] text-indigo-600 font-bold uppercase">行业</span>
-          <span id="card-industry" class="text-sm font-bold text-indigo-700 truncate">—</span>
-        </div>
-        <div id="card-report" class="bg-orange-50 p-4 rounded-2xl shadow-sm border border-orange-200 flex flex-col gap-1">
-          <span class="text-[10px] text-orange-600 font-bold uppercase">附研究报告</span>
-          <span id="card-report-val" class="text-sm font-bold text-orange-700">—</span>
-        </div>
+
+      <!-- 信息卡 -->
+      <section id="infoCards" class="hidden grid grid-cols-2 md:grid-cols-4 gap-3 animate-in"></section>
+      <!-- JD 要求 -->
+      <section id="rulesCard" class="hidden bg-white rounded-2xl p-5 border shadow-sm animate-in">
+        <h3 class="text-sm font-bold mb-3 flex items-center gap-2"><span class="material-symbols-outlined text-amber-600">rule</span>JD 的要求（AI 从原文提取，用来对照邮件）</h3>
+        <div id="rulesBody" class="text-sm space-y-2"></div>
+      </section>
+      <!-- 检查 -->
+      <section id="issuesCard" class="hidden bg-white rounded-2xl p-5 border shadow-sm animate-in">
+        <h3 class="text-sm font-bold mb-3 flex items-center gap-2"><span class="material-symbols-outlined text-red-600">fact_check</span>发信前检查 <span id="issuesSummary" class="text-xs font-normal text-slate-400"></span></h3>
+        <div id="issuesBody" class="space-y-1.5 text-sm"></div>
       </section>
     </div>
-    <!-- Right: Email Preview -->
-    <div class="col-span-12 md:col-span-5">
-      <section id="emailPreview" class="bg-white rounded-2xl overflow-hidden flex flex-col shadow-xl border min-h-0 md:min-h-[520px]">
-        <div class="bg-slate-900 px-6 py-4 flex items-center justify-between">
-          <h3 class="text-white text-sm font-medium flex items-center gap-2">
-            <span class="material-symbols-outlined text-sm">mail</span>邮件编辑
-          </h3>
-          <div class="flex gap-1.5">
-            <div class="w-2.5 h-2.5 rounded-full bg-red-400/30"></div>
-            <div class="w-2.5 h-2.5 rounded-full bg-yellow-400/30"></div>
-            <div class="w-2.5 h-2.5 rounded-full bg-green-400/30"></div>
+
+    <!-- 邮件 -->
+    <div class="col-span-12 lg:col-span-5">
+      <section class="bg-white rounded-2xl overflow-hidden flex flex-col shadow-xl border">
+        <div class="bg-slate-900 px-5 py-3 flex items-center justify-between">
+          <h3 class="text-white text-sm font-medium flex items-center gap-2"><span class="material-symbols-outlined">mail</span>邮件</h3>
+          <span id="gmailPill" class="chip bg-slate-700 text-slate-200">Gmail…</span>
+        </div>
+        <div id="emailFields" class="p-5 space-y-3">
+          <div class="flex items-center gap-3 pb-2 border-b"><span class="text-xs font-bold text-slate-400 w-12 shrink-0">收件人</span><input id="emailTo" class="flex-1 text-sm bg-transparent border-none p-0 focus:ring-0 font-medium" placeholder="等待分析…"/></div>
+          <div class="flex items-center gap-3 pb-2 border-b"><span class="text-xs font-bold text-slate-400 w-12 shrink-0">抄送</span><input id="emailCc" class="flex-1 text-sm bg-transparent border-none p-0 focus:ring-0" placeholder="JD 写了抄送才填"/></div>
+          <div class="flex items-start gap-3 pb-2 border-b"><span class="text-xs font-bold text-slate-400 w-12 shrink-0 pt-0.5">标题</span><textarea id="emailSub" rows="1" class="grow-y flex-1 text-sm bg-transparent border-none p-0 focus:ring-0 font-medium resize-none overflow-hidden" placeholder="等待分析…"></textarea></div>
+          <textarea id="emailBody" class="grow-y w-full min-h-[260px] bg-transparent border-none focus:ring-0 resize-none overflow-hidden text-sm leading-relaxed" placeholder="等待分析…"></textarea>
+          <div id="attachments" class="pt-3 border-t border-dashed border-slate-200 space-y-2 text-xs">
+            <p class="text-[11px] font-bold text-slate-400 tracking-wider">附件</p>
+            <div class="p-3 bg-blue-50 rounded-xl space-y-2">
+              <div class="flex items-center gap-2 flex-wrap">
+                <label class="flex items-center gap-1.5 font-bold text-blue-800"><input type="checkbox" id="chkResume" checked class="rounded text-primary"/>简历</label>
+                <select id="resumeVersion" class="text-xs bg-white border-none rounded-lg py-1 pl-2 pr-7"></select>
+                <a id="previewResume" href="#" target="_blank" class="text-blue-600 hover:underline flex items-center gap-0.5"><span class="material-symbols-outlined text-sm">visibility</span>预览</a>
+                <button id="downloadResume" class="text-blue-600 hover:underline flex items-center gap-0.5"><span class="material-symbols-outlined text-sm">download</span>下载改名版（网申用）</button>
+              </div>
+              <input id="resumeName" class="field !bg-white !text-xs" placeholder="简历文件名"/>
+              <input id="resumeNameEn" class="field !bg-white !text-xs hidden" placeholder="英文简历文件名"/>
+            </div>
+            <div class="p-3 bg-orange-50 rounded-xl space-y-2">
+              <label class="flex items-center gap-1.5 font-bold text-orange-800"><input type="checkbox" id="chkReport" class="rounded text-orange-500"/><span id="reportLabel">研究样本</span></label>
+              <input id="reportName" class="field !bg-white !text-xs" placeholder="研究样本文件名"/>
+            </div>
           </div>
         </div>
-        <div id="emailFields" class="flex-1 p-6 space-y-4">
-          <div class="flex items-center gap-4 pb-3 border-b">
-            <span class="text-xs font-bold text-slate-400 w-12">收件人</span>
-            <input id="emailTo" class="flex-1 text-sm bg-transparent border-none p-0 focus:ring-0 font-medium" placeholder="等待分析..."/>
+        <div class="p-5 bg-slate-50 border-t space-y-3">
+          <a id="applyUrlBtn" href="#" target="_blank" rel="noopener" class="hidden w-full py-2.5 bg-slate-900 text-white rounded-xl font-bold text-sm items-center justify-center gap-2 hover:bg-slate-800"><span class="material-symbols-outlined">open_in_new</span>打开网申页面</a>
+          <div class="grid grid-cols-2 gap-2">
+            <button id="sendBtn" disabled class="py-3 bg-primary text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary/20 disabled:opacity-40 disabled:cursor-not-allowed"><span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1">send</span>发送</button>
+            <button id="draftBtn" disabled class="py-3 bg-white border-2 border-primary/30 text-primary rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><span class="material-symbols-outlined">drafts</span>存为草稿</button>
+            <button id="recordBtn" disabled class="py-2.5 bg-slate-200 text-slate-700 rounded-xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><span class="material-symbols-outlined">bookmark_add</span>只记录（网申）</button>
+            <button id="regenBtn" disabled class="py-2.5 bg-slate-200 text-slate-700 rounded-xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><span class="material-symbols-outlined">refresh</span>按补充要求重写</button>
           </div>
-          <div id="ccRow" class="hidden flex items-center gap-4 pb-3 border-b">
-            <span class="text-xs font-bold text-slate-400 w-12">抄送</span>
-            <input id="emailCc" class="flex-1 text-sm bg-transparent border-none p-0 focus:ring-0 font-medium" placeholder=""/>
-          </div>
-          <div class="flex items-center gap-4 pb-3 border-b">
-            <span class="text-xs font-bold text-slate-400 w-12">主题</span>
-            <input id="emailSub" class="flex-1 text-sm bg-transparent border-none p-0 focus:ring-0 font-medium" placeholder="等待分析..."/>
-          </div>
-          <textarea id="emailBody" class="w-full h-[160px] md:h-[280px] bg-transparent border-none focus:ring-0 resize-none text-sm leading-relaxed no-scrollbar" placeholder="等待 JD 分析结果..."></textarea>
-          <!-- 附件区（可勾选） -->
-          <div id="attachments" class="hidden pt-3 border-t border-dashed border-slate-200 space-y-2">
-            <p class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">附件</p>
-            <label class="flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-lg cursor-pointer hover:bg-blue-100 transition-colors">
-              <input type="checkbox" id="chkResume" checked class="rounded text-primary focus:ring-primary/20"/>
-              <span class="material-symbols-outlined text-blue-600 text-base">description</span>
-              <span id="attachResumeName" class="text-xs font-medium text-blue-800 truncate"></span>
-              <span class="text-[10px] text-blue-400 ml-auto">PDF</span>
-            </label>
-            <label id="attachReport" style="display:none" class="flex items-center gap-2 px-3 py-2 bg-orange-50 rounded-lg cursor-pointer hover:bg-orange-100 transition-colors">
-              <input type="checkbox" id="chkReport" checked class="rounded text-orange-500 focus:ring-orange-300/20" onchange="document.getElementById('card-report-val').textContent=this.checked?'是':'否'"/>
-              <span class="material-symbols-outlined text-orange-600 text-base">lab_profile</span>
-              <span id="attachReportName" class="text-xs font-medium text-orange-800 truncate"></span>
-              <span class="text-[10px] text-orange-400 ml-auto">PDF</span>
-            </label>
-          </div>
-        </div>
-        <div class="p-6 bg-slate-50 border-t space-y-3">
-          <!-- 投递链接（网站投递时显示） -->
-          <a id="applyUrlBtn" href="#" target="_blank" class="hidden w-full py-2.5 bg-slate-900 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors">
-            <span class="material-symbols-outlined text-sm">open_in_new</span>
-            <span id="applyUrlText">打开投递页面</span>
-          </a>
-          <!-- 双按钮 -->
-          <div class="flex gap-3">
-            <button onclick="sendEmail()" id="sendBtn" class="flex-1 py-3.5 bg-primary text-white rounded-2xl font-bold flex items-center justify-center gap-3 shadow-xl shadow-primary/30 hover:scale-[1.01] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-              <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1">send</span>
-              一键发送
-            </button>
-            <button onclick="recordOnly()" id="recordBtn" class="flex-1 py-3.5 bg-slate-200 text-slate-700 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-              <span class="material-symbols-outlined">bookmark_add</span>
-              记录投递
-            </button>
-          </div>
-          <p class="text-[10px] text-center text-slate-400">一键发送 = 邮件投递 ｜ 记录投递 = 网站投递（不发邮件，仅记录）</p>
+          <p id="metaLine" class="text-[10px] text-center text-slate-400">发送 = 直接发出；存为草稿 = 放进 Gmail 草稿箱，可在 Gmail 里改完或定时发送</p>
         </div>
       </section>
     </div>
   </div>
 </div>
 
-<!-- ─── Tab 2: 投递看板 ─── -->
+<!-- ─── Tab 2: 看板 ─── -->
 <div id="tab-board" class="tab-content">
-  <!-- Metrics -->
-  <section id="boardMetrics" class="grid grid-cols-3 gap-3 md:gap-5 mb-6 md:mb-8"></section>
-  <!-- Filters -->
-  <section class="mb-6 flex gap-3 items-center">
-    <select id="filterStatus" onchange="loadBoard()" class="bg-slate-100 border-none rounded-xl text-sm pl-4 pr-10 py-2 focus:ring-2 focus:ring-primary/20 appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20fill%3D%22%23727785%22%20d%3D%22M7%2010l5%205%205-5z%22%2F%3E%3C%2Fsvg%3E')] bg-no-repeat bg-[right_0.5rem_center]">
-      <option value="">所有状态</option>
-      <option>已投递</option><option>已电联</option>
-      <option>面试中</option><option>offer</option><option>拒绝</option><option>无回复</option>
-    </select>
-    <select id="filterType" onchange="loadBoard()" class="bg-slate-100 border-none rounded-xl text-sm pl-4 pr-10 py-2 focus:ring-2 focus:ring-primary/20 appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20fill%3D%22%23727785%22%20d%3D%22M7%2010l5%205%205-5z%22%2F%3E%3C%2Fsvg%3E')] bg-no-repeat bg-[right_0.5rem_center]">
-      <option value="">公司性质</option>
-    </select>
-    <select id="filterLoc" onchange="loadBoard()" class="bg-slate-100 border-none rounded-xl text-sm pl-4 pr-10 py-2 focus:ring-2 focus:ring-primary/20 appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20fill%3D%22%23727785%22%20d%3D%22M7%2010l5%205%205-5z%22%2F%3E%3C%2Fsvg%3E')] bg-no-repeat bg-[right_0.5rem_center]">
-      <option value="">地点</option>
-    </select>
-    <div class="ml-auto text-xs text-slate-400" id="recordCount"></div>
+  <section class="flex flex-wrap gap-2 items-center mb-4">
+    <select id="fCampaign" class="field !w-auto"></select>
+    <select id="fPosition" class="field !w-auto"><option value="">全部类型</option></select>
+    <select id="fStatus" class="field !w-auto"><option value="">全部状态</option></select>
+    <select id="fType" class="field !w-auto"><option value="">机构性质</option></select>
+    <select id="fCity" class="field !w-auto"><option value="">城市</option></select>
+    <input id="fSearch" class="field !w-56" placeholder="搜机构 / 岗位 / 邮箱 / 备注"/>
+    <div class="ml-auto flex gap-2">
+      <button id="repliesBtn" class="px-3 py-2 bg-white border rounded-xl text-sm flex items-center gap-1 hover:bg-slate-50"><span class="material-symbols-outlined">mark_email_unread</span>检查回复</button>
+      <button id="syncBtn" class="px-3 py-2 bg-white border rounded-xl text-sm flex items-center gap-1 hover:bg-slate-50"><span class="material-symbols-outlined">sync</span>Gmail 同步</button>
+      <a id="exportBtn" href="/api/export-excel" class="px-3 py-2 bg-white border rounded-xl text-sm flex items-center gap-1 hover:bg-slate-50"><span class="material-symbols-outlined">table_view</span>导出 Excel</a>
+    </div>
   </section>
-  <!-- Desktop: Table -->
+  <section id="boardMetrics" class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5"></section>
+  <div class="text-xs text-slate-400 mb-2" id="recordCount"></div>
   <div class="hidden md:block bg-slate-100/50 rounded-2xl overflow-x-auto">
-    <table class="w-full text-left min-w-[800px]">
-      <thead>
-        <tr class="text-slate-400 text-[11px] font-bold uppercase tracking-widest border-b border-slate-200">
-          <th class="px-5 py-4 min-w-[160px]">公司名称</th>
-          <th class="px-5 py-4 min-w-[180px]">职位</th>
-          <th class="px-5 py-4 min-w-[70px]">状态</th>
-          <th class="px-5 py-4 min-w-[120px]">地点</th>
-          <th class="px-5 py-4 min-w-[80px]">行业</th>
-          <th class="px-5 py-4 min-w-[100px]">发布时间</th>
-          <th class="px-5 py-4 min-w-[140px] text-right">投递时间</th>
-        </tr>
-      </thead>
+    <table class="w-full text-left min-w-[900px]">
+      <thead><tr class="text-slate-400 text-[11px] font-bold tracking-widest border-b border-slate-200">
+        <th class="px-5 py-3">机构</th><th class="px-5 py-3">岗位</th><th class="px-4 py-3">类型</th><th class="px-4 py-3">状态</th>
+        <th class="px-4 py-3">地点</th><th class="px-4 py-3">行业</th><th class="px-4 py-3 text-right">投递时间</th></tr></thead>
       <tbody id="boardTable" class="text-sm"></tbody>
     </table>
   </div>
-  <!-- Mobile: Card List -->
   <div class="md:hidden space-y-3" id="boardCards"></div>
 </div>
 
-<!-- ─── Tab 3: 数据分析 ─── -->
+<!-- ─── Tab 3: 分析 ─── -->
 <div id="tab-analytics" class="tab-content">
-  <div id="analyticsMetrics" class="grid grid-cols-3 md:grid-cols-6 gap-3 md:gap-5 mb-6 md:mb-8"></div>
-  <div class="grid grid-cols-12 gap-4 md:gap-8 mb-8">
-    <!-- Trend Chart -->
-    <div class="col-span-12 md:col-span-8 bg-white p-4 md:p-8 rounded-2xl">
-      <div class="flex justify-between items-center mb-6">
-        <div>
-          <h3 class="text-lg font-semibold">投递趋势分析</h3>
-          <p class="text-xs text-slate-400">每日新增 + 累计投递</p>
-        </div>
-        <div class="flex gap-4 text-xs text-slate-400">
-          <span class="flex items-center gap-1.5"><div class="w-3 h-3 rounded bg-primary/30"></div>每日</span>
-          <span class="flex items-center gap-1.5"><div class="w-3 h-0.5 bg-orange-500"></div>累计</span>
-        </div>
-      </div>
+  <div class="mb-4"><select id="aCampaign" class="field !w-auto"></select></div>
+  <div id="analyticsMetrics" class="grid grid-cols-3 md:grid-cols-6 gap-3 mb-6"></div>
+  <div class="grid grid-cols-12 gap-4 md:gap-6 mb-6">
+    <div class="col-span-12 md:col-span-8 bg-white p-5 md:p-7 rounded-2xl">
+      <h3 class="text-lg font-semibold">投递趋势</h3><p class="text-xs text-slate-400 mb-4">柱 = 每日投递；橙线 = 累计（悬停看当天投了哪些）</p>
       <div class="relative">
         <div id="trendChart" class="h-56 flex items-end gap-1 md:gap-2 relative z-10"></div>
-        <canvas id="cumulativeLine" class="absolute inset-0 w-full h-56 pointer-events-none z-20" style="top:0"></canvas>
-        <!-- Tooltip -->
-        <div id="trendTooltip" class="hidden absolute z-30 bg-slate-900 text-white text-xs rounded-xl px-4 py-3 shadow-2xl pointer-events-none max-w-[220px]" style="top:0;left:0"></div>
+        <canvas id="cumulativeLine" class="absolute inset-0 w-full h-56 pointer-events-none z-20"></canvas>
+        <div id="trendTooltip" class="hidden absolute z-30 bg-slate-900 text-white text-xs rounded-xl px-4 py-3 shadow-2xl pointer-events-none max-w-[240px]"></div>
       </div>
     </div>
-    <!-- Status Donut -->
-    <div class="col-span-12 md:col-span-4 bg-white p-4 md:p-8 rounded-2xl flex flex-col items-center">
-      <h3 class="text-lg font-semibold w-full mb-1">状态分布</h3>
-      <p class="text-xs text-slate-400 w-full mb-6">全周期追踪</p>
-      <div id="statusRing" class="relative w-44 h-44 mb-6"></div>
-      <div id="statusLegend" class="w-full grid grid-cols-2 gap-3"></div>
+    <div class="col-span-12 md:col-span-4 bg-white p-5 md:p-7 rounded-2xl flex flex-col items-center">
+      <h3 class="text-lg font-semibold w-full mb-4">状态分布</h3>
+      <div id="statusRing" class="relative w-44 h-44 mb-5"></div>
+      <div id="statusLegend" class="w-full grid grid-cols-2 gap-2"></div>
     </div>
   </div>
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-8">
-    <div class="bg-white p-6 md:p-8 rounded-2xl">
-      <h3 class="text-lg font-semibold mb-6">公司性质</h3>
-      <div id="typeBars"></div>
-    </div>
-    <div class="bg-white p-6 md:p-8 rounded-2xl">
-      <h3 class="text-lg font-semibold mb-6">城市分布</h3>
-      <div id="locList"></div>
-    </div>
-    <div class="bg-white p-6 md:p-8 rounded-2xl">
-      <h3 class="text-lg font-semibold mb-6">行业方向</h3>
-      <div id="industryBars"></div>
-    </div>
+  <div class="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6">
+    <div class="bg-white p-5 rounded-2xl"><h3 class="font-semibold mb-4">岗位类型</h3><div id="posBars"></div></div>
+    <div class="bg-white p-5 rounded-2xl"><h3 class="font-semibold mb-4">机构性质</h3><div id="typeBars"></div></div>
+    <div class="bg-white p-5 rounded-2xl"><h3 class="font-semibold mb-4">城市</h3><div id="locList"></div></div>
+    <div class="bg-white p-5 rounded-2xl"><h3 class="font-semibold mb-4">行业方向</h3><div id="industryBars"></div></div>
   </div>
 </div>
 
 </div>
 </main>
 
-<!-- ═══ Toast ═══ -->
-<div id="toast" class="fixed top-20 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl text-sm font-medium transition-all -translate-y-20 opacity-0 z-[60] max-w-[90vw] text-center"></div>
-
-<!-- ═══ Sync Modal ═══ -->
-<div id="syncModal" class="hidden fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center">
-  <div class="bg-white rounded-2xl p-8 w-[500px] max-h-[80vh] overflow-auto shadow-2xl">
-    <h3 class="text-lg font-bold mb-4">同步日志</h3>
-    <pre id="syncLog" class="text-xs bg-slate-50 p-4 rounded-xl whitespace-pre-wrap max-h-60 overflow-auto"></pre>
-    <button onclick="document.getElementById('syncModal').classList.add('hidden')" class="mt-4 w-full py-2 bg-primary text-white rounded-xl font-medium">关闭</button>
+<!-- Toast / Modal -->
+<div id="toast" class="fixed top-20 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl text-sm font-medium transition-all -translate-y-24 opacity-0 z-[70] max-w-[90vw] text-center"></div>
+<div id="modal" class="hidden fixed inset-0 bg-black/30 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl p-6 w-[560px] max-w-full max-h-[85vh] overflow-auto shadow-2xl">
+    <h3 id="modalTitle" class="text-lg font-bold mb-3"></h3>
+    <div id="modalBody" class="text-sm text-slate-700 space-y-2"></div>
+    <div id="modalButtons" class="mt-5 flex justify-end gap-2"></div>
   </div>
 </div>
 
+<nav id="mobileNav" class="hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-50 justify-around items-center py-2 px-4">
+  <button class="mob-tab flex flex-col items-center gap-0.5 py-1 px-3" data-tab="new"><span class="material-symbols-outlined text-xl">add_box</span><span class="text-[10px]">新投递</span></button>
+  <button class="mob-tab flex flex-col items-center gap-0.5 py-1 px-3" data-tab="board"><span class="material-symbols-outlined text-xl">dashboard</span><span class="text-[10px]">看板</span></button>
+  <button class="mob-tab flex flex-col items-center gap-0.5 py-1 px-3" data-tab="analytics"><span class="material-symbols-outlined text-xl">analytics</span><span class="text-[10px]">分析</span></button>
+</nav>
+
 <script>
-// ━━━ State ━━━
-let currentTab = 'new';
-let analysisResult = null;
-let allRecords = [];
+// ━━━ 工具 ━━━
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const escBr = s => esc(s).replace(/\n/g, '<br>');
+const opt = (v, label, sel) => `<option value="${esc(v)}" ${v === sel ? 'selected' : ''}>${esc(label ?? v)}</option>`;
 
-// ━━━ Tab Switching ━━━
-function switchTab(tab) {
-  currentTab = tab;
-  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-  document.getElementById('tab-' + tab).classList.add('active');
-  document.querySelectorAll('.nav-link').forEach(el => {
-    if (el.dataset.tab === tab) {
-      el.className = 'nav-link flex items-center gap-3 px-4 py-2 cursor-pointer text-slate-900 font-medium border-l-4 border-blue-600 bg-slate-200/30';
-    } else {
-      el.className = 'nav-link flex items-center gap-3 px-4 py-2 cursor-pointer text-slate-500 hover:text-slate-700 hover:bg-slate-200/50 transition-colors';
-    }
-  });
-  const titles = {new:'新投递 & AI 邮件生成', board:'投递追踪看板', analytics:'数据分析概览'};
-  document.getElementById('pageTitle').textContent = titles[tab];
-  // 移动端底部 tab 高亮
-  document.querySelectorAll('.mob-tab').forEach(el => {
-    if (el.dataset.tab === tab) { el.classList.add('text-primary'); el.classList.remove('text-slate-500'); }
-    else { el.classList.remove('text-primary'); el.classList.add('text-slate-500'); }
-  });
-  if (tab === 'board') loadBoard();
-  if (tab === 'analytics') loadAnalytics();
-}
-
-// ━━━ Toast ━━━
-function showToast(msg, ms=4000) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.remove('-translate-y-20','opacity-0');
-  setTimeout(() => t.classList.add('-translate-y-20','opacity-0'), ms);
-}
-
-// ━━━ Status Badge ━━━
-function statusBadge(s) {
-  const map = {
-    '已投递':'bg-blue-100 text-blue-700',
-    '已电联':'bg-indigo-100 text-indigo-700',
-    '面试中':'bg-amber-100 text-amber-800','offer':'bg-green-100 text-green-700',
-    '拒绝':'bg-red-100 text-red-700','无回复':'bg-slate-100 text-slate-500',
-  };
-  const cls = map[s] || 'bg-slate-100 text-slate-600';
-  return `<span class="px-3 py-1 rounded-full text-[11px] font-bold whitespace-nowrap ${cls}">${s}</span>`;
-}
-
-// ━━━ Helper: safe fetch ━━━
-async function safeFetch(url, opts={}) {
-  const resp = await fetch(url, opts);
-  const data = await resp.json();
-  if (!resp.ok || data.error) throw new Error(data.error || `HTTP ${resp.status}`);
+async function api(url, opts = {}) {
+  const o = {...opts, headers: {'Content-Type': 'application/json', 'X-Requested-With': 'jobapply', ...(opts.headers || {})}};
+  if (o.body && typeof o.body !== 'string') o.body = JSON.stringify(o.body);
+  const resp = await fetch(url, o);
+  let data = null;
+  try { data = await resp.json(); } catch (e) {}
+  if (!resp.ok) {
+    const err = new Error((data && data.error) || `HTTP ${resp.status}`);
+    err.status = resp.status; err.data = data; throw err;
+  }
   return data;
 }
 
-// ━━━ URL Fetch + Job Selection ━━━
-let fetchedJobs = [];
-let fetchedSourceLabel = '';
-let fetchedPublishDate = '';
-const SEND_BTN_HTML = '<span class="material-symbols-outlined" style="font-variation-settings:\'FILL\' 1">send</span> 一键发送';
+function toast(msg, ms = 4000) {
+  const t = $('#toast'); t.textContent = msg;
+  t.classList.remove('-translate-y-24', 'opacity-0');
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.add('-translate-y-24', 'opacity-0'), ms);
+}
 
-async function fetchURL() {
-  const url = document.getElementById('urlInput').value.trim();
-  if (!url) { showToast('请输入链接'); return; }
-  const btn = document.getElementById('fetchBtn');
-  btn.disabled = true; btn.innerHTML = '<span class="material-symbols-outlined animate-spin text-sm">progress_activity</span> 抓取中...';
+function modal({title, html, buttons}) {
+  return new Promise(resolve => {
+    $('#modalTitle').textContent = title;
+    $('#modalBody').innerHTML = html;
+    const box = $('#modalButtons'); box.innerHTML = '';
+    buttons.forEach(b => {
+      const el = document.createElement('button');
+      el.textContent = b.label;
+      el.className = 'px-4 py-2 rounded-xl text-sm font-bold ' + (b.kind === 'primary' ? 'bg-primary text-white' : b.kind === 'danger' ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-600');
+      el.onclick = () => { $('#modal').classList.add('hidden'); resolve(b.value); };
+      box.appendChild(el);
+    });
+    $('#modal').classList.remove('hidden');
+  });
+}
+
+function setBusy(btn, busy, label) {
+  if (busy) { btn._html = btn.innerHTML; btn.disabled = true; btn.innerHTML = `<span class="material-symbols-outlined animate-spin">progress_activity</span>${esc(label || '处理中…')}`; }
+  else { btn.disabled = false; if (btn._html) btn.innerHTML = btn._html; }
+}
+
+// ━━━ 全局状态 ━━━
+const S = {cfg: null, page: null, analysis: null, result: null, records: [], fixes: [], sent: false};
+
+// ━━━ Tab ━━━
+function switchTab(tab) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  $('#tab-' + tab).classList.add('active');
+  document.querySelectorAll('.nav-link').forEach(el => {
+    el.className = 'nav-link flex items-center gap-3 px-4 py-2 cursor-pointer rounded-lg ' +
+      (el.dataset.tab === tab ? 'text-slate-900 font-semibold bg-slate-200/60' : 'text-slate-500 hover:bg-slate-200/40');
+  });
+  document.querySelectorAll('.mob-tab').forEach(el => el.classList.toggle('text-primary', el.dataset.tab === tab));
+  $('#pageTitle').textContent = {new: '新投递', board: '投递看板', analytics: '数据分析'}[tab];
+  if (tab === 'board') loadBoard();
+  if (tab === 'analytics') loadAnalytics();
+}
+document.querySelectorAll('[data-tab]').forEach(el => el.addEventListener('click', () => switchTab(el.dataset.tab)));
+
+// ━━━ 初始化 ━━━
+async function init() {
   try {
-    const data = await safeFetch('/api/fetch-url', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url})});
-    fetchedJobs = data.jobs || [];
-    fetchedSourceLabel = data.source_label || '';
-    fetchedPublishDate = data.publish_date || '';
-    if (fetchedJobs.length === 0) {
-      document.getElementById('jdInput').value = data.raw_content || '';
-      showToast(`已抓取（${data.source_label || data.source}），未识别出独立岗位，请手动选择内容`);
-    } else if (fetchedJobs.length === 1) {
-      // 单岗位：用完整原文，如果 Claude 提取到了邮箱/地点但原文没有，补上
-      let content = data.raw_content || fetchedJobs[0].jd_text || '';
-      const job = fetchedJobs[0];
-      if (job.email && !content.includes(job.email)) content += '\n\n投递邮箱：' + job.email;
-      if (job.location && !content.includes(job.location)) content += '\n工作地点：' + job.location;
-      document.getElementById('jdInput').value = content;
-      document.getElementById('jobSelection').classList.add('hidden');
-      showToast(`已抓取：${job.title}（来源：${fetchedSourceLabel}）`);
-    } else {
-      const sel = document.getElementById('jobSelect');
-      sel.innerHTML = fetchedJobs.map((j,i) => `<option value="${i}">${j.title}${j.location ? ' · '+j.location : ''}</option>`).join('');
-      document.getElementById('jobSelection').classList.remove('hidden');
-      selectJob();
-      showToast(`检测到 ${fetchedJobs.length} 个岗位，请选择（来源：${fetchedSourceLabel}）`);
-    }
-  } catch(e) { showToast('抓取失败：' + e.message); }
-  finally { btn.disabled = false; btn.innerHTML = '<span class="material-symbols-outlined text-sm">download</span> 抓取'; }
+    S.cfg = await api('/api/config');
+  } catch (e) { toast('读取配置失败：' + e.message); return; }
+  const c = S.cfg;
+  $('#campaignLabel').textContent = '本轮：' + c.campaign;
+  $('#reportLabel').textContent = c.report_label || '研究样本';
+  $('#modelBadge').textContent = c.model + ' · ' + c.effort;
+  $('#posHint').innerHTML += c.position_types.filter(p => p !== '不明确').map(p => opt(p)).join('');
+  $('#resumeHint').innerHTML += c.resume_versions.map(v => opt(v)).join('');
+  $('#resumeVersion').innerHTML = c.resume_versions.map(v => opt(v)).join('');
+  $('#fStatus').innerHTML += c.statuses.map(s => opt(s)).join('');
+  $('#fPosition').innerHTML += c.position_types.map(p => opt(p)).join('');
+  const camps = [opt(c.campaign, '本轮：' + c.campaign, c.campaign), opt('全部', '全部批次')]
+    .concat(c.campaigns.filter(x => x !== c.campaign).map(x => opt(x)));
+  $('#fCampaign').innerHTML = camps.join(''); $('#aCampaign').innerHTML = camps.join('');
+  const r = c.resume;
+  const resumeLine = r.ok ? (r.grad_problems.length ? `<span class="text-red-600">简历毕业时间不对：${esc(r.grad_problems.join('；'))}</span>`
+      : `简历：${r.pages} 页（中 ${r.zh_pages.length} / 英 ${r.en_pages.length}），${r.size_kb}KB`) : `<span class="text-red-600">${esc(r.error)}</span>`;
+  $('#sysStatus').innerHTML = `<div>${resumeLine}</div><div>研究样本：${c.report_exists ? '已就绪' : '<span class=text-red-600>缺文件</span>'}</div><div id="gmailSide">Gmail：检查中…</div>`;
+  updateResumeControls();
+  refreshGmail();
+  if (c.local) fetch('/api/tunnel-url').then(r => r.json()).then(d => {
+    if (d.url) { $('#tunnelUrl').href = d.url; $('#tunnelUrl').textContent = d.url; $('#tunnelInfo').classList.remove('hidden'); }
+  }).catch(() => {});
 }
 
-function selectJob() {
-  const idx = parseInt(document.getElementById('jobSelect').value);
-  if (fetchedJobs[idx]) {
-    const job = fetchedJobs[idx];
-    // 合并公司介绍 + 完整 JD，确保信息完整
-    const parts = [];
-    if (job.company_intro) parts.push(job.company_intro);
-    if (job.jd_text) parts.push(job.jd_text);
-    if (job.email && !(job.jd_text||'').includes(job.email)) parts.push('投递邮箱：' + job.email);
-    if (job.location && !(job.jd_text||'').includes(job.location)) parts.push('工作地点：' + job.location);
-    document.getElementById('jdInput').value = parts.join('\n\n') || '';
-  }
-}
-
-// ━━━ Tab 1: Analyze JD ━━━
-async function analyzeJD() {
-  const jd = document.getElementById('jdInput').value;
-  const statusEl = document.getElementById('analyzeStatus');
-  statusEl.classList.add('hidden');
-  if (jd.trim().length < 50) {
-    statusEl.textContent = '请粘贴完整 JD（至少 50 字）';
-    statusEl.className = 'mt-3 p-3 rounded-xl text-sm bg-red-50 text-red-700';
-    showToast('请粘贴完整 JD（至少 50 字）');
-    return;
-  }
-  const btn = document.getElementById('analyzeBtn');
-  btn.disabled = true; btn.innerHTML = '<span class="material-symbols-outlined animate-spin">progress_activity</span> 分析中...';
+async function refreshGmail() {
+  const pill = $('#gmailPill');
   try {
-    // 把来源信息附加到 JD 文本，让 Claude 知道从哪看到的
-    let jdWithSource = jd;
-    if (fetchedSourceLabel) jdWithSource += '\n\n【招聘信息来源】' + fetchedSourceLabel;
-    const data = await safeFetch('/api/analyze', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({jd_text:jdWithSource})});
-    analysisResult = data.result;
-    // 如果从链接抓取的，自动设置来源和发布时间
-    if (fetchedSourceLabel) analysisResult.job_source = fetchedSourceLabel;
-    if (fetchedPublishDate) analysisResult.job_post_date = fetchedPublishDate;
-    document.getElementById('card-company').textContent = data.result.company_name || '—';
-    document.getElementById('card-job').textContent = data.result.job_title || '—';
-    document.getElementById('card-loc').textContent = data.result.job_location || '—';
-    document.getElementById('card-type').textContent = data.result.company_type || '—';
-    document.getElementById('card-industry').textContent = data.result.focus_industry || '—';
-    document.getElementById('card-report-val').textContent = data.result.attach_report ? '是' : '否';
-    document.getElementById('infoCards').classList.remove('hidden');
-    statusEl.textContent = '✓ 分析完成，请查看下方结果';
-    statusEl.className = 'mt-3 p-3 rounded-xl text-sm bg-green-50 text-green-700';
-    // 手机上自动滚到结果
-    setTimeout(() => document.getElementById('infoCards').scrollIntoView({behavior:'smooth', block:'center'}), 100);
-    document.getElementById('emailTo').value = data.result.to_email || '';
-    // CC
-    const cc = data.result.cc_email || '';
-    if (cc) {
-      document.getElementById('emailCc').value = cc;
-      document.getElementById('ccRow').classList.remove('hidden');
-      document.getElementById('ccRow').classList.add('flex');
+    const st = await api('/api/gmail/status');
+    if (st.ok) {
+      pill.className = 'chip bg-green-600/20 text-green-300'; pill.textContent = 'Gmail 已连接';
+      $('#gmailSide').innerHTML = 'Gmail：' + esc(st.email);
     } else {
-      document.getElementById('ccRow').classList.add('hidden');
-      document.getElementById('ccRow').classList.remove('flex');
-      document.getElementById('emailCc').value = '';
+      pill.className = 'chip bg-red-500/30 text-red-100 cursor-pointer'; pill.textContent = 'Gmail 未授权（点这里）';
+      pill.onclick = gmailAuth;
+      $('#gmailSide').innerHTML = '<span class="text-red-600">Gmail 未授权</span> <button class="underline text-primary" id="sideAuth">授权</button>';
+      $('#sideAuth').onclick = gmailAuth;
     }
-    document.getElementById('emailSub').value = data.result.email_subject || '';
-    document.getElementById('emailBody').value = data.result.email_body || '';
-    document.getElementById('sendBtn').disabled = false;
-    document.getElementById('sendBtn').innerHTML = SEND_BTN_HTML;
-    document.getElementById('recordBtn').disabled = false;
-    document.getElementById('recordBtn').innerHTML = '<span class="material-symbols-outlined">bookmark_add</span> 记录投递';
-    // 投递链接
-    const applyUrl = data.result.apply_url || '';
-    const applyBtn = document.getElementById('applyUrlBtn');
-    if (applyUrl) {
-      applyBtn.href = applyUrl;
-      applyBtn.classList.remove('hidden');
-      applyBtn.classList.add('flex');
-      if (!data.result.to_email) {
-        // 网站投递：隐藏邮件编辑区，不需要生成邮件
-        document.getElementById('sendBtn').disabled = true;
-        document.getElementById('emailFields').classList.add('hidden');
-      }
-    } else {
-      applyBtn.classList.add('hidden');
-      applyBtn.classList.remove('flex');
-      document.getElementById('emailFields').classList.remove('hidden');
-    }
-    // 附件信息（始终显示两个 checkbox，报告根据 Claude 判断默认勾选/不勾选）
-    document.getElementById('attachments').classList.remove('hidden');
-    document.getElementById('attachResumeName').textContent = data.result.resume_filename || 'YOUR_NAME-YOUR_UNIVERSITY-简历.pdf';
-    document.getElementById('chkResume').checked = true;
-    document.getElementById('attachReport').classList.remove('hidden');
-    document.getElementById('attachReport').style.display = 'flex';
-    document.getElementById('attachReportName').textContent = data.result.report_filename || 'YOUR_NAME-YOUR_RESEARCH_SUBJECT研究报告.pdf';
-    document.getElementById('chkReport').checked = !!data.result.attach_report;
-    if (data.duplicate) {
-      document.getElementById('dupText').textContent = `该公司（${data.duplicate.company}）已于 ${data.duplicate.sent_at} 投递过`;
-      document.getElementById('dupWarning').classList.remove('hidden');
-    } else {
-      document.getElementById('dupWarning').classList.add('hidden');
-    }
-    if (data.errors && data.errors.length) showToast('注意：' + data.errors[0]);
-  } catch(e) {
-    statusEl.textContent = '分析失败：' + e.message;
-    statusEl.className = 'mt-3 p-3 rounded-xl text-sm bg-red-50 text-red-700';
-    showToast('分析失败：' + e.message);
-  }
-  finally { btn.disabled = false; btn.innerHTML = '<span class="material-symbols-outlined">psychology</span> 分析 JD 并预览'; }
+  } catch (e) { pill.textContent = 'Gmail 状态未知'; }
 }
 
-function clearJD() {
-  document.getElementById('jdInput').value = '';
-  document.getElementById('urlInput').value = '';
-  document.getElementById('emailTo').value = '';
-  document.getElementById('emailCc').value = '';
-  document.getElementById('ccRow').classList.add('hidden');
-  document.getElementById('emailSub').value = '';
-  document.getElementById('emailBody').value = '';
-  document.getElementById('infoCards').classList.add('hidden');
-  document.getElementById('dupWarning').classList.add('hidden');
-  document.getElementById('jobSelection').classList.add('hidden');
-  const sb = document.getElementById('sendBtn');
-  sb.disabled = true;
-  sb.innerHTML = SEND_BTN_HTML;
-  document.getElementById('recordBtn').disabled = true;
-  document.getElementById('applyUrlBtn').classList.add('hidden');
-  document.getElementById('applyUrlBtn').classList.remove('flex');
-  document.getElementById('emailFields').classList.remove('hidden');
-  document.getElementById('attachments').classList.add('hidden');
-  document.getElementById('attachReport').style.display = 'none';
-  analysisResult = null;
-  fetchedJobs = [];
+async function gmailAuth() {
+  if (!S.cfg.local) { toast('请在电脑上打开面板完成 Gmail 授权'); return; }
+  toast('已在浏览器打开 Google 授权页，请点「允许」（5 分钟内有效）', 8000);
+  try { await api('/api/gmail/auth', {method: 'POST', body: {}}); toast('Gmail 授权成功'); }
+  catch (e) { toast('授权失败：' + e.message, 6000); }
+  refreshGmail();
 }
 
-async function sendEmail() {
-  if (!analysisResult) return;
-  const to = document.getElementById('emailTo').value.trim();
-  if (!to) { showToast('收件人邮箱为空'); return; }
+$('#copyTunnel').onclick = () => { navigator.clipboard.writeText($('#tunnelUrl').href); toast('已复制'); };
 
-  // 自动替换来源占位符
-  const source = analysisResult.job_source || fetchedSourceLabel || '';
-  let sub = document.getElementById('emailSub').value;
-  let body = document.getElementById('emailBody').value;
-  if (source) {
-    sub = sub.replace(/\[招聘信息来源\]|\[信息来源\]|\[来源\]/g, source);
-    body = body.replace(/\[招聘信息来源\]|\[信息来源\]|\[来源\]/g, source);
-    document.getElementById('emailSub').value = sub;
-    document.getElementById('emailBody').value = body;
-  }
-
-  // 检查是否还有未替换的占位符
-  const placeholders = (sub + body).match(/\[[^\]]{1,20}\]/g);
-  if (placeholders) {
-    if (!confirm(`邮件中还有未填写的占位符：${placeholders.join('、')}\n确认发送？`)) return;
-  }
-
-  if (!confirm(`确认发送邮件给 ${to}？发送后无法撤回。`)) return;
-
-  const btn = document.getElementById('sendBtn');
-  btn.disabled = true; btn.innerHTML = '<span class="material-symbols-outlined animate-spin">progress_activity</span> 发送中...';
+// ━━━ 抓取链接 ━━━
+$('#fetchBtn').onclick = async () => {
+  const url = $('#urlInput').value.trim();
+  if (!url) return toast('请先粘贴链接');
+  const btn = $('#fetchBtn'); setBusy(btn, true, '抓取中…');
   try {
-    const data = await safeFetch('/api/send', {method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        result: {...analysisResult,
-          attach_report: document.getElementById('chkReport')?.checked || false,
-        },
-        jd_text: document.getElementById('jdInput').value,
-        to_email: to,
-        subject: document.getElementById('emailSub').value,
-        body: document.getElementById('emailBody').value,
-        resume_filename: analysisResult.resume_filename,
-        attach_resume: document.getElementById('chkResume').checked,
-        cc_email: document.getElementById('ccRow')?.classList.contains('hidden') ? '' : (document.getElementById('emailCc')?.value || ''),
-      })});
-    showToast('发送成功！');
-    btn.innerHTML = '<span class="material-symbols-outlined">check_circle</span> 已发送';
-  } catch(e) { showToast('发送失败：' + e.message); btn.disabled = false; btn.innerHTML = SEND_BTN_HTML; }
+    const d = await api('/api/fetch-url', {method: 'POST', body: {url}});
+    S.page = d;
+    $('#jdInput').value = d.content;
+    $('#sourceInput').value = d.source_label || '';
+    $('#targetJob').value = '';
+    $('#fetchInfo').innerHTML = `来源：<b>${esc(d.source_label)}</b>${d.publish_date ? ` ｜ 发布：${esc(d.publish_date)}` : ''}${d.ocr_used ? ' ｜ <span class="text-amber-600">JD 是图片，已用 AI 识别文字，请核对邮箱</span>' : ''} ｜ ${d.content_length} 字`;
+    $('#fetchInfo').classList.remove('hidden');
+    const jobs = d.jobs || [];
+    if (jobs.length > 1) {
+      $('#jobPicker').innerHTML = `<p class="text-xs text-slate-500">这篇文章有 ${jobs.length} 个岗位，选一个：</p>` + jobs.map((j, i) =>
+        `<label class="flex items-start gap-2 p-3 rounded-xl border bg-slate-50 hover:bg-blue-50 cursor-pointer text-sm">
+           <input type="radio" name="jobpick" value="${i}" class="mt-1"/>
+           <span><b>${esc(j.title)}</b> <span class="text-slate-400">${esc(j.location)}</span><br>
+           <span class="text-xs text-slate-500">${esc(j.summary)}${j.emails.length ? ' ｜ ' + esc(j.emails.join(', ')) : ''}</span></span></label>`).join('');
+      $('#jobPicker').classList.remove('hidden');
+      $('#jobPicker').querySelectorAll('input').forEach(el => el.onchange = () => { $('#targetJob').value = jobs[+el.value].title; });
+      toast(`识别到 ${jobs.length} 个岗位，请先选一个再分析`);
+    } else {
+      $('#jobPicker').classList.add('hidden');
+      toast('已抓取：' + (d.title || d.source_label));
+    }
+  } catch (e) { toast('抓取失败：' + e.message, 7000); }
+  finally { setBusy(btn, false); }
+};
+
+// ━━━ 分析 ━━━
+function payloadBase() {
+  return {
+    jd_text: $('#jdInput').value,
+    source_label: $('#sourceInput').value.trim(),
+    target_job: $('#targetJob').value.trim(),
+    source_url: S.page ? S.page.url : '',
+    publish_date: S.page ? (S.page.publish_date || '') : '',
+  };
 }
 
-async function recordOnly() {
-  if (!analysisResult) return;
-  if (!confirm('确认记录此投递？（不会发送邮件）')) return;
-  const btn = document.getElementById('recordBtn');
-  btn.disabled = true; btn.innerHTML = '<span class="material-symbols-outlined animate-spin">progress_activity</span> 记录中...';
+async function analyze(regen = false) {
+  const base = payloadBase();
+  const st = $('#analyzeStatus');
+  if (base.jd_text.trim().length < 50) { toast('请粘贴完整 JD（至少 50 字）'); return; }
+  const btn = regen ? $('#regenBtn') : $('#analyzeBtn');
+  setBusy(btn, true, regen ? '重写中…' : '分析中（约 15 秒）…');
+  st.classList.add('hidden');
   try {
-    await safeFetch('/api/record', {method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        result: {...analysisResult,
-          attach_report: document.getElementById('chkReport')?.checked || false,
-          apply_url: analysisResult.apply_url || document.getElementById('applyUrlBtn').href || '',
-        },
-        jd_text: document.getElementById('jdInput').value,
-      })});
-    showToast('已记录投递');
-    btn.innerHTML = '<span class="material-symbols-outlined">check_circle</span> 已记录';
-    document.getElementById('sendBtn').disabled = true;
-  } catch(e) { showToast('记录失败：' + e.message); btn.disabled = false; btn.innerHTML = '<span class="material-symbols-outlined">bookmark_add</span> 记录投递'; }
+    const d = await api('/api/analyze', {method: 'POST', body: {...base,
+      position_hint: $('#posHint').value, resume_hint: $('#resumeHint').value, extra: $('#extraInput').value.trim()}});
+    S.analysis = d; S.result = d.result; S.fixes = d.fixes || []; S.sent = false;
+    fillEmail(d.result);
+    renderInfo(d.result); renderRules(d.result); renderIssues(d.issues);
+    const m = d.meta;
+    $('#metaLine').textContent = `${m.model} · ${m.seconds} 秒 · 约 $${m.cost_usd ?? '?'}（缓存 ${m.cache_read} tokens）`;
+    st.textContent = '✓ 已生成，请看右边的邮件和下方的检查结果';
+    st.className = 'mt-3 p-3 rounded-xl text-sm bg-green-50 text-green-700';
+    ['sendBtn', 'draftBtn', 'recordBtn', 'regenBtn'].forEach(id => $('#' + id).disabled = false);
+    if (window.innerWidth < 1024) setTimeout(() => $('#infoCards').scrollIntoView({behavior: 'smooth'}), 100);
+  } catch (e) {
+    st.textContent = '分析失败：' + e.message;
+    st.className = 'mt-3 p-3 rounded-xl text-sm bg-red-50 text-red-700';
+  } finally { setBusy(btn, false); }
+}
+$('#analyzeBtn').onclick = () => analyze(false);
+$('#regenBtn').onclick = () => analyze(true);
+
+function fillEmail(r) {
+  $('#emailTo').value = (r.to_emails || []).join('; ');
+  $('#emailCc').value = (r.cc_emails || []).join('; ');
+  $('#emailSub').value = r.email_subject || '';
+  $('#emailBody').value = r.email_body || '';
+  $('#resumeVersion').value = r.resume_version || '双语';
+  $('#resumeName').value = r.resume_filename || '';
+  $('#resumeNameEn').value = r.resume_filename_en || '';
+  $('#chkResume').checked = true;
+  $('#chkReport').checked = !!r.attach_report;
+  $('#reportName').value = r.report_filename || S.cfg.report_default_name;
+  updateResumeControls();
+  autoGrow($('#emailSub')); autoGrow($('#emailBody'));
+  const url = r.apply_url || '';
+  const a = $('#applyUrlBtn');
+  if (url && /^https?:\/\//.test(url)) { a.href = url; a.classList.remove('hidden'); a.classList.add('flex'); }
+  else { a.classList.add('hidden'); a.classList.remove('flex'); }
 }
 
-// ━━━ Tab 2: Board ━━━
+function autoGrow(el) { el.style.height = 'auto'; el.style.height = (el.scrollHeight + 2) + 'px'; }
+document.querySelectorAll('.grow-y').forEach(el => el.addEventListener('input', () => autoGrow(el)));
+$('#emailSub').addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
+$('#emailSub').addEventListener('input', e => { if (/\n/.test(e.target.value)) e.target.value = e.target.value.replace(/\n/g, ' '); });
+
+function updateResumeControls() {
+  const v = $('#resumeVersion').value || '双语';
+  $('#resumeNameEn').classList.toggle('hidden', v !== '中英两份');
+  $('#previewResume').href = '/api/resume-preview?version=' + encodeURIComponent(v);
+}
+$('#resumeVersion').onchange = () => {
+  const v = $('#resumeVersion').value;
+  if (v === '英文' && $('#resumeName').value === S.cfg.resume_default_zh) $('#resumeName').value = S.cfg.resume_default_en;
+  if (v !== '英文' && $('#resumeName').value === S.cfg.resume_default_en) $('#resumeName').value = S.cfg.resume_default_zh;
+  if (v === '中英两份' && !$('#resumeNameEn').value) $('#resumeNameEn').value = S.cfg.resume_default_en;
+  updateResumeControls(); scheduleCheck();
+};
+
+function collectResult() {
+  const r = {...(S.result || {})};
+  r.to_emails = $('#emailTo').value; r.cc_emails = $('#emailCc').value;
+  r.email_subject = $('#emailSub').value; r.email_body = $('#emailBody').value;
+  r.resume_version = $('#resumeVersion').value; r.resume_filename = $('#resumeName').value; r.resume_filename_en = $('#resumeNameEn').value;
+  r.attach_resume = $('#chkResume').checked; r.attach_report = $('#chkReport').checked; r.report_filename = $('#reportName').value;
+  const pt = $('#posSelect'); if (pt) r.position_type = pt.value;
+  return r;
+}
+
+function card(label, value, cls = '') {
+  return `<div class="bg-white p-3 rounded-2xl shadow-sm border flex flex-col gap-1 ${cls}"><span class="text-[10px] text-slate-400 font-bold">${esc(label)}</span><span class="text-sm font-bold truncate" title="${esc(value)}">${esc(value || '—')}</span></div>`;
+}
+
+function renderInfo(r) {
+  const posSel = `<div class="bg-indigo-50 p-3 rounded-2xl shadow-sm border border-indigo-200 flex flex-col gap-1"><span class="text-[10px] text-indigo-600 font-bold">岗位类型（可改）</span>
+    <select id="posSelect" class="text-sm font-bold bg-transparent border-none p-0 focus:ring-0 text-indigo-700">${S.cfg.position_types.map(p => opt(p, p, r.position_type)).join('')}</select></div>`;
+  const dates = [r.deadline ? '截止 ' + r.deadline : '', r.job_post_date ? '发布 ' + r.job_post_date : ''].filter(Boolean).join(' / ');
+  $('#infoCards').innerHTML = card('机构', r.company_name) + card('岗位', r.job_title) + posSel + card('地点', r.job_location) +
+    card('机构性质', r.company_type) + card('行业', r.focus_industry) + card('投递方式', r.apply_channel) + card('日期', dates || '—');
+  $('#infoCards').classList.remove('hidden');
+  $('#posSelect').onchange = scheduleCheck;
+}
+
+function renderRules(r) {
+  const rules = r.jd_rules || {};
+  const row = (k, v) => v && (Array.isArray(v) ? v.length : true) ?
+    `<div class="flex gap-3"><span class="text-xs text-slate-400 w-20 shrink-0 pt-0.5">${esc(k)}</span><span class="flex-1">${Array.isArray(v) ? v.map(esc).join('；') : esc(v)}</span></div>` : '';
+  const html = row('标题格式', rules.subject_format) + row('简历命名', rules.resume_filename_format) + row('样本命名', rules.report_filename_format) +
+    row('正文须写', rules.body_requirements) + row('需附材料', rules.requested_materials) + row('联系人', r.contact_in_jd) +
+    row('网申链接', r.apply_url) + row('JD 语言', r.jd_language);
+  $('#rulesBody').innerHTML = html || '<p class="text-slate-400 text-xs">JD 没有特别的格式要求，用的是默认写法。</p>';
+  $('#rulesCard').classList.remove('hidden');
+}
+
+function renderIssues(issues) {
+  const lv = {error: ['必须处理', 'bg-red-50 text-red-700', 'error'], warn: ['注意', 'bg-amber-50 text-amber-800', 'warning'], info: ['提示', 'bg-slate-50 text-slate-600', 'info']};
+  const sorted = [...issues].sort((a, b) => ['error', 'warn', 'info'].indexOf(a.level) - ['error', 'warn', 'info'].indexOf(b.level));
+  let html = sorted.map(i => `<div class="flex gap-2 items-start p-2 rounded-lg ${lv[i.level][1]}"><span class="material-symbols-outlined text-base">${lv[i.level][2]}</span><span><b class="text-xs">${lv[i.level][0]}</b> ${esc(i.msg)}</span></div>`).join('');
+  html += S.fixes.map(f => `<div class="flex gap-2 items-start p-2 rounded-lg bg-green-50 text-green-700"><span class="material-symbols-outlined text-base">auto_fix_high</span><span><b class="text-xs">已自动修正</b> ${esc(f)}</span></div>`).join('');
+  const n = issues.filter(i => i.level === 'error').length, w = issues.filter(i => i.level === 'warn').length;
+  $('#issuesSummary').textContent = n ? `${n} 个必须处理，${w} 个注意` : (w ? `${w} 个需要留意` : '全部通过');
+  $('#issuesBody').innerHTML = html || '<p class="text-green-700 text-sm">✓ 没发现问题</p>';
+  $('#issuesCard').classList.remove('hidden');
+  S.lastIssues = issues;
+}
+
+let checkTimer = null;
+function scheduleCheck() {
+  if (!S.result) return;
+  clearTimeout(checkTimer);
+  checkTimer = setTimeout(async () => {
+    try {
+      const d = await api('/api/check', {method: 'POST', body: {result: collectResult(), jd_text: $('#jdInput').value, source_label: $('#sourceInput').value}});
+      renderIssues(d.issues);
+    } catch (e) {}
+  }, 700);
+}
+['#emailTo', '#emailCc', '#emailSub', '#emailBody', '#resumeName', '#resumeNameEn', '#reportName'].forEach(s => $(s).addEventListener('input', scheduleCheck));
+['#chkResume', '#chkReport'].forEach(s => $(s).addEventListener('change', scheduleCheck));
+
+// ━━━ 发送 / 草稿 / 网申 ━━━
+async function deliver(mode) {
+  if (!S.result) return;
+  const r = collectResult();
+  if (!String(r.to_emails).trim()) return toast('收件人为空：网申岗位请用「只记录（网申）」');
+  let rev;
+  try { rev = await api('/api/check', {method: 'POST', body: {result: r, jd_text: $('#jdInput').value, source_label: $('#sourceInput').value}}); }
+  catch (e) { return toast('检查失败：' + e.message); }
+  renderIssues(rev.issues);
+  const errors = rev.issues.filter(i => i.level === 'error');
+  const warns = rev.issues.filter(i => i.level === 'warn');
+  const verb = mode === 'draft' ? '存为草稿' : '发送';
+  const att = [r.attach_resume ? `简历（${r.resume_version}）：${r.resume_filename}${r.resume_version === '中英两份' ? ' + ' + r.resume_filename_en : ''}` : '', r.attach_report ? '研究样本：' + r.report_filename : ''].filter(Boolean);
+  const summary = `<div class="p-3 bg-slate-50 rounded-xl space-y-1 text-xs"><div><b>收件人：</b>${esc(r.to_emails)}${String(r.cc_emails).trim() ? ' ｜ <b>抄送：</b>' + esc(r.cc_emails) : ''}</div><div><b>标题：</b>${esc(r.email_subject)}</div><div><b>附件：</b>${esc(att.join('；') || '无')}</div></div>`;
+  let force = false;
+  if (errors.length) {
+    const ok = await modal({title: '还有必须处理的问题', html: errors.map(i => `<div class="p-2 bg-red-50 text-red-700 rounded-lg">${esc(i.msg)}</div>`).join('') + summary,
+      buttons: [{label: '返回修改', value: false}, {label: '我确认没问题，仍然' + verb, value: true, kind: 'danger'}]});
+    if (!ok) return; force = true;
+  } else {
+    const ok = await modal({title: `确认${verb}？`, html: summary + (warns.length ? `<p class="text-amber-700 text-xs">还有 ${warns.length} 条「注意」，已在左侧列出。</p>` : ''),
+      buttons: [{label: '取消', value: false}, {label: verb, value: true, kind: 'primary'}]});
+    if (!ok) return;
+  }
+  const btn = mode === 'draft' ? $('#draftBtn') : $('#sendBtn');
+  setBusy(btn, true, mode === 'draft' ? '存草稿中…' : '发送中…');
+  try {
+    const d = await api('/api/send', {method: 'POST', body: {...payloadBase(), result: r, mode, force}});
+    S.sent = true;
+    btn._html = `<span class="material-symbols-outlined">check_circle</span>${mode === 'draft' ? '已存草稿' : '已发送'}`;
+    setBusy(btn, false); btn.disabled = true;
+    $('#sendBtn').disabled = true; $('#draftBtn').disabled = true; $('#recordBtn').disabled = true;
+    toast(d.record_error ? d.record_error : `${d.mode === '草稿' ? '已存入 Gmail 草稿箱' : '已发送'}，并记入看板（附件：${d.attachments.join('、')}）`, 7000);
+    if (d.mode !== '草稿' && d.record_id) setTimeout(() => checkBounce(d.record_id, r.company_name), 90000);
+  } catch (e) {
+    setBusy(btn, false);
+    if (e.status === 409 && e.data && e.data.issues) { renderIssues(e.data.issues); toast('还有必须处理的问题，没发出'); }
+    else if (e.status === 401) { toast(e.message, 8000); refreshGmail(); }
+    else toast(verb + '失败：' + e.message, 8000);
+  }
+}
+// 发出 90 秒后自动查一次退信（邮箱写错 / 对方邮箱失效会马上退回）
+async function checkBounce(id, company) {
+  try {
+    await api('/api/check-replies', {method: 'POST', body: {campaign: '全部', record_ids: [id]}});
+    const recs = await api('/api/records?campaign=全部');
+    const rec = recs.find(x => x.id === id);
+    if (rec && rec.reply_status === '退信') {
+      await modal({title: '邮件被退回了', html: `<p class="text-red-700">发给 ${esc(company)}（${esc(rec.to_email)}）的邮件没送达：</p><p class="text-xs bg-red-50 p-2 rounded-lg">${esc(rec.reply_snippet)}</p><p class="text-xs">请核对邮箱，或换 JD 里的其他联系方式重投。</p>`, buttons: [{label: '知道了', value: true, kind: 'primary'}]});
+    }
+  } catch (e) {}
+}
+$('#sendBtn').onclick = () => deliver('send');
+$('#draftBtn').onclick = () => deliver('draft');
+
+$('#recordBtn').onclick = async () => {
+  if (!S.result) return;
+  const ok = await modal({title: '只记录，不发邮件？', html: '<p>适用于网申 / 飞书 / 官网投递：投完后点这里记一笔，看板里就能跟进。</p>',
+    buttons: [{label: '取消', value: false}, {label: '记录', value: true, kind: 'primary'}]});
+  if (!ok) return;
+  const btn = $('#recordBtn'); setBusy(btn, true, '记录中…');
+  try {
+    await api('/api/record', {method: 'POST', body: {...payloadBase(), result: collectResult()}});
+    btn._html = '<span class="material-symbols-outlined">check_circle</span>已记录'; setBusy(btn, false); btn.disabled = true;
+    $('#sendBtn').disabled = true; $('#draftBtn').disabled = true;
+    toast('已记录这次网申');
+  } catch (e) { setBusy(btn, false); toast('记录失败：' + e.message); }
+};
+
+$('#downloadResume').onclick = async () => {
+  const body = {version: $('#resumeVersion').value, filename: $('#resumeName').value, filename_en: $('#resumeNameEn').value};
+  const files = body.version === '中英两份' ? [0, 1] : [0];
+  for (const i of files) {
+    const resp = await fetch('/api/resume-download', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Requested-With': 'jobapply'}, body: JSON.stringify({...body, i})});
+    if (!resp.ok) { toast('下载失败'); return; }
+    const blob = await resp.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = i === 0 ? (body.filename || '简历.pdf') : (body.filename_en || 'Resume.pdf');
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+};
+
+$('#clearBtn').onclick = () => {
+  ['#urlInput', '#jdInput', '#sourceInput', '#targetJob', '#extraInput', '#emailTo', '#emailCc', '#emailSub', '#emailBody', '#resumeName', '#resumeNameEn', '#reportName'].forEach(s => $(s).value = '');
+  $('#posHint').value = ''; $('#resumeHint').value = '';
+  ['#fetchInfo', '#jobPicker', '#infoCards', '#rulesCard', '#issuesCard', '#analyzeStatus'].forEach(s => $(s).classList.add('hidden'));
+  $('#applyUrlBtn').classList.add('hidden');
+  ['sendBtn', 'draftBtn', 'recordBtn', 'regenBtn'].forEach(id => { const b = $('#' + id); if (b._html) b.innerHTML = b._html; b.disabled = true; });
+  S.page = null; S.analysis = null; S.result = null; S.fixes = []; S.sent = false;
+  $('#metaLine').textContent = '发送 = 直接发出；存为草稿 = 放进 Gmail 草稿箱，可在 Gmail 里改完或定时发送';
+};
+
+window.addEventListener('beforeunload', e => { if (S.result && !S.sent && $('#emailBody').value) { e.preventDefault(); e.returnValue = ''; } });
+
+// ━━━ 看板 ━━━
+const STATUS_CLS = {'草稿': 'bg-slate-200 text-slate-600', '已投递': 'bg-blue-100 text-blue-700', '已电联': 'bg-indigo-100 text-indigo-700', '面试中': 'bg-amber-100 text-amber-800', 'offer': 'bg-green-100 text-green-700', '拒绝': 'bg-red-100 text-red-700', '无回复': 'bg-slate-100 text-slate-500'};
+const statusBadge = s => `<span class="chip ${STATUS_CLS[s] || 'bg-slate-100 text-slate-600'}">${esc(s)}</span>`;
+const REPLY_CLS = {'有回复': 'bg-green-600 text-white', '退信': 'bg-red-600 text-white', '自动回复': 'bg-slate-200 text-slate-600'};
+const replyBadge = r => r.reply_status ? `<span class="chip ${REPLY_CLS[r.reply_status] || 'bg-slate-200 text-slate-600'}" title="${esc((r.reply_at || '') + ' ' + (r.reply_from || '') + '：' + (r.reply_snippet || ''))}">${esc(r.reply_status === '退信' ? '退信·没送达' : r.reply_status)}</span>` : '';
+const posBadge = p => p ? `<span class="chip ${p === '全职' ? 'bg-purple-100 text-purple-700' : p === '留用实习' ? 'bg-teal-100 text-teal-700' : 'bg-slate-100 text-slate-600'}">${esc(p)}</span>` : '';
+
+function metric(label, value, color = '#005bbf', tip = []) {
+  const tipHtml = tip.length ? `<div class="mc-tip hidden absolute left-0 top-full mt-2 z-50 bg-slate-800 text-white text-[11px] rounded-xl px-4 py-3 shadow-xl max-h-64 overflow-y-auto w-64">${tip.map(t => `<div class="py-0.5">${esc(t)}</div>`).join('')}</div>` : '';
+  return `<div class="relative bg-white p-4 rounded-2xl ${tip.length ? 'cursor-pointer has-tip' : ''}"><p class="text-[10px] font-bold text-slate-400">${esc(label)}</p><h3 class="text-3xl font-bold mt-1" style="color:${color}">${esc(value)}</h3>${tipHtml}</div>`;
+}
+
+function bindTips(root) {
+  root.querySelectorAll('.has-tip').forEach(el => {
+    el.onmouseenter = () => el.querySelector('.mc-tip')?.classList.remove('hidden');
+    el.onmouseleave = () => el.querySelector('.mc-tip')?.classList.add('hidden');
+  });
+}
+
 async function loadBoard() {
+  const camp = $('#fCampaign').value;
   try {
-  allRecords = await safeFetch('/api/records');
-  const stats = await safeFetch('/api/stats');
+    const [recs, stats] = await Promise.all([api('/api/records?campaign=' + encodeURIComponent(camp)), api('/api/stats?campaign=' + encodeURIComponent(camp))]);
+    S.records = recs;
+    $('#boardMetrics').innerHTML = metric('总投递', stats.total) + metric('本周新增', '+' + stats.week_new) +
+      metric('有回复 / 来信', stats.replied, '#16a34a') + metric('待跟进（>7天无回复）', stats.followup.length, '#b45309', stats.followup) +
+      (stats.bounced.length ? metric('退信·没送达（换邮箱重投）', stats.bounced.length, '#dc2626', stats.bounced) : '');
+    bindTips($('#boardMetrics'));
+    const keep = (id, vals) => { const sel = $(id), cur = sel.value, first = sel.options[0].outerHTML; sel.innerHTML = first + vals.map(v => opt(v, v, cur)).join(''); };
+    keep('#fType', Object.keys(stats.type_dist)); keep('#fCity', Object.keys(stats.loc_dist));
+    renderBoard();
+  } catch (e) { toast('加载看板失败：' + e.message); }
+}
 
-  // Metrics
-  document.getElementById('boardMetrics').innerHTML = [
-    metricCard('总投递', stats.total, 'primary', '100%'),
-    metricCard('本周新增', '+'+stats.week_new, 'primary', Math.round(stats.week_new/Math.max(stats.total,1)*100)+'%', true),
-    metricCard('待跟进', stats.followup, '#ba1a1a', Math.round(stats.followup/Math.max(stats.total,1)*100)+'%', false, '投递超过7天且状态仍为"已投递"的记录，建议发跟进邮件或标记为"无回复"'),
-  ].join('');
+const normCity = l => { l = (l || '').trim(); if (!l || l.startsWith('[') || ['未注明', '不限', '不明确'].includes(l)) return ''; for (const c of ['上海', '北京', '深圳', '杭州', '香港', '广州', '苏州', '南京', '成都', '新加坡']) if (l.includes(c)) return c; if (l.includes('线上') || l.includes('远程')) return '远程'; return l.split('/')[0].split('·')[0].trim().slice(0, 4); };
 
-  // Populate filter options
-  populateFilter('filterType', Object.keys(stats.type_dist));
-  populateFilter('filterLoc', Object.keys(stats.loc_dist));
-
-  // Apply filters
-  let filtered = allRecords;
-  const fs = document.getElementById('filterStatus').value;
-  const ft = document.getElementById('filterType').value;
-  const fl = document.getElementById('filterLoc').value;
-  if (fs) filtered = filtered.filter(r => r.status === fs);
-  if (ft) filtered = filtered.filter(r => normType(r.company_type, r.job_title, r.focus_industry) === ft);
-  if (fl) filtered = filtered.filter(r => normLoc(r.job_location) === fl);
-
-  document.getElementById('recordCount').textContent = `显示 ${filtered.length} / ${allRecords.length} 条`;
-
-  // Render table
-  const tbody = document.getElementById('boardTable');
-  tbody.innerHTML = filtered.map(r => `
-    <tr class="group hover:bg-white/60 cursor-pointer border-b border-slate-100" onclick="toggleDetail('${r.id}')">
-      <td class="px-6 py-4"><div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold text-xs">${(r.company_name||'?')[0]}</div>
-        <span class="font-semibold">${r.company_name||'—'}</span>
-      </div></td>
-      <td class="px-6 py-4">${r.job_title||'—'}</td>
-      <td class="px-6 py-4">${statusBadge(r.status||'已投递')}</td>
-      <td class="px-5 py-4 text-slate-400">${r.job_location||'—'}</td>
-      <td class="px-5 py-4 text-slate-500">${r.focus_industry||'—'}</td>
-      <td class="px-5 py-4 text-slate-400 whitespace-nowrap">${r.job_post_date||'—'}</td>
-      <td class="px-5 py-4 text-right text-slate-400 whitespace-nowrap">${r.sent_at||'—'}</td>
+function renderBoard() {
+  const q = $('#fSearch').value.trim().toLowerCase();
+  const fs = $('#fStatus').value, fp = $('#fPosition').value, ft = $('#fType').value, fc = $('#fCity').value;
+  const list = S.records.filter(r => (!fs || r.status === fs) && (!fp || (r.position_type || '不明确') === fp) &&
+    (!ft || r._type === ft || r.company_type === ft) && (!fc || normCity(r.job_location) === fc) &&
+    (!q || [r.company_name, r.job_title, r.to_email, r.cc_email, r.subject, r.focus_industry, r.job_location, r.job_source, r.notes, r.email_body].join(' ').toLowerCase().includes(q)));
+  $('#recordCount').textContent = `显示 ${list.length} / ${S.records.length} 条`;
+  $('#boardTable').innerHTML = list.map(r => `
+    <tr class="hover:bg-white/70 cursor-pointer border-b border-slate-100" data-rid="${esc(r.id)}">
+      <td class="px-5 py-3"><div class="flex items-center gap-2 flex-wrap"><span class="font-semibold">${esc(r.company_name || '—')}</span>${replyBadge(r)}</div></td>
+      <td class="px-5 py-3">${esc(r.job_title || '—')}</td>
+      <td class="px-4 py-3">${posBadge(r.position_type)}</td>
+      <td class="px-4 py-3">${statusBadge(r.status || '已投递')}</td>
+      <td class="px-4 py-3 text-slate-500">${esc(r.job_location || '—')}</td>
+      <td class="px-4 py-3 text-slate-500">${esc(r.focus_industry || '—')}</td>
+      <td class="px-4 py-3 text-right text-slate-400 whitespace-nowrap">${esc(r.sent_at || '—')}${r.send_mode === '草稿' ? ' <span class="chip bg-slate-200 text-slate-600">草稿</span>' : r.send_mode === '未发邮件' ? ' <span class="chip bg-slate-100 text-slate-500">网申</span>' : ''}</td>
     </tr>
-    <tr id="detail-${r.id}" class="row-detail">
-      <td colspan="7" class="p-0">
-        <div class="mx-4 mb-4 rounded-2xl border bg-white/80 overflow-hidden animate-in">
-          <div class="grid grid-cols-12">
-            <!-- Edit Controls -->
-            <div class="col-span-4 p-6 border-r bg-slate-50/50 space-y-4">
-              <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">编辑投递信息</h4>
-              <div>
-                <label class="text-[11px] font-bold text-slate-400 block mb-1">状态</label>
-                <select id="edit-status-${r.id}" class="w-full bg-slate-100 border-none rounded-xl text-sm py-2 px-3">
-                  ${['已投递','已电联','面试中','offer','拒绝','无回复'].map(s => `<option ${s===r.status?'selected':''}>${s}</option>`).join('')}
-                </select>
-              </div>
-              <div>
-                <label class="text-[11px] font-bold text-slate-400 block mb-1">来源</label>
-                <input id="edit-source-${r.id}" class="w-full bg-slate-100 border-none rounded-xl text-sm py-2 px-3" value="${r.job_source||''}" placeholder="公众号 / Boss / 官网"/>
-              </div>
-              <div>
-                <label class="text-[11px] font-bold text-slate-400 block mb-1">地点</label>
-                <input id="edit-loc-${r.id}" class="w-full bg-slate-100 border-none rounded-xl text-sm py-2 px-3" value="${r.job_location||''}"/>
-              </div>
-              <div>
-                <label class="text-[11px] font-bold text-slate-400 block mb-1">关注行业</label>
-                <input id="edit-industry-${r.id}" class="w-full bg-slate-100 border-none rounded-xl text-sm py-2 px-3" value="${r.focus_industry||''}" placeholder="AI / 半导体 / 消费..."/>
-              </div>
-              <div>
-                <label class="text-[11px] font-bold text-slate-400 block mb-1">备注</label>
-                <textarea id="edit-notes-${r.id}" class="w-full bg-slate-100 border-none rounded-xl text-sm py-2 px-3 resize-none" rows="3" placeholder="面试时间、联系人...">${r.notes||''}</textarea>
-              </div>
-              ${r.apply_url ? `<div>
-                <label class="text-[11px] font-bold text-slate-400 block mb-1">投递链接</label>
-                <a href="${r.apply_url}" target="_blank" class="text-xs text-primary hover:underline flex items-center gap-1">
-                  <span class="material-symbols-outlined text-sm">open_in_new</span>${r.apply_url.length > 40 ? r.apply_url.slice(0,40)+'...' : r.apply_url}
-                </a>
-              </div>` : ''}
-              <div class="flex gap-3 pt-2">
-                <button onclick="saveRecord('${r.id}')" class="flex-1 bg-primary text-white py-2 rounded-xl text-xs font-bold hover:opacity-90">保存</button>
-                <button onclick="deleteRecord('${r.id}')" class="px-4 border-2 border-red-200 text-red-600 rounded-xl text-xs font-bold hover:bg-red-50">删除</button>
-              </div>
-            </div>
-            <!-- Content Display -->
-            <div class="col-span-8 p-6 space-y-6">
-              <div class="flex items-center gap-4 text-[10px] text-slate-400 mb-3">
-                ${(r.status_updated_at && r.status_updated_at !== 'undefined') ? `<span>状态更新于 ${r.status_updated_at}</span>` : ''}
-                ${r.job_post_date ? `<span>岗位发布 ${r.job_post_date}</span>` : ''}
-              </div>
-              <div class="grid grid-cols-2 gap-6">
-                <div>
-                  <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">JD 原文</h4>
-                  <div class="bg-slate-50 p-4 rounded-xl text-xs leading-relaxed max-h-[220px] overflow-y-auto no-scrollbar">${escapeHtml(r.jd_text||'暂无')}</div>
-                </div>
-                <div>
-                  <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">发送邮件</h4>
-                  <div class="bg-blue-50/50 p-4 rounded-xl text-xs leading-relaxed max-h-[260px] overflow-y-auto no-scrollbar border border-blue-100">
-                    ${r.to_email ? `<div class="mb-2 pb-2 border-b border-blue-100"><span class="text-blue-400">收件人：</span>${escapeHtml(r.to_email)}</div>` : ''}
-                    ${r.subject ? `<div class="mb-2 pb-2 border-b border-blue-100"><span class="text-blue-400">标题：</span>${escapeHtml(r.subject)}</div>` : ''}
-                    ${escapeHtml(r.email_body||'暂无')}
-                  </div>
-                  <div class="mt-3 pt-3 border-t border-slate-100 space-y-1.5">
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">附件</p>
-                    <div class="flex items-center gap-2 px-2.5 py-1.5 bg-blue-50 rounded-lg">
-                      <span class="material-symbols-outlined text-blue-600 text-sm">description</span>
-                      <span class="text-[11px] text-blue-800">${r.subject ? r.subject.split('-')[0].trim() : 'YOUR_NAME'}-简历.pdf</span>
-                    </div>
-                    ${r.attach_report === true || r.attach_report === '是' ? `
-                    <div class="flex items-center gap-2 px-2.5 py-1.5 bg-orange-50 rounded-lg">
-                      <span class="material-symbols-outlined text-orange-600 text-sm">lab_profile</span>
-                      <span class="text-[11px] text-orange-800">YOUR_NAME-YOUR_RESEARCH_SUBJECT研究报告.pdf</span>
-                    </div>` : ''}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </td>
-    </tr>
-  `).join('');
+    <tr id="detail-${esc(r.id)}" class="row-detail"><td colspan="7" class="p-0">${detailHtml(r)}</td></tr>`).join('');
+  $('#boardCards').innerHTML = list.map(r => `
+    <div class="bg-white rounded-xl p-4 shadow-sm border" data-mid="${esc(r.id)}">
+      <div class="flex items-center justify-between gap-2"><div><p class="font-semibold text-sm">${esc(r.company_name || '—')} ${replyBadge(r)}</p><p class="text-xs text-slate-400">${esc(r.job_title || '—')}</p></div>${statusBadge(r.status || '已投递')}</div>
+      <div class="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[11px] text-slate-400">${posBadge(r.position_type)}<span>${esc(r.job_location)}</span><span>${esc(r.sent_at)}</span></div>
+      <div class="mob-detail hidden mt-3 pt-3 border-t">${detailHtml(r, true)}</div>
+    </div>`).join('');
+}
+['#fStatus', '#fPosition', '#fType', '#fCity'].forEach(s => $(s).addEventListener('change', renderBoard));
+$('#fSearch').addEventListener('input', renderBoard);
+$('#fCampaign').addEventListener('change', loadBoard);
 
-  // Mobile cards
-  document.getElementById('boardCards').innerHTML = filtered.map(r => `
-    <div class="bg-white rounded-xl p-4 shadow-sm border" onclick="toggleMobileDetail('mob-${r.id}')">
-      <div class="flex items-center justify-between mb-2">
-        <div class="flex items-center gap-2">
-          <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold text-xs">${(r.company_name||'?')[0]}</div>
-          <div>
-            <p class="font-semibold text-sm">${r.company_name||'—'}</p>
-            <p class="text-xs text-slate-400">${r.job_title||'—'}</p>
-          </div>
-        </div>
-        ${statusBadge(r.status||'已投递')}
-      </div>
-      <div class="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-400">
-        ${r.job_location ? `<span>${r.job_location}</span>` : ''}
-        ${r.focus_industry ? `<span>${r.focus_industry}</span>` : ''}
-        <span>${r.sent_at||''}</span>
-      </div>
-      <!-- Mobile detail (hidden) -->
-      <div id="mob-${r.id}" class="hidden mt-3 pt-3 border-t space-y-3 animate-in">
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="text-[10px] font-bold text-slate-400 block mb-1">状态</label>
-            <select id="mob-status-${r.id}" class="w-full bg-slate-50 border-none rounded-lg text-xs py-1.5 px-2">
-              ${['已投递','已电联','面试中','offer','拒绝','无回复'].map(s=>`<option ${s===r.status?'selected':''}>${s}</option>`).join('')}
-            </select>
-          </div>
-          <div>
-            <label class="text-[10px] font-bold text-slate-400 block mb-1">行业</label>
-            <input id="mob-industry-${r.id}" class="w-full bg-slate-50 border-none rounded-lg text-xs py-1.5 px-2" value="${r.focus_industry||''}"/>
-          </div>
-        </div>
-        <div>
-          <label class="text-[10px] font-bold text-slate-400 block mb-1">备注</label>
-          <input id="mob-notes-${r.id}" class="w-full bg-slate-50 border-none rounded-lg text-xs py-1.5 px-2" value="${r.notes||''}" placeholder="面试时间、联系人..."/>
-        </div>
-        ${(r.jd_text && r.jd_text !== 'nan' && r.jd_text.length > 10) ? `
-        <div>
-          <label class="text-[10px] font-bold text-slate-400 block mb-1">JD 原文</label>
-          <div class="bg-slate-50 p-3 rounded-lg text-[11px] leading-relaxed max-h-[200px] overflow-y-auto">${escapeHtml(r.jd_text)}</div>
-        </div>` : ''}
-        ${(r.email_body && r.email_body !== 'nan' && r.email_body.length > 10) ? `
-        <div>
-          <label class="text-[10px] font-bold text-slate-400 block mb-1">发送邮件</label>
-          <div class="bg-blue-50 p-3 rounded-lg text-[11px] leading-relaxed max-h-[200px] overflow-y-auto">
-            ${r.to_email ? `<div class="mb-1 text-blue-400">收件人：${escapeHtml(r.to_email)}</div>` : ''}
-            ${r.subject ? `<div class="mb-1 pb-1 border-b border-blue-100 text-blue-400">标题：${escapeHtml(r.subject)}</div>` : ''}
-            ${escapeHtml(r.email_body)}
-          </div>
-        </div>` : ''}
-        <div class="flex gap-2">
-          <button onclick="event.stopPropagation();saveMobileRecord('${r.id}')" class="flex-1 bg-primary text-white py-1.5 rounded-lg text-xs font-bold">保存</button>
-          <button onclick="event.stopPropagation();deleteRecord('${r.id}')" class="px-3 border border-red-200 text-red-500 rounded-lg text-xs">删除</button>
-        </div>
-      </div>
-    </div>
-  `).join('');
-  } catch(e) { showToast('加载看板失败：' + e.message); }
+function detailHtml(r, mobile = false) {
+  const atts = (r.attachments && r.attachments.length) ? r.attachments.map(a => `${a.kind}（${a.version}）：${a.filename}`) :
+    [r.resume_version ? '简历：' + r.resume_version : '', r.attach_report === true ? '研究样本' : ''].filter(Boolean);
+  const gmailLink = r.gmail_thread_id ? `<a class="text-primary hover:underline" target="_blank" rel="noopener" href="https://mail.google.com/mail/u/0/#all/${encodeURIComponent(r.gmail_thread_id)}">在 Gmail 打开</a>` : '';
+  const links = [gmailLink, r.apply_url ? `<a class="text-primary hover:underline" target="_blank" rel="noopener" href="${esc(r.apply_url)}">网申链接</a>` : '', r.source_url ? `<a class="text-primary hover:underline" target="_blank" rel="noopener" href="${esc(r.source_url)}">原文</a>` : ''].filter(Boolean).join(' ｜ ');
+  const reply = r.reply_status ? `<div class="p-3 rounded-xl ${r.reply_status === '有回复' ? 'bg-green-50 text-green-800' : r.reply_status === '退信' ? 'bg-red-50 text-red-700' : 'bg-slate-50 text-slate-600'} text-xs"><b>${esc(r.reply_status)}</b> ${esc(r.reply_at)} ${esc(r.reply_from)}<br>${esc(r.reply_snippet)}</div>` : '';
+  const sel = (key, vals) => `<select data-k="${key}" class="field mt-1">${vals.map(v => opt(v, v, r[key])).join('')}</select>`;
+  const inp = (key, ph = '') => `<input data-k="${key}" class="field mt-1" value="${esc(r[key])}" placeholder="${esc(ph)}"/>`;
+  const lbl = (t, x) => `<label class="block text-[11px] font-bold text-slate-400">${esc(t)}${x}</label>`;
+  const edit = `<div class="space-y-2 edit-box" data-id="${esc(r.id)}">
+      ${lbl('状态', sel('status', S.cfg.statuses))}${lbl('岗位类型', sel('position_type', S.cfg.position_types))}
+      ${lbl('来源', inp('job_source', '公众号 / Boss / 官网'))}${lbl('地点', inp('job_location'))}${lbl('行业', inp('focus_industry'))}
+      ${lbl('截止日期', inp('deadline', 'YYYY-MM-DD'))}
+      ${lbl('备注', `<textarea data-k="notes" class="field mt-1" rows="4" placeholder="面试时间、联系人…">${esc(r.notes)}</textarea>`)}
+      <div class="flex gap-2 pt-1"><button class="save-btn flex-1 bg-primary text-white py-2 rounded-xl text-xs font-bold">保存</button><button class="del-btn px-4 border-2 border-red-200 text-red-600 rounded-xl text-xs font-bold">删除</button></div></div>`;
+  const content = `<div class="space-y-3">
+      <div class="text-[11px] text-slate-400 flex flex-wrap gap-x-3">${r.campaign ? `<span>批次：${esc(r.campaign)}</span>` : ''}<span>方式：${esc(r.send_mode)}</span>${r.status_updated_at ? `<span>状态更新 ${esc(r.status_updated_at)}</span>` : ''}${r.job_post_date ? `<span>岗位发布 ${esc(r.job_post_date)}</span>` : ''}${links ? `<span>${links}</span>` : ''}</div>
+      ${reply}
+      <div class="grid ${mobile ? 'grid-cols-1' : 'grid-cols-2'} gap-4">
+        <div><h4 class="text-[11px] font-bold text-slate-400 mb-2">发出的邮件</h4>
+          <div class="bg-blue-50/60 p-3 rounded-xl text-xs leading-relaxed max-h-72 overflow-y-auto border border-blue-100">
+            ${r.to_email ? `<div class="mb-1"><span class="text-blue-400">收件人：</span>${esc(r.to_email)}</div>` : ''}
+            ${r.cc_email ? `<div class="mb-1"><span class="text-purple-400">抄送：</span>${esc(r.cc_email)}</div>` : ''}
+            ${r.subject ? `<div class="mb-2 pb-2 border-b border-blue-100"><span class="text-blue-400">标题：</span>${esc(r.subject)}</div>` : ''}
+            ${escBr(r.email_body || '（无）')}</div>
+          <div class="mt-2 text-[11px] text-slate-500">附件：${esc(atts.join('；') || '—')}</div>
+          ${r.issues_at_send && r.issues_at_send.length ? `<div class="mt-1 text-[11px] text-amber-700">发送时的提示：${esc(r.issues_at_send.join('；'))}</div>` : ''}</div>
+        <div><h4 class="text-[11px] font-bold text-slate-400 mb-2">JD 原文</h4>
+          <div class="bg-slate-50 p-3 rounded-xl text-xs leading-relaxed max-h-80 overflow-y-auto">${escBr(r.jd_text || '（无）')}</div></div>
+      </div></div>`;
+  return mobile ? `<div class="space-y-4">${edit}${content}</div>` :
+    `<div class="mx-3 mb-3 rounded-2xl border bg-white/90 overflow-hidden animate-in"><div class="grid grid-cols-12"><div class="col-span-3 p-5 border-r bg-slate-50/60">${edit}</div><div class="col-span-9 p-5">${content}</div></div></div>`;
 }
 
-function toggleDetail(id) {
-  const el = document.getElementById('detail-' + id);
-  if (el) el.classList.toggle('open');
-}
-
-function toggleMobileDetail(id) {
-  const el = document.getElementById(id);
-  if (el) el.classList.toggle('hidden');
-}
-
-async function saveMobileRecord(id) {
-  const data = {
-    status: document.getElementById('mob-status-'+id).value,
-    focus_industry: document.getElementById('mob-industry-'+id).value,
-    notes: document.getElementById('mob-notes-'+id).value,
-  };
-  try {
-    await safeFetch('/api/records/'+id, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
-    showToast('已保存');
-    loadBoard();
-  } catch(e) { showToast('保存失败：' + e.message); }
-}
-
-async function saveRecord(id) {
-  const data = {
-    status: document.getElementById('edit-status-'+id).value,
-    job_source: document.getElementById('edit-source-'+id).value,
-    job_location: document.getElementById('edit-loc-'+id).value,
-    focus_industry: document.getElementById('edit-industry-'+id).value,
-    notes: document.getElementById('edit-notes-'+id).value,
-  };
-  try {
-    await safeFetch('/api/records/'+id, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
-    showToast('已保存');
-    loadBoard();
-  } catch(e) { showToast('保存失败：' + e.message); }
-}
-
-async function deleteRecord(id) {
-  if (!confirm('确认删除？')) return;
-  try {
-    await safeFetch('/api/records/'+id, {method:'DELETE'});
-    showToast('已删除');
-    loadBoard();
-  } catch(e) { showToast('删除失败：' + e.message); }
-}
-
-// ━━━ Tab 3: Analytics ━━━
-async function loadAnalytics() {
-  try {
-  const stats = await safeFetch('/api/stats');
-
-  // Metrics
-  const responded = Object.entries(stats.status_dist||{}).filter(([k])=>['已电联','面试中','offer'].includes(k)).reduce((a,[,v])=>a+v,0);
-  const responseRate = stats.total ? Math.round(responded/stats.total*100)+'%' : '—';
-  const offerCount = (stats.status_dist||{})['offer'] || 0;
-  document.getElementById('analyticsMetrics').innerHTML = [
-    metricCard('总投递', stats.total, 'primary', '100%'),
-    metricCard('覆盖公司', stats.companies, 'slate-500', Math.round(stats.companies/Math.max(stats.total,1)*100)+'%'),
-    metricCard('有回应', responded, 'green-600', Math.round(responded/Math.max(stats.total,1)*100)+'%'),
-    metricCard('回应率', responseRate, 'primary', responseRate),
-    metricCard('Offer', offerCount, 'green-600', Math.round(offerCount/Math.max(stats.total,1)*100)+'%'),
-    metricCard('待跟进', stats.followup, '#ba1a1a', Math.round(stats.followup/Math.max(stats.total,1)*100)+'%', false, '投递超过7天且状态仍为"已投递"的记录，建议发跟进邮件或标记为"无回复"'),
-  ].join('');
-
-  // Trend bars + cumulative line + hover tooltip
-  const daily = stats.daily || {};
-  const dailyDetail = stats.daily_detail || {};
-  _dailyDetail = dailyDetail; // 存到全局给 tooltip 用
-  const days = Object.keys(daily).sort();
-  const maxVal = Math.max(...Object.values(daily), 1);
-
-  // 计算累计值
-  let cumTotal = 0;
-  const cumData = days.map(d => { cumTotal += daily[d]; return cumTotal; });
-  const cumMax = Math.max(...cumData, 1);
-
-  document.getElementById('trendChart').innerHTML = days.map((d, i) =>
-    `<div class="flex-1 h-full flex flex-col items-center justify-end gap-2 group cursor-pointer"
-          onmouseenter="showTrendTip(event,'${d}',${daily[d]},${cumData[i]})"
-          onmouseleave="hideTrendTip()"
-          ontouchstart="showTrendTip(event,'${d}',${daily[d]},${cumData[i]})">
-      <div class="relative w-full">
-        <div class="text-[10px] font-bold text-primary text-center opacity-0 group-hover:opacity-100 transition-opacity mb-1">${daily[d]}</div>
-        <div class="w-full bg-primary/20 group-hover:bg-primary/50 rounded-t transition-colors min-h-[4px]" style="height:${daily[d]/maxVal*200}px"></div>
-      </div>
-      <span class="text-[10px] text-slate-400">${d}</span>
-    </div>`
-  ).join('') || '<p class="text-slate-400 text-sm m-auto">暂无数据</p>';
-
-  // 画累计折线（Canvas）
-  const canvas = document.getElementById('cumulativeLine');
-  if (canvas && days.length > 1) {
-    const rect = canvas.parentElement.querySelector('#trendChart').getBoundingClientRect();
-    canvas.width = rect.width;
-    canvas.height = rect.height;
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    const chartH = canvas.height - 30; // 底部留给日期标签
-    const barW = canvas.width / days.length;
-
-    ctx.beginPath();
-    ctx.strokeStyle = '#f97316';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([6, 3]);
-
-    days.forEach((d, i) => {
-      const x = barW * i + barW / 2;
-      const y = chartH - (cumData[i] / cumMax * chartH * 0.85);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-
-    // 画点
-    ctx.setLineDash([]);
-    days.forEach((d, i) => {
-      const x = barW * i + barW / 2;
-      const y = chartH - (cumData[i] / cumMax * chartH * 0.85);
-      ctx.beginPath();
-      ctx.arc(x, y, 3, 0, Math.PI * 2);
-      ctx.fillStyle = '#f97316';
-      ctx.fill();
-    });
-
-    // 右侧累计数字
-    const lastX = barW * (days.length - 1) + barW / 2;
-    const lastY = chartH - (cumData[cumData.length - 1] / cumMax * chartH * 0.85);
-    ctx.font = 'bold 11px Inter';
-    ctx.fillStyle = '#f97316';
-    ctx.fillText(cumData[cumData.length - 1] + '', lastX + 8, lastY + 4);
+document.addEventListener('click', async e => {
+  const tr = e.target.closest('tr[data-rid]');
+  if (tr) { $('#detail-' + CSS.escape(tr.dataset.rid))?.classList.toggle('open'); return; }
+  const mc = e.target.closest('[data-mid]');
+  if (mc && !e.target.closest('.edit-box')) { mc.querySelector('.mob-detail').classList.toggle('hidden'); return; }
+  const box = e.target.closest('.edit-box');
+  if (!box) return;
+  const id = box.dataset.id;
+  if (e.target.closest('.save-btn')) {
+    const data = {};
+    box.querySelectorAll('[data-k]').forEach(el => data[el.dataset.k] = el.value);
+    try { await api('/api/records/' + encodeURIComponent(id), {method: 'PUT', body: data}); toast('已保存'); loadBoard(); }
+    catch (err) { toast('保存失败：' + err.message); }
   }
-
-  // Status ring (SVG donut)
-  const sd = stats.status_dist || {};
-  const total = Object.values(sd).reduce((a,b)=>a+b, 0) || 1;
-  const colors = {'已投递':'#3b82f6','面试中':'#f97316','offer':'#22c55e','拒绝':'#ef4444','已电联':'#6366f1','无回复':'#cbd5e1'};
-  let offset = 0;
-  const C = 2 * Math.PI * 40;
-  let rings = `<circle cx="50" cy="50" r="40" fill="transparent" stroke="#e6eeff" stroke-width="12"/>`;
-  for (const [s, v] of Object.entries(sd)) {
-    const dash = (v / total) * C;
-    rings += `<circle cx="50" cy="50" r="40" fill="transparent" stroke="${colors[s]||'#94a3b8'}" stroke-width="12" stroke-dasharray="${dash} ${C}" stroke-dashoffset="${-offset}"/>`;
-    offset += dash;
+  if (e.target.closest('.del-btn')) {
+    const ok = await modal({title: '删除这条记录？', html: '<p>只删除看板里的记录，不会撤回已发出的邮件。</p>', buttons: [{label: '取消', value: false}, {label: '删除', value: true, kind: 'danger'}]});
+    if (!ok) return;
+    try { await api('/api/records/' + encodeURIComponent(id), {method: 'DELETE'}); toast('已删除'); loadBoard(); }
+    catch (err) { toast('删除失败：' + err.message); }
   }
-  document.getElementById('statusRing').innerHTML = `
-    <svg class="w-full h-full -rotate-90" viewBox="0 0 100 100">${rings}</svg>
-    <div class="absolute inset-0 flex flex-col items-center justify-center">
-      <span class="text-3xl font-bold">${total}</span><span class="text-[10px] text-slate-400 font-bold">TOTAL</span>
-    </div>`;
-
-  document.getElementById('statusLegend').innerHTML = Object.entries(sd).map(([s,v]) =>
-    `<div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full" style="background:${colors[s]||'#94a3b8'}"></div><span class="text-xs">${s} (${v})</span></div>`
-  ).join('');
-
-  // Type bars
-  const td = stats.type_dist || {};
-  const tMax = Math.max(...Object.values(td), 1);
-  document.getElementById('typeBars').innerHTML = Object.entries(td).map(([t,v]) => `
-    <div class="mb-4"><div class="flex justify-between text-xs font-medium mb-1"><span>${t}</span><span class="text-slate-400">${Math.round(v/total*100)}%</span></div>
-    <div class="h-1.5 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-primary rounded-full" style="width:${v/tMax*100}%"></div></div></div>
-  `).join('') || '<p class="text-slate-400 text-sm">暂无</p>';
-
-  // Location list
-  const ld = stats.loc_dist || {};
-  document.getElementById('locList').innerHTML = Object.entries(ld).sort((a,b)=>b[1]-a[1]).map(([l,v]) => `
-    <div class="flex items-center justify-between py-2">
-      <div class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-primary text-xs font-bold">${l.slice(0,2)}</div><span class="text-sm font-medium">${l}</span></div>
-      <span class="text-sm text-slate-400 font-medium">${v}</span>
-    </div>
-  `).join('') || '<p class="text-slate-400 text-sm">暂无</p>';
-
-  // Industry bars
-  const ind = stats.industry_dist || {};
-  const indMax = Math.max(...Object.values(ind), 1);
-  document.getElementById('industryBars').innerHTML = Object.entries(ind).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([t,v]) => `
-    <div class="mb-3"><div class="flex justify-between text-xs font-medium mb-1"><span>${t}</span><span class="text-slate-400">${v}</span></div>
-    <div class="h-1.5 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-indigo-500 rounded-full" style="width:${v/indMax*100}%"></div></div></div>
-  `).join('') || '<p class="text-slate-400 text-sm">暂无</p>';
-  } catch(e) { showToast('加载分析失败：' + e.message); }
-}
-
-// ━━━ Sync ━━━
-async function gmailSync() {
-  const btn = document.querySelector('[onclick="gmailSync()"]');
-  const originalHTML = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = '<span class="material-symbols-outlined animate-spin text-sm">progress_activity</span>同步中...';
-  showToast('Gmail 全量同步中，请稍候...');
-  try {
-    const resp = await fetch('/api/gmail-sync', {method:'POST'});
-    const data = await resp.json();
-    document.getElementById('syncLog').textContent = (data.logs||[]).join('\n') || JSON.stringify(data.result);
-    document.getElementById('syncModal').classList.remove('hidden');
-    if (currentTab === 'board') loadBoard();
-  } catch(e) { showToast('Gmail 同步失败：' + e.message); }
-  finally { btn.disabled = false; btn.innerHTML = originalHTML; }
-}
-
-// ━━━ Helpers ━━━
-function metricCard(label, value, color, barW='0%', highlight=false, tooltip='') {
-  const border = highlight ? 'border-l-4 border-primary' : '';
-  const textColor = color.startsWith('#') ? `style="color:${color}"` : `class="text-${color}"`;
-  const tipAttr = tooltip ? `title="${tooltip}" style="cursor:help"` : '';
-  return `<div class="bg-white p-5 rounded-2xl flex flex-col justify-between h-28 hover:shadow-sm transition-all ${border}" ${tipAttr}>
-    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">${label}</p>
-    <h3 class="text-3xl font-bold" ${textColor}>${value}</h3>
-    <div class="h-1 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-primary rounded-full" style="width:${barW}"></div></div>
-  </div>`;
-}
-
-function populateFilter(id, options) {
-  const sel = document.getElementById(id);
-  const current = sel.value;
-  const first = sel.options[0].textContent;
-  sel.innerHTML = `<option value="">${first}</option>` + options.map(o => `<option ${o===current?'selected':''}>${o}</option>`).join('');
-}
-
-function normType(t, job, industry) {
-  if (!t) return '其他';
-  const l = t.toLowerCase();
-  const ctx = ((job||'') + (industry||'')).toLowerCase();
-  if (l.includes('fa') || l.includes('投行') || l.includes('并购')) return 'FA/投行';
-  if (l.includes('vc') && l.includes('pe')) {
-    if (/早期|风险|创投|seed|天使/.test(ctx)) return 'VC';
-    return 'PE';
-  }
-  if (l.includes('vc') || l.includes('风险投资') || l.includes('创投')) return 'VC';
-  if (l.includes('pe') || l.includes('股权') || l.includes('私募')) return 'PE';
-  if (l.includes('券商')) return '券商';
-  if (l.includes('互联网') || l.includes('大厂') || l.includes('科技')) return '互联网/科技';
-  return '其他';
-}
-
-function normLoc(loc) {
-  if (!loc) return '';
-  if (loc.includes('上海')) return '上海';
-  if (loc.includes('北京')) return '北京';
-  if (loc.includes('深圳')) return '深圳';
-  if (loc.includes('杭州')) return '杭州';
-  if (loc.includes('香港')) return '香港';
-  if (loc.includes('线上') || loc.includes('远程')) return '远程';
-  return loc.split('/')[0].split('·')[0].trim().slice(0,4);
-}
-
-// Trend chart tooltip
-let _dailyDetail = {};
-function showTrendTip(e, day, count, cum) {
-  const tip = document.getElementById('trendTooltip');
-  const companies = (_dailyDetail[day] || []).join('、') || '无数据';
-  tip.innerHTML = `<div class="font-bold mb-1">${day}（当日 ${count} 家 / 累计 ${cum} 家）</div><div class="text-slate-300">${companies}</div>`;
-  tip.classList.remove('hidden');
-  const chart = document.getElementById('trendChart').parentElement;
-  const cr = chart.getBoundingClientRect();
-  const x = Math.min(e.clientX - cr.left + 10, cr.width - 230);
-  const y = Math.max(e.clientY - cr.top - 80, 0);
-  tip.style.left = x + 'px';
-  tip.style.top = y + 'px';
-}
-function hideTrendTip() { document.getElementById('trendTooltip').classList.add('hidden'); }
-
-function escapeHtml(text) {
-  if (!text || text === 'nan') return '暂无';
-  return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br/>');
-}
-
-// ━━━ Global Search ━━━
-document.getElementById('globalSearch').addEventListener('input', function(e) {
-  if (currentTab !== 'board') return;
-  const q = e.target.value.toLowerCase().trim();
-
-  // 找出匹配的记录 ID
-  const matched = new Set();
-  if (q) {
-    allRecords.forEach(r => {
-      const fields = [r.company_name, r.job_title, r.to_email, r.subject,
-                      r.focus_industry, r.job_location, r.job_source,
-                      r.company_type, r.notes, r.email_body].join(' ').toLowerCase();
-      if (fields.includes(q)) matched.add(r.id);
-    });
-  }
-
-  // 桌面表格：遍历所有行，按 ID 显示/隐藏
-  document.querySelectorAll('#boardTable tr').forEach(tr => {
-    if (tr.classList.contains('row-detail')) {
-      // 详情行跟随主行
-      if (q) tr.classList.remove('open');
-      return;
-    }
-    // 主行：从 onclick 里提取 ID
-    const onclick = tr.getAttribute('onclick') || '';
-    const idMatch = onclick.match(/toggleDetail\('([^']+)'\)/);
-    if (!idMatch) return;
-    const rid = idMatch[1];
-    tr.style.display = (!q || matched.has(rid)) ? '' : 'none';
-  });
-
-  // 手机卡片：也用数据过滤（确保邮箱等隐藏字段可搜到）
-  document.querySelectorAll('#boardCards > div').forEach(card => {
-    const onclick = card.getAttribute('onclick') || '';
-    const idMatch = onclick.match(/toggleMobileDetail\('mob-([^']+)'\)/);
-    if (!idMatch) { card.style.display = ''; return; }
-    const rid = idMatch[1];
-    card.style.display = (!q || matched.has(rid)) ? '' : 'none';
-  });
 });
 
-// ━━━ Init ━━━
-switchTab('new');
+async function runJob(btn, url, label, body = {}) {
+  setBusy(btn, true, label);
+  try {
+    const d = await api(url, {method: 'POST', body});
+    await modal({title: '完成', html: `<pre class="text-xs bg-slate-50 p-3 rounded-xl whitespace-pre-wrap">${esc((d.logs || []).join('\n'))}</pre>`, buttons: [{label: '关闭', value: true, kind: 'primary'}]});
+    loadBoard();
+  } catch (e) {
+    toast(e.message, 8000);
+    if (e.status === 401) refreshGmail();
+  } finally { setBusy(btn, false); }
+}
+$('#repliesBtn').onclick = () => runJob($('#repliesBtn'), '/api/check-replies', '检查中…', {campaign: $('#fCampaign').value});
+$('#syncBtn').onclick = () => runJob($('#syncBtn'), '/api/gmail-sync', '同步中…');
 
-// 获取 tunnel 链接
-fetch('/api/tunnel-url').then(r=>r.json()).then(d=>{
-  if(d.url){
-    document.getElementById('tunnelUrl').href=d.url;
-    document.getElementById('tunnelUrl').textContent=d.url;
-    document.getElementById('tunnelInfo').classList.remove('hidden');
+// ━━━ 分析 ━━━
+$('#aCampaign').addEventListener('change', loadAnalytics);
+let _dailyDetail = {};
+function bars(id, dist, color, limit = 8) {
+  const entries = Object.entries(dist || {}).sort((a, b) => b[1] - a[1]).slice(0, limit);
+  const max = Math.max(1, ...entries.map(e => e[1]));
+  $(id).innerHTML = entries.map(([k, v]) => `<div class="mb-3"><div class="flex justify-between text-xs font-medium mb-1"><span>${esc(k)}</span><span class="text-slate-400">${v}</span></div><div class="h-1.5 bg-slate-100 rounded-full overflow-hidden"><div class="h-full rounded-full" style="width:${v / max * 100}%;background:${color}"></div></div></div>`).join('') || '<p class="text-slate-400 text-sm">暂无</p>';
+}
+
+async function loadAnalytics() {
+  let s;
+  try { s = await api('/api/stats?campaign=' + encodeURIComponent($('#aCampaign').value)); } catch (e) { return toast('加载失败：' + e.message); }
+  const sd = s.status_dist || {};
+  const progressed = ['已电联', '面试中', 'offer'].reduce((a, k) => a + (sd[k] || 0), 0);
+  const pct = n => s.total ? Math.round(n / s.total * 100) + '%' : '—';
+  $('#analyticsMetrics').innerHTML = metric('总投递', s.total) + metric('覆盖机构', s.companies, '#475569') + metric('有回复 / 来信', s.replied, '#16a34a') +
+    metric('推进率（电联及以后）', pct(progressed), '#005bbf') + metric('Offer', sd['offer'] || 0, '#16a34a') + metric('待跟进', s.followup.length, '#ba1a1a', s.followup);
+  bindTips($('#analyticsMetrics'));
+  const daily = s.daily || {}; _dailyDetail = s.daily_detail || {};
+  const days = Object.keys(daily).sort();
+  const maxV = Math.max(1, ...Object.values(daily));
+  let cum = 0; const cumData = days.map(d => (cum += daily[d]));
+  $('#trendChart').innerHTML = days.map((d, i) => `<div class="trend-col flex-1 h-full flex flex-col items-center justify-end gap-1 group cursor-pointer" data-day="${esc(d)}" data-n="${daily[d]}" data-c="${cumData[i]}">
+      <div class="w-full bg-primary/25 group-hover:bg-primary/60 rounded-t min-h-[4px]" style="height:${daily[d] / maxV * 190}px"></div><span class="text-[10px] text-slate-400">${esc(d)}</span></div>`).join('') || '<p class="text-slate-400 text-sm m-auto">暂无数据</p>';
+  document.querySelectorAll('.trend-col').forEach(el => {
+    el.onmouseenter = ev => showTip(ev, el.dataset.day, el.dataset.n, el.dataset.c);
+    el.onmouseleave = () => $('#trendTooltip').classList.add('hidden');
+  });
+  const cv = $('#cumulativeLine');
+  const ctx = cv.getContext('2d');
+  const rect = $('#trendChart').getBoundingClientRect();
+  cv.width = rect.width; cv.height = rect.height; ctx.clearRect(0, 0, cv.width, cv.height);
+  if (days.length > 1) {
+    const h = cv.height - 24, w = cv.width / days.length, cmax = Math.max(...cumData);
+    ctx.strokeStyle = '#f97316'; ctx.lineWidth = 2; ctx.setLineDash([6, 3]); ctx.beginPath();
+    days.forEach((d, i) => { const x = w * i + w / 2, y = h - cumData[i] / cmax * h * 0.85; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    ctx.stroke(); ctx.setLineDash([]);
   }
-}).catch(()=>{});
-</script>
+  const colors = {'草稿': '#94a3b8', '已投递': '#3b82f6', '已电联': '#6366f1', '面试中': '#f97316', 'offer': '#22c55e', '拒绝': '#ef4444', '无回复': '#cbd5e1'};
+  const total = Object.values(sd).reduce((a, b) => a + b, 0) || 1, C = 2 * Math.PI * 40;
+  let off = 0, rings = '<circle cx="50" cy="50" r="40" fill="transparent" stroke="#e6eeff" stroke-width="12"/>';
+  for (const [k, v] of Object.entries(sd)) { const dash = v / total * C; rings += `<circle cx="50" cy="50" r="40" fill="transparent" stroke="${colors[k] || '#94a3b8'}" stroke-width="12" stroke-dasharray="${dash} ${C}" stroke-dashoffset="${-off}"/>`; off += dash; }
+  $('#statusRing').innerHTML = `<svg class="w-full h-full -rotate-90" viewBox="0 0 100 100">${rings}</svg><div class="absolute inset-0 flex flex-col items-center justify-center"><span class="text-3xl font-bold">${s.total}</span><span class="text-[10px] text-slate-400 font-bold">TOTAL</span></div>`;
+  $('#statusLegend').innerHTML = Object.entries(sd).map(([k, v]) => `<div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full" style="background:${colors[k] || '#94a3b8'}"></div><span class="text-xs">${esc(k)} (${v})</span></div>`).join('');
+  bars('#posBars', s.position_dist, '#8b5cf6'); bars('#typeBars', s.type_dist, '#005bbf'); bars('#industryBars', s.industry_dist, '#6366f1');
+  bars('#locList', s.loc_dist, '#0ea5e9');
+}
+function showTip(e, day, n, c) {
+  const tip = $('#trendTooltip');
+  tip.innerHTML = `<div class="font-bold mb-1">${esc(day)}（当日 ${esc(n)} / 累计 ${esc(c)}）</div><div class="text-slate-300">${esc((_dailyDetail[day] || []).join('、'))}</div>`;
+  tip.classList.remove('hidden');
+  const cr = $('#trendChart').parentElement.getBoundingClientRect();
+  tip.style.left = Math.min(e.clientX - cr.left + 10, cr.width - 250) + 'px';
+  tip.style.top = Math.max(e.clientY - cr.top - 80, 0) + 'px';
+}
 
-<!-- 移动端底部导航 -->
-<nav id="mobileNav" class="hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-50 justify-around items-center py-2 px-4">
-  <button onclick="switchTab('new')" class="mob-tab flex flex-col items-center gap-0.5 py-1 px-3" data-tab="new">
-    <span class="material-symbols-outlined text-xl">add_box</span>
-    <span class="text-[10px] font-medium">新投递</span>
-  </button>
-  <button onclick="switchTab('board')" class="mob-tab flex flex-col items-center gap-0.5 py-1 px-3" data-tab="board">
-    <span class="material-symbols-outlined text-xl">dashboard</span>
-    <span class="text-[10px] font-medium">看板</span>
-  </button>
-  <button onclick="switchTab('analytics')" class="mob-tab flex flex-col items-center gap-0.5 py-1 px-3" data-tab="analytics">
-    <span class="material-symbols-outlined text-xl">analytics</span>
-    <span class="text-[10px] font-medium">分析</span>
-  </button>
-</nav>
+switchTab('new');
+init();
+</script>
 </body>
 </html>

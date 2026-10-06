@@ -1,0 +1,34 @@
+{
+  "_说明": "个人设置示例。复制为 candidate_settings.json 后改成你自己的信息。",
+  "name_zh": "张三",
+  "name_en": "San Zhang",
+  "sender_email": "your.email@gmail.com",
+  "sender_name": "张三",
+  "resume_file": "张三简历.pdf",
+  "resume_default_name_zh": "张三-某大学-简历.pdf",
+  "resume_default_name_en": "San Zhang-ExampleU-Resume.pdf",
+  "resume_must_contain": {
+    "中文": "2027.06",
+    "英文": "Jun 2027"
+  },
+  "report_file": "张三研究报告.pdf",
+  "report_default_name": "张三-公司研究报告.pdf",
+  "report_label": "研究样本（中文公司研究）",
+  "current_employer_keywords": [
+    "A资本"
+  ],
+  "not_on_resume": [
+    "已删掉的旧经历关键词"
+  ],
+  "wrong_graduation": [
+    "2026年12月",
+    "2026届",
+    "Dec 2026"
+  ],
+  "current_campaign": "2026秋·全职+留用实习",
+  "old_campaign": "2026春·实习",
+  "old_campaign_before": "2026-09-01",
+  "spelling_fixes": {
+    "某大學": "某大学"
+  }
+}

@@ -1,17 +1,13 @@
-# Core
-anthropic
-pyperclip
-python-dotenv
-
-# Gmail API
-google-auth
-google-auth-oauthlib
-google-api-python-client
-
-# URL Scraping & OCR
-requests
+anthropic>=1.11,<2
+flask>=3.1
+google-api-python-client>=2.190
+google-auth-oauthlib>=1.2
+google-auth-httplib2
 beautifulsoup4
 lxml
-
-# Web Dashboard
-flask
+pyperclip
+python-dotenv
+requests
+pymupdf
+openpyxl
+pytest

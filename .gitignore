@@ -1,27 +1,22 @@
-# Secrets
+# 密钥与个人数据
 .env
 credentials.json
 token.json
-
-# Personal data
+.panel_key
+candidate_settings.json
 records.json
+gmail_state.json
+backups/
+_archive_*/
 
 # Python
-__pycache__/
-*.pyc
-*.pyo
 .venv/
 venv/
+__pycache__/
+*.pyc
+.pytest_cache/
 
-# macOS
+# 其他
 .DS_Store
-
-# IDE
-.vscode/
-.idea/
-
-# Claude Code
 .claude/
-
-# Cloudflare tunnel
 cloudflared
