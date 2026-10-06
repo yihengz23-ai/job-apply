@@ -30,5 +30,6 @@
   "old_campaign_before": "2026-09-01",
   "spelling_fixes": {
     "某大學": "某大学"
-  }
+  },
+  "llm_backend": "api"
 }

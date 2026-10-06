@@ -62,6 +62,8 @@ OLD_CAMPAIGN_BEFORE = SETTINGS.get("old_campaign_before", "1900-01-01")
 CLAUDE_MODEL = os.environ.get("JOBAPPLY_MODEL", "claude-opus-5-5")
 CLAUDE_EFFORT = os.environ.get("JOBAPPLY_EFFORT", "medium")      # JD 分析与写信
 CLAUDE_EFFORT_LIGHT = "low"                                      # 识别岗位 / OCR / 邮件分类
+# 调用通道：claude_code = 本机 Claude Code 登录（Max 会员额度，默认）；api = .env 里的 API Key（按量扣费）
+LLM_BACKEND = os.environ.get("JOBAPPLY_BACKEND", SETTINGS.get("llm_backend", "claude_code"))
 
 GMAIL_SCOPES = [
     "https://www.googleapis.com/auth/gmail.compose",

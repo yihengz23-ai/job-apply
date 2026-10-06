@@ -311,7 +311,7 @@ async function init() {
   const c = S.cfg;
   $('#campaignLabel').textContent = '本轮：' + c.campaign;
   $('#reportLabel').textContent = c.report_label || '研究样本';
-  $('#modelBadge').textContent = c.model + ' · ' + c.effort;
+  $('#modelBadge').textContent = c.model + ' · ' + c.effort + (c.backend === 'claude_code' ? ' · 会员额度' : ' · API');
   $('#posHint').innerHTML += c.position_types.filter(p => p !== '不明确').map(p => opt(p)).join('');
   $('#resumeHint').innerHTML += c.resume_versions.map(v => opt(v)).join('');
   $('#resumeVersion').innerHTML = c.resume_versions.map(v => opt(v)).join('');
@@ -413,7 +413,9 @@ async function analyze(regen = false) {
     fillEmail(d.result);
     renderInfo(d.result); renderRules(d.result); renderIssues(d.issues);
     const m = d.meta;
-    $('#metaLine').textContent = `${m.model} · ${m.seconds} 秒 · 约 $${m.cost_usd ?? '?'}（缓存 ${m.cache_read} tokens）`;
+    const how = m.backend === '会员额度' ? '走 Claude Max 会员额度（不扣 API 余额）'
+      : (m.backend || 'API') + (m.cost_usd != null ? ` · 约 $${m.cost_usd}` : '');
+    $('#metaLine').textContent = `${m.model} · ${m.seconds} 秒 · ${how}`;
     st.textContent = '✓ 已生成，请看右边的邮件和下方的检查结果';
     st.className = 'mt-3 p-3 rounded-xl text-sm bg-green-50 text-green-700';
     ['sendBtn', 'draftBtn', 'recordBtn', 'regenBtn'].forEach(id => $('#' + id).disabled = false);

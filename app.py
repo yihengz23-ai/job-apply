@@ -88,7 +88,8 @@ def index():
 def api_config():
     rs = resume.resume_status()
     return jsonify({
-        "model": config.CLAUDE_MODEL, "effort": config.CLAUDE_EFFORT, "sender": config.SENDER_EMAIL,
+        "model": config.CLAUDE_MODEL, "effort": config.CLAUDE_EFFORT, "backend": config.LLM_BACKEND,
+        "sender": config.SENDER_EMAIL,
         "campaign": config.CURRENT_CAMPAIGN, "campaigns": sorted({r.get("campaign") for r in records.load()} | {config.CURRENT_CAMPAIGN}),
         "statuses": records.STATUSES, "position_types": llm.POSITION_TYPES, "resume_versions": llm.RESUME_VERSIONS,
         "resume": {k: rs.get(k) for k in ("ok", "error", "pages", "zh_pages", "en_pages", "grad_problems", "sha", "size_kb")},

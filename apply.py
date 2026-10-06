@@ -87,7 +87,9 @@ def show(out):
         color = RED if i["level"] == "error" else YELLOW if i["level"] == "warn" else DIM
         print(f"{color}[{ {'error': '必须处理', 'warn': '注意', 'info': '提示'}[i['level']] }] {i['msg']}{END}")
     m = out["meta"]
-    print(f"{DIM}{m['model']}｜{m['seconds']} 秒｜约 ${m['cost_usd']}{END}")
+    how = "走 Claude Max 会员额度" if m.get("backend") == "会员额度" else \
+        f"{m.get('backend', 'API')}｜约 ${m.get('cost_usd')}"
+    print(f"{DIM}{m['model']}｜{m['seconds']} 秒｜{how}{END}")
 
 
 def main():

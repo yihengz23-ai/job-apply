@@ -1,9 +1,19 @@
-"""所有 Claude API 调用都在这里：JD 分析写信、多岗位识别、图片 OCR、已发送邮件分类。"""
+"""所有 Claude 调用都在这里：JD 分析写信、多岗位识别、图片 OCR、已发送邮件分类。
+
+两个通道（config.LLM_BACKEND）：
+  claude_code —— 调本机已登录的 Claude Code（claude -p），用 Claude Max 会员额度，不扣 API 余额（默认）
+  api         —— 用 .env 里的 ANTHROPIC_API_KEY，按量从 API 账号扣费
+会员通道失败（没登录 / 额度用完 / 超时）时，若有 API Key 会自动改走 API，并在结果里注明。"""
 
 import base64
 import json
+import os
+import shutil
+import subprocess
+import tempfile
 import time
 from datetime import datetime
+from pathlib import Path
 
 import anthropic
 
@@ -139,9 +149,81 @@ def _cost(usage, model):
                   + cw * p["cache_write"] + cr * p["cache_read"]) / 1e6, 4)
 
 
-def _call(*, system, content, schema, effort, max_tokens=16000):
-    """统一调用：结构化 JSON 输出 + 系统提示缓存 + 拒答时自动换模型兜底。返回 (dict, meta)。"""
+class BackendUnavailable(Exception):
+    """会员通道（Claude Code）这次用不了。"""
+
+
+_MEDIA_EXT = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif"}
+
+
+def _claude_bin():
+    return shutil.which("claude") or str(Path.home() / ".local" / "bin" / "claude")
+
+
+def _call_cc(*, system, content, schema, effort, images=None, **_):
+    """Claude Code 无界面模式：用本机 claude.ai 登录（Max 会员），结构化输出，禁用全部工具（OCR 时只开 Read）。"""
     t0 = time.time()
+    env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
+    with tempfile.TemporaryDirectory(prefix="jobapply-cc-") as tmp:
+        sp = Path(tmp) / "system.md"
+        sp.write_text(system, encoding="utf-8")
+        args = [_claude_bin(), "-p", "--model", config.CLAUDE_MODEL, "--effort", effort,
+                "--system-prompt-file", str(sp), "--json-schema", json.dumps(schema, ensure_ascii=False),
+                "--output-format", "json", "--no-session-persistence", "--setting-sources", ""]
+        prompt = content
+        if images:
+            paths = []
+            for i, (raw, media_type) in enumerate(images, 1):
+                p = Path(tmp) / f"image{i}.{_MEDIA_EXT.get(media_type, 'png')}"
+                p.write_bytes(raw)
+                paths.append(str(p))
+            args += ["--tools", "Read", "--allowedTools", "Read"]
+            prompt = content + "\n\n图片文件（按顺序，用 Read 工具逐张读取）：\n" + "\n".join(paths)
+        else:
+            args += ["--tools", ""]
+        try:
+            proc = subprocess.run(args, input=prompt, capture_output=True, text=True, cwd=tmp, env=env, timeout=300)
+        except FileNotFoundError as e:
+            raise BackendUnavailable("本机没找到 Claude Code") from e
+        except subprocess.TimeoutExpired as e:
+            raise BackendUnavailable("Claude Code 超过 5 分钟没返回") from e
+    try:
+        out = json.loads(proc.stdout)
+    except json.JSONDecodeError as e:
+        raise BackendUnavailable(f"Claude Code 没有正常返回：{(proc.stderr or proc.stdout).strip()[:200]}") from e
+    if out.get("is_error") or out.get("subtype") != "success" or out.get("structured_output") is None:
+        raise BackendUnavailable(f"Claude Code 出错：{str(out.get('result') or out.get('subtype'))[:200]}")
+    usage = out.get("usage") or {}
+    meta = {
+        "model": config.CLAUDE_MODEL, "backend": "会员额度", "seconds": round(time.time() - t0, 1),
+        "input_tokens": usage.get("input_tokens", 0), "output_tokens": usage.get("output_tokens", 0),
+        "cache_read": usage.get("cache_read_input_tokens", 0), "cost_usd": None,
+    }
+    return out["structured_output"], meta
+
+
+def _call(**kw):
+    """按 config.LLM_BACKEND 选通道；会员通道失败且有 API Key 时自动改走 API。返回 (dict, meta)。"""
+    if config.LLM_BACKEND == "claude_code":
+        try:
+            return _call_cc(**kw)
+        except BackendUnavailable as e:
+            if not os.environ.get("ANTHROPIC_API_KEY"):
+                raise LLMError(f"会员通道用不了（{e}），也没配置 API Key。") from e
+            data, meta = _call_api(**kw)
+            meta["backend"] = f"API（会员通道失败：{e}）"
+            return data, meta
+    return _call_api(**kw)
+
+
+def _call_api(*, system, content, schema, effort, max_tokens=16000, images=None):
+    """API 通道：结构化 JSON 输出 + 系统提示缓存 + 拒答时自动换模型兜底。"""
+    t0 = time.time()
+    if images:
+        blocks = [{"type": "image", "source": {"type": "base64", "media_type": mt,
+                                               "data": base64.standard_b64encode(raw).decode()}}
+                  for raw, mt in images]
+        content = blocks + [{"type": "text", "text": content}]
     try:
         resp = client().beta.messages.create(
             model=config.CLAUDE_MODEL,
@@ -166,6 +248,7 @@ def _call(*, system, content, schema, effort, max_tokens=16000):
         raise LLMError(f"模型返回的不是合法 JSON：{text[:200]}") from e
     meta = {
         "model": resp.model,
+        "backend": "API",
         "seconds": round(time.time() - t0, 1),
         "input_tokens": resp.usage.input_tokens,
         "output_tokens": resp.usage.output_tokens,
@@ -238,17 +321,11 @@ def ocr_images(images):
     """images: [(bytes, media_type)]，一次请求读完，返回按顺序拼好的招聘文字。"""
     if not images:
         return ""
-    content = []
-    for raw, media_type in images:
-        content.append({"type": "image", "source": {
-            "type": "base64", "media_type": media_type,
-            "data": base64.standard_b64encode(raw).decode()}})
-    content.append({"type": "text", "text": (
-        "这些图片按顺序来自一篇公众号招聘文章。请把图片中的招聘相关文字（公司介绍、岗位名称、职责、要求、"
-        "投递邮箱、邮件标题格式、截止时间等）按原文顺序完整转写，不要总结、不要省略。"
-        "广告、二维码、公众号介绍等非招聘内容跳过。若没有任何招聘信息，text 输出空字符串。")})
+    prompt = ("这些图片按顺序来自一篇公众号招聘文章。请把图片中的招聘相关文字（公司介绍、岗位名称、职责、要求、"
+              "投递邮箱、邮件标题格式、截止时间等）按原文顺序完整转写，不要总结、不要省略。"
+              "广告、二维码、公众号介绍等非招聘内容跳过。若没有任何招聘信息，text 输出空字符串。")
     schema = _obj({"text": _STR})
-    data, _ = _call(system="你是精确的中文 OCR 转写助手，只输出 JSON。", content=content,
+    data, _ = _call(system="你是精确的中文 OCR 转写助手，只输出 JSON。", content=prompt, images=images,
                     schema=schema, effort=config.CLAUDE_EFFORT_LIGHT, max_tokens=12000)
     return data.get("text", "").strip()
 
