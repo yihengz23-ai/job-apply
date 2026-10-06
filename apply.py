@@ -9,7 +9,7 @@ import time
 
 import pyperclip
 
-from jobapply import config, fetch, gmail_client, llm, pipeline
+from jobapply import checks, config, fetch, gmail_client, llm, pipeline, records
 
 AUTO_SEND_COUNTDOWN = 5
 RED, YELLOW, GREEN, DIM, BOLD, END = "\033[31m", "\033[33m", "\033[32m", "\033[2m", "\033[1m", "\033[0m"
@@ -45,10 +45,13 @@ def read_input():
         print(f"{RED}剪贴板是空的或太短，请先复制 JD 文字或招聘链接。{END}")
         return None
     meta = {"source_label": "", "source_url": "", "publish_date": "", "target_job": ""}
-    if text.startswith("http") and "\n" not in text:
-        print(f"检测到链接，正在抓取：{text}")
-        page = fetch.fetch_url(text)
-        meta.update(source_label=page["source_label"], source_url=text, publish_date=page.get("publish_date", ""))
+    links = fetch.share_links(text)  # 纯链接，或微信分享出来的「标题 + 链接」
+    if links:
+        if len(links) > 1:
+            print(f"{YELLOW}剪贴板里有 {len(links)} 个链接，这里只处理第一个；一次投多个请用面板的「批量队列」。{END}")
+        print(f"检测到链接，正在抓取：{links[0]}")
+        page = fetch.fetch_url(links[0])
+        meta.update(source_label=page["source_label"], source_url=page["url"], publish_date=page.get("publish_date", ""))
         content = page["content"]
         n_multi, n_emails = fetch.count_job_signals(content)
         if n_multi >= 2 or n_emails >= 2:
@@ -60,7 +63,9 @@ def read_input():
                 pick = ask("投哪个？输入编号（回车取消）：")
                 if not pick.isdigit() or not 1 <= int(pick) <= len(jobs):
                     return None
-                meta["target_job"] = jobs[int(pick) - 1]["title"]
+                j = jobs[int(pick) - 1]
+                same = [x for x in jobs if x["title"] == j["title"]]
+                meta["target_job"] = f"{j['title']}（{j['location']}）" if len(same) > 1 and j.get("location") else j["title"]
         return content, meta
     print(f"读取到剪贴板 JD（{len(text)} 字）")
     return text, meta
@@ -112,24 +117,32 @@ def main():
         return 0
 
     if not result["to_emails"]:
-        if result.get("apply_url"):
-            print(f"\n这个岗位要网申：{result['apply_url']}")
-            subprocess.run(["open", result["apply_url"]])
+        url = checks.safe_url(result.get("apply_url"))
+        print(f"\n{YELLOW}这个岗位要网申。网申资料（填表字段、自我介绍、本岗位问答）在面板里："
+              f"http://localhost:5001 → 把同一份 JD 贴进「新投递」。{END}")
+        if url:
+            print(f"网申链接：{url}")
+            subprocess.run(["open", url])
             if ask("投完后输入 y 记录这次网申（回车跳过）：") == "y":
                 pipeline.record_web_application(result, jd_text, source_type="剪贴板", **meta)
                 print(f"{GREEN}已记录。{END}")
             return 0
-        print(f"{RED}没有收件邮箱，无法发送。{END}")
+        print(f"{RED}没有收件邮箱，也没有网申链接（可能要扫码），请到面板里处理。{END}")
         return 1
 
     issues = out["issues"]
     must_stop = [i for i in issues if i["level"] == "error"]
-    should_ask = must_stop or [i for i in issues if i["field"] in ("duplicate", "fit", "company", "deadline")]
+    both = result.get("apply_channel") == "邮箱+网申"
+    # 剪贴板模式会倒计时自动发：有任何「注意」、或者除了发邮件还要网申，都先停下问
+    warns = [i for i in issues if i["level"] == "warn"]
+    should_ask = must_stop or warns or both
     force = False
     mode = "send"
     if should_ask:
-        tip = "有必须处理的问题。" if must_stop else "有需要你确认的情况（见上方黄色提示）。"
-        choice = ask(f"\n{tip}输入 y 仍然发送 / d 存为 Gmail 草稿再改 / 回车取消：")
+        tip = ("有必须处理的问题。" if must_stop else "有需要你确认的情况（见上方黄色提示）。" if warns else "") + \
+              ("这个岗位除了发邮件还要网申（发完会打开网申链接）。" if both else "")
+        verb = "仍然发送" if must_stop or warns else "发送"
+        choice = ask(f"\n{tip}输入 y {verb} / d 存为 Gmail 草稿再改 / 回车取消：")
         if choice not in ("y", "d"):
             print("已取消。可以把 JD 粘到网页面板里修改后再发。")
             return 0
@@ -153,6 +166,15 @@ def main():
         print(f"{RED}{res['record_error']}{END}")
         return 1
     notify(f"{verb}：{result['company_name']} {result['job_title']}")
+    if both:
+        url = checks.safe_url(result.get("apply_url"))
+        print(f"\n{YELLOW}别忘了还要网申{('：' + url) if url else '（JD 里没找到链接，可能要扫码）'}。"
+              f"网申资料（自我介绍、本岗位问答）在面板里：http://localhost:5001{END}")
+        if url:
+            subprocess.run(["open", url])
+        if ask("网申投完后输入 y，补记在刚才这条投递记录上（回车跳过）：") == "y":
+            pipeline.record_web_application(result, jd_text, source_type="剪贴板", record_id=res.get("record_id", ""), **meta)
+            print(f"{GREEN}已补记网申。{END}")
     return 0
 
 
@@ -161,7 +183,12 @@ if __name__ == "__main__":
         code = main()
     except KeyboardInterrupt:
         code = 0
-    except (llm.LLMError, fetch.FetchError, gmail_client.GmailAuthError, pipeline.Blocked, ValueError) as e:
+    except gmail_client.SendUncertain as e:  # 可能已经发出：千万别再跑一遍
+        print(f"{RED}{e}{END}")
+        notify("发送结果不确定：先去 Gmail「已发送」看看，别重复发")
+        code = 1
+    except (llm.LLMError, fetch.FetchError, gmail_client.GmailAuthError, gmail_client.SendFailed,
+            pipeline.Blocked, records.RecordsCorrupt, ValueError) as e:
         print(f"{RED}{e}{END}")
         notify("出错了，请看终端窗口")
         code = 1

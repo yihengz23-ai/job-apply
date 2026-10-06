@@ -1,19 +1,26 @@
 """投递记录存储（records.json）：加锁、原子写入、每日备份、旧记录迁移、查重、统计、Excel 镜像。"""
 
+import copy
+import fcntl
 import json
+import logging
 import os
 import re
 import shutil
 import tempfile
 import threading
+import time
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 
 from . import config
-from .checks import PUBLIC_DOMAINS, split_emails
+from .checks import PUBLIC_DOMAINS, safe_url, split_emails
 from .llm import COMPANY_TYPES
 
-_lock = threading.RLock()
+log = logging.getLogger(__name__)
+_lock = threading.RLock()          # 同一进程内（面板的多个请求 / 后台队列线程）
+_flock = {"depth": 0, "fh": None}   # 跨进程（面板和剪贴板投递同时写）
 STATUSES = ["草稿", "已投递", "已电联", "面试中", "offer", "拒绝", "无回复"]
 POSITION_LABELS = ["全职", "留用实习", "实习", "不明确"]
 KEEP_BACKUPS = 40
@@ -28,6 +35,25 @@ def now_str():
 
 
 # ── 读写 ───────────────────────────────────────────────────
+
+@contextmanager
+def _locked():
+    """线程锁 + 文件锁（可重入）：保证读-改-写期间没有别的线程或进程插进来写。"""
+    with _lock:
+        if _flock["depth"] == 0:
+            fh = open(config.RECORDS_PATH.with_name(".records.lock"), "a")
+            fcntl.flock(fh, fcntl.LOCK_EX)
+            _flock["fh"] = fh
+        _flock["depth"] += 1
+        try:
+            yield
+        finally:
+            _flock["depth"] -= 1
+            if _flock["depth"] == 0:
+                fcntl.flock(_flock["fh"], fcntl.LOCK_UN)
+                _flock["fh"].close()
+                _flock["fh"] = None
+
 
 def load():
     with _lock:
@@ -61,7 +87,7 @@ def _backup():
 
 
 def save(records):
-    with _lock:
+    with _locked():
         _backup()
         payload = json.dumps({"records": records, "updated_at": now_str(), "schema": 2},
                              ensure_ascii=False, indent=2)
@@ -79,8 +105,8 @@ def save(records):
 
 
 def mutate(fn):
-    """在锁内读-改-写。fn(records) 的返回值原样返回。"""
-    with _lock:
+    """在锁内读-改-写。fn(records) 的返回值原样返回。fn 里不要再调 add/update（外层保存会盖掉内层写入）。"""
+    with _locked():
         records = load()
         out = fn(records)
         save(records)
@@ -96,13 +122,16 @@ NEW_FIELDS = {
     "reply_status": "", "reply_at": "", "reply_from": "", "reply_snippet": "", "reply_checked_at": "",
     "issues_at_send": [], "model": "", "cc_email": "", "notes": "", "focus_industry": "",
     "job_source": "", "job_post_date": "", "apply_url": "", "status_updated_at": "",
+    "platform": "", "wangshen": {},
+    "sent_ts": 0,            # 投递时刻的绝对时间戳（换时区也准；旧记录为 0，按 sent_at 本机时间算）
+    "reply_locked": False,   # 看板里手动改过回复状态：查回复时不再覆盖
 }
 
 
 def _fill_defaults(r):
     for k, v in NEW_FIELDS.items():
         if k not in r or r[k] is None:
-            r[k] = list(v) if isinstance(v, list) else v
+            r[k] = copy.deepcopy(v)
     if not r["campaign"]:
         r["campaign"] = config.OLD_CAMPAIGN if (r.get("sent_at") or "") < config.OLD_CAMPAIGN_BEFORE else config.CURRENT_CAMPAIGN
     if not r["position_type"] and r["campaign"] == config.OLD_CAMPAIGN:
@@ -118,6 +147,7 @@ def migrate():
     """把旧记录补齐新字段并落盘（幂等）。返回补齐的条数。"""
     if not config.RECORDS_PATH.exists():
         return 0
+    load()  # 文件坏了会抛 RecordsCorrupt（友好提示），不会覆盖
     raw = json.loads(config.RECORDS_PATH.read_text(encoding="utf-8"))
     raw_records = raw.get("records") if isinstance(raw, dict) else raw
     missing = sum(1 for r in raw_records if any(k not in r for k in NEW_FIELDS))
@@ -127,16 +157,24 @@ def migrate():
 
 
 def new_record(**fields):
-    r = {k: (list(v) if isinstance(v, list) else v) for k, v in NEW_FIELDS.items()}
+    r = copy.deepcopy(NEW_FIELDS)
     r.update({
         "id": uuid.uuid4().hex[:8], "company_name": "", "company_type": "", "job_title": "",
         "job_location": "", "to_email": "", "subject": "", "email_body": "", "jd_text": "",
-        "sent_at": now_str(), "status": "已投递", "source_type": "网页面板",
+        "sent_at": now_str(), "sent_ts": time.time(), "status": "已投递", "source_type": "网页面板",
         "attach_report": False, "created_at": now_str(), "status_updated_at": now_str(),
         "campaign": config.CURRENT_CAMPAIGN,
     })
     r.update(fields)
+    _clean_urls(r)
     return r
+
+
+def _clean_urls(r):
+    """链接只留 http(s)，防止 javascript: 之类的东西进看板。"""
+    for k in ("apply_url", "source_url"):
+        if k in r:
+            r[k] = safe_url(r.get(k))
 
 
 def add(record):
@@ -164,6 +202,7 @@ def update(record_id, fields):
                 notes = upd.get("notes", r.get("notes", "")) or ""
                 upd.update(notes=(notes + "\n" + log).strip(), status_updated_at=stamp)
             r.update(upd)
+            _clean_urls(r)
             return True
         return False
     return mutate(_upd)
@@ -318,13 +357,33 @@ def stats(records):
                 out["week_new"] += 1
             if status == "已投递" and dt < week_ago and r.get("reply_status") not in ("有回复", "退信"):
                 out["followup"].append(r.get("company_name") or "未知")
-            day = dt.strftime("%m/%d")
+            day = dt.strftime("%Y-%m-%d")  # 带年份排序（秋招会跨年），界面上只显示月/日
             out["daily"][day] = out["daily"].get(day, 0) + 1
             out["daily_detail"].setdefault(day, []).append(r.get("company_name", ""))
     return out
 
 
 # ── Excel 镜像（方便直接用 Excel 看；失败不影响主流程）──────────
+
+EXCEL_STATUS = {"ok": True, "error": "", "at": ""}
+_ILLEGAL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+def _cell(v):
+    if isinstance(v, bool):
+        return "是" if v else ""
+    if not isinstance(v, (str, int, float)):
+        v = "" if v is None else str(v)
+    return _ILLEGAL.sub("", v) if isinstance(v, str) else v
+
+
+def _append(ws, row):
+    """写一行；以 = 开头的文字按文字存，不让 Excel 当公式执行。"""
+    ws.append([_cell(v) for v in row])
+    for c in ws[ws.max_row]:
+        if isinstance(c.value, str) and c.value.startswith("="):
+            c.data_type = "s"
+
 
 def export_excel(records, path=None):
     from openpyxl import Workbook
@@ -348,8 +407,8 @@ def export_excel(records, path=None):
             v = r.get(key, "")
             if key == "attach_report":
                 v = "是" if v in (True, "是") else ""
-            row.append(v if isinstance(v, (str, int, float)) else str(v))
-        ws.append(row)
+            row.append(v)
+        _append(ws, row)
     head = Font(bold=True, color="FFFFFF")
     fill = PatternFill("solid", fgColor="1F4E79")
     for i, (_, _, width) in enumerate(cols, start=1):
@@ -362,8 +421,8 @@ def export_excel(records, path=None):
     ws2 = wb.create_sheet("邮件与JD")
     ws2.append(["投递时间", "机构", "岗位", "邮件正文", "JD 原文"])
     for r in sorted(records, key=lambda x: x.get("sent_at") or "", reverse=True):
-        ws2.append([r.get("sent_at", ""), r.get("company_name", ""), r.get("job_title", ""),
-                    (r.get("email_body") or "")[:32000], (r.get("jd_text") or "")[:32000]])
+        _append(ws2, [r.get("sent_at", ""), r.get("company_name", ""), r.get("job_title", ""),
+                      (r.get("email_body") or "")[:32000], (r.get("jd_text") or "")[:32000]])
     for col, width in zip("ABCDE", (17, 22, 26, 60, 90)):
         ws2.column_dimensions[col].width = width
     for row in ws2.iter_rows(min_row=2):
@@ -375,8 +434,11 @@ def export_excel(records, path=None):
 
 
 def export_excel_safe(records):
+    """Excel 正被打开等情况：跳过，下次保存时再同步；原因记在 EXCEL_STATUS 里给面板显示。"""
     try:
         if config.MATERIALS_DIR.exists():
             export_excel(records)
-    except Exception:
-        pass  # Excel 正被打开等情况：跳过，下次保存时再同步
+        EXCEL_STATUS.update(ok=True, error="", at=now_str())
+    except Exception as e:
+        log.warning("Excel 镜像同步失败：%s", e)
+        EXCEL_STATUS.update(ok=False, error=f"{type(e).__name__}: {e}", at=now_str())

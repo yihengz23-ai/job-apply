@@ -6,7 +6,11 @@ import app as panel
 
 
 @pytest.fixture
-def client():
+def client(tmp_path, monkeypatch):
+    # 记录文件换成临时目录，测试永远碰不到真实的投递记录
+    for k, v in (("RECORDS_PATH", tmp_path / "records.json"), ("BACKUP_DIR", tmp_path / "backups"),
+                 ("EXCEL_MIRROR_PATH", tmp_path / "mirror.xlsx")):
+        monkeypatch.setattr(panel.config, k, v)
     panel.app.config["TESTING"] = True
     return panel.app.test_client()
 

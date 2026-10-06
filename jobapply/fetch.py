@@ -1,12 +1,18 @@
 """抓取招聘链接：微信公众号（含图片 JD 的 OCR）和普通网页。"""
 
 import re
+import subprocess
+import tempfile
 from datetime import datetime
+from pathlib import Path
 
 import requests
 from bs4 import BeautifulSoup
 
-from . import llm
+from . import checks, config, llm
+
+QR_TOOL = config.BASE_DIR / "tools" / "qrdecode"
+QR_HINTS = ("二维码", "扫码", "长按", "识别", "小程序", "网申", "投递链接", "报名")
 
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36")
@@ -17,6 +23,34 @@ WECHAT_BLOCKED = ["环境异常", "完成验证后即可继续访问", "当前�
 
 class FetchError(Exception):
     pass
+
+
+SHARE_URL = re.compile(r"https?://[^\s<>\"'\u3000-\u303f\u4e00-\u9fff\uff00-\uffef)】]+")
+_JD_PARAGRAPHS = ("岗位职责", "任职要求", "职位描述", "工作职责", "工作内容", "岗位要求", "任职资格", "职位要求")
+_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+
+
+def share_links(text):
+    """微信「复制链接」/ 分享出来的「标题 + 链接」（可以一次好几条）→ 链接列表；
+    像 JD 正文（有「岗位职责」这类段落、写着投递邮箱、或者文字很长）的返回 []。"""
+    text = text or ""
+    urls = list(dict.fromkeys(u.rstrip(".,;:!?") for u in SHARE_URL.findall(text)))
+    if not urls:
+        return []
+    rest = SHARE_URL.sub("", text)
+    lines = [l.strip() for l in rest.splitlines() if l.strip()]
+    if any(h in text for h in _JD_PARAGRAPHS) or _EMAIL.search(rest):
+        return []
+    if len(lines) > 2 * len(urls) or sum(len(l) for l in lines) > 120 * len(urls):
+        return []
+    return urls
+
+
+def _join_split_emails(text):
+    """公众号排版常把邮箱拆进几个 <span>，按行取文字时会断成「hr\n@abc.com」：接回去。"""
+    text = re.sub(r"(?<=[\w.+-])\s*\n\s*(?=@[\w-])", "", text)
+    text = re.sub(r"(?<=[\w.+-]@)\s*\n\s*(?=[\w-])", "", text)
+    return re.sub(r"(?<=@[\w-])([\w-]*)\s*\n\s*(?=\.(?:com|cn|net|org|edu|hk|io|co)\b)", r"\1", text)
 
 
 def _get(url):
@@ -31,9 +65,11 @@ def _get(url):
 
 
 def fetch_url(url):
-    url = url.strip()
-    if not re.match(r"^https?://", url):
+    """url 可以是纯链接，也可以是微信分享出来的「标题 + 链接」。"""
+    m = SHARE_URL.search(url or "")
+    if not m:
         raise FetchError("请粘贴完整链接（以 http 开头）。")
+    url = m.group(0).rstrip(".,;:!?")
     resp = _get(url)
     if "mp.weixin.qq.com" in url:
         return _wechat(url, resp)
@@ -69,24 +105,47 @@ def _wechat(url, resp):
 
     for tag in content_el.find_all(["script", "style"]):
         tag.decompose()
-    text = content_el.get_text(separator="\n", strip=True)
-    ocr_used = False
+    text = _join_split_emails(content_el.get_text(separator="\n", strip=True))
+    ocr_used, qr_urls, imgs = False, [], None
     if len(text) < 200 or not any(s in text for s in JD_SIGNALS):
-        imgs = _wechat_images(html)
-        if imgs:
-            ocr = llm.ocr_images(imgs)
+        imgs = _download_images(html)
+        big = [(d, mt) for d, mt in imgs if len(d) >= 15000][:8]
+        if big:
+            ocr = llm.ocr_images(big)
             if ocr:
-                text = (text + "\n\n" + ocr).strip() if text else ocr
+                block = checks.OCR_MARKER + "\n" + ocr
+                text = (text + "\n\n" + block).strip() if text else block
                 ocr_used = True
+    # 文章里有二维码投递 / 没写邮箱时，扫一遍图片里的二维码，找网申链接
+    if any(h in text for h in QR_HINTS) or "@" not in text:
+        if imgs is None:
+            imgs = _download_images(html)
+        qr_urls = decode_qr(imgs)
+        if qr_urls:
+            text += "\n\n【文章图片里的二维码链接（系统自动识别）】\n" + "\n".join(qr_urls)
     text = re.sub(r"\n{3,}", "\n\n", text).strip()
     if len(text) < 30:
         raise FetchError("文章里没读到招聘文字（可能全是图片且识别失败）。请复制文字粘贴到 JD 框。")
     return {"title": title, "content": text, "source": "wechat",
             "source_label": f"{account}（公众号）" if account else "微信公众号",
-            "account_name": account, "publish_date": publish_date, "url": url, "ocr_used": ocr_used}
+            "account_name": account, "publish_date": publish_date, "url": url, "ocr_used": ocr_used,
+            "qr_urls": qr_urls}
 
 
-def _wechat_images(html, limit=8):
+def _image_type(data):
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:4] == b"\x89PNG":
+        return "image/png"
+    if data[:4] == b"RIFF":
+        return "image/webp"
+    if data[:3] == b"GIF":
+        return "image/gif"
+    return ""
+
+
+def _download_images(html, limit=20, min_size=2000):
+    """下载文章里的图片（按出现顺序），返回 [(bytes, media_type)]。"""
     urls, seen = [], set()
     for m in re.finditer(r'(https://mmbiz\.qpic\.cn/[^\s"<>\'\\]+)', html):
         u = m.group(1).replace("&amp;", "&")
@@ -94,32 +153,54 @@ def _wechat_images(html, limit=8):
         if key not in seen:
             seen.add(key)
             urls.append(u)
-    images = []
-    for u in urls[:20]:
+    out = []
+    for u in urls[:30]:
         fetch = u if "wx_fmt=" in u else u + ("&" if "?" in u else "?") + "wx_fmt=png"
         try:
             r = requests.get(fetch, headers={"User-Agent": UA, "Referer": "https://mp.weixin.qq.com/"}, timeout=15)
         except requests.RequestException:
             continue
-        data = r.content
-        if r.status_code != 200 or len(data) < 15000:  # 小图多是 logo / 二维码 / 分割线
-            continue
-        if data[:3] == b"\xff\xd8\xff":
-            mt = "image/jpeg"
-        elif data[:4] == b"\x89PNG":
-            mt = "image/png"
-        elif data[:4] == b"RIFF":
-            mt = "image/webp"
-        elif data[:3] == b"GIF":
-            mt = "image/gif"
-        else:
-            continue
-        if len(data) > 4_500_000:
-            continue
-        images.append((data, mt))
-        if len(images) >= limit:
-            break
-    return images
+        mt = _image_type(r.content)
+        if r.status_code == 200 and mt and min_size <= len(r.content) <= 4_500_000:
+            out.append((r.content, mt))
+            if len(out) >= limit:
+                break
+    return out
+
+
+def decode_qr(images):
+    """用 macOS Vision（tools/qrdecode）识别图片里的二维码，返回网申 / 报名链接（去掉公众号关注码）。"""
+    if not images or not _ensure_qr_tool():
+        return []
+    with tempfile.TemporaryDirectory(prefix="jobapply-qr-") as tmp:
+        paths = []
+        for i, (data, mt) in enumerate(images):
+            p = Path(tmp) / f"img{i}.{mt.split('/')[-1]}"
+            p.write_bytes(data)
+            paths.append(str(p))
+        try:
+            out = subprocess.run([str(QR_TOOL), *paths], capture_output=True, text=True, timeout=60).stdout
+        except (subprocess.TimeoutExpired, OSError):
+            return []
+    urls = []
+    for line in out.splitlines():
+        payload = line.split("\t", 1)[-1].strip()
+        if payload.startswith(("http://", "https://")) and "weixin.qq.com" not in payload and payload not in urls:
+            urls.append(payload)
+    return urls
+
+
+def _ensure_qr_tool():
+    if QR_TOOL.exists():
+        return True
+    src = QR_TOOL.with_suffix(".swift")
+    if not src.exists():
+        return False
+    try:
+        subprocess.run(["swiftc", "-O", str(src), "-o", str(QR_TOOL)], capture_output=True, timeout=300, check=True)
+    except (subprocess.SubprocessError, OSError):
+        return False
+    return QR_TOOL.exists()
 
 
 def _generic(url, resp):

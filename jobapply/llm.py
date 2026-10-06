@@ -82,6 +82,18 @@ JOBS_SCHEMA = _obj({
     })},
 })
 
+PLATFORMS = ["飞书", "Moka", "北森", "牛客", "Boss直聘", "官网", "问卷/表单", "微信小程序", "扫码", "邮箱", "其他", "不明确"]
+WANGSHEN_SCHEMA = _obj({
+    "platform": {"type": "string", "enum": PLATFORMS},
+    "apply_steps": _STRS,
+    "self_intro_short": _STR,
+    "self_intro": _STR,
+    "why_this_role": _STR,
+    "fit_points": _STR,
+    "custom_answers": {"type": "array", "items": _obj({"question": _STR, "answer": _STR})},
+    "notes": _STRS,
+})
+
 SENT_SCHEMA = _obj({
     "items": {"type": "array", "items": _obj({
         "index": {"type": "integer"},
@@ -153,44 +165,48 @@ class BackendUnavailable(Exception):
     """会员通道（Claude Code）这次用不了。"""
 
 
-_MEDIA_EXT = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif"}
-
-
 def _claude_bin():
     return shutil.which("claude") or str(Path.home() / ".local" / "bin" / "claude")
 
 
+def _image_blocks(images):
+    return [{"type": "image", "source": {"type": "base64", "media_type": mt,
+                                         "data": base64.standard_b64encode(raw).decode()}}
+            for raw, mt in images or []]
+
+
 def _call_cc(*, system, content, schema, effort, images=None, **_):
-    """Claude Code 无界面模式：用本机 claude.ai 登录（Max 会员），结构化输出，禁用全部工具（OCR 时只开 Read）。"""
+    """Claude Code 无界面模式：用本机 claude.ai 登录（Max 会员），结构化输出。
+    一律禁用全部工具：--tools "" 关掉内置工具，--strict-mcp-config 不加载任何 MCP（包括 claude.ai 账号里的
+    Gmail / Drive 等连接器）。图片直接放进消息里（stream-json 输入），模型碰不到本机文件、命令和你的账号。"""
     t0 = time.time()
     env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
+    msg = {"type": "user", "message": {"role": "user",
+                                       "content": _image_blocks(images) + [{"type": "text", "text": content}]}}
     with tempfile.TemporaryDirectory(prefix="jobapply-cc-") as tmp:
         sp = Path(tmp) / "system.md"
         sp.write_text(system, encoding="utf-8")
         args = [_claude_bin(), "-p", "--model", config.CLAUDE_MODEL, "--effort", effort,
                 "--system-prompt-file", str(sp), "--json-schema", json.dumps(schema, ensure_ascii=False),
-                "--output-format", "json", "--no-session-persistence", "--setting-sources", ""]
-        prompt = content
-        if images:
-            paths = []
-            for i, (raw, media_type) in enumerate(images, 1):
-                p = Path(tmp) / f"image{i}.{_MEDIA_EXT.get(media_type, 'png')}"
-                p.write_bytes(raw)
-                paths.append(str(p))
-            args += ["--tools", "Read", "--allowedTools", "Read"]
-            prompt = content + "\n\n图片文件（按顺序，用 Read 工具逐张读取）：\n" + "\n".join(paths)
-        else:
-            args += ["--tools", ""]
+                "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
+                "--no-session-persistence", "--setting-sources", "", "--tools", "", "--strict-mcp-config"]
         try:
-            proc = subprocess.run(args, input=prompt, capture_output=True, text=True, cwd=tmp, env=env, timeout=300)
+            proc = subprocess.run(args, input=json.dumps(msg, ensure_ascii=False) + "\n", capture_output=True,
+                                  text=True, cwd=tmp, env=env, timeout=300)
         except FileNotFoundError as e:
             raise BackendUnavailable("本机没找到 Claude Code") from e
         except subprocess.TimeoutExpired as e:
             raise BackendUnavailable("Claude Code 超过 5 分钟没返回") from e
-    try:
-        out = json.loads(proc.stdout)
-    except json.JSONDecodeError as e:
-        raise BackendUnavailable(f"Claude Code 没有正常返回：{(proc.stderr or proc.stdout).strip()[:200]}") from e
+    out = None
+    for line in proc.stdout.splitlines():
+        try:
+            ev = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(ev, dict) and ev.get("type") == "result":
+            out = ev
+    if out is None:
+        raise BackendUnavailable(f"Claude Code 没有正常返回：{(proc.stderr or proc.stdout).strip()[-200:]}")
     if out.get("is_error") or out.get("subtype") != "success" or out.get("structured_output") is None:
         raise BackendUnavailable(f"Claude Code 出错：{str(out.get('result') or out.get('subtype'))[:200]}")
     usage = out.get("usage") or {}
@@ -220,10 +236,7 @@ def _call_api(*, system, content, schema, effort, max_tokens=16000, images=None)
     """API 通道：结构化 JSON 输出 + 系统提示缓存 + 拒答时自动换模型兜底。"""
     t0 = time.time()
     if images:
-        blocks = [{"type": "image", "source": {"type": "base64", "media_type": mt,
-                                               "data": base64.standard_b64encode(raw).decode()}}
-                  for raw, mt in images]
-        content = blocks + [{"type": "text", "text": content}]
+        content = _image_blocks(images) + [{"type": "text", "text": content}]
     try:
         resp = client().beta.messages.create(
             model=config.CLAUDE_MODEL,
@@ -302,6 +315,23 @@ def analyze_jd(jd_text, *, source_label="", target_job="", position_hint="",
     data, meta = _call(system=build_system_prompt(), content=content,
                        schema=ANALYSIS_SCHEMA, effort=config.CLAUDE_EFFORT)
     return data, meta
+
+
+def wangshen_kit(jd_text, *, result=None, source_label="", target_job="", now=None):
+    """网申岗位：生成投递步骤 + 填表要用的自我介绍 / 为什么申请 / 匹配点 / JD 里明确列出的问题的回答。"""
+    r = result or {}
+    head = [today_line(now), "这个岗位需要网申（在招聘网站、招聘系统、问卷表单或小程序里填表投递）。"
+            "请按投递规则第 11 节生成网申资料包。"]
+    if source_label:
+        head.append(f"招聘信息来源：{source_label}")
+    if target_job:
+        head.append(f"目标岗位：{target_job}（文章里有多个岗位，只针对这个岗位）")
+    if r:
+        head.append(f"已识别：机构「{r.get('company_name', '')}」，岗位「{r.get('job_title', '')}」，"
+                    f"类型「{r.get('position_type', '')}」，网申链接「{r.get('apply_url', '') or '无'}」，"
+                    f"截止「{r.get('deadline', '') or '未写'}」。")
+    content = "\n".join(head) + "\n\n【JD 原文】\n" + jd_text.strip()
+    return _call(system=build_system_prompt(), content=content, schema=WANGSHEN_SCHEMA, effort=config.CLAUDE_EFFORT)
 
 
 # ── 多岗位识别（只列岗位，不改写 JD 原文）────────────────────

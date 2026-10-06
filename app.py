@@ -3,13 +3,15 @@
 
 import hmac
 import io
+import json
 import secrets
+import tempfile
 import threading
 import traceback
 
 from flask import Flask, abort, jsonify, render_template, request, send_file
 
-from jobapply import checks, config, fetch, gmail_client, llm, pipeline, records, resume
+from jobapply import checks, config, fetch, gmail_client, jobqueue, llm, pipeline, records, resume
 
 app = Flask(__name__)
 app.config["JSON_AS_ASCII"] = False
@@ -39,7 +41,7 @@ def _via_tunnel():
 def guard():
     if _via_tunnel():
         key = request.args.get("k") or request.cookies.get("panel_key") or request.headers.get("X-Panel-Key", "")
-        if not hmac.compare_digest(key, PANEL_KEY):
+        if not hmac.compare_digest(key.encode(), PANEL_KEY.encode()):
             abort(403)
         if request.path.startswith("/api/gmail/auth"):
             abort(403)  # 授权只能在电脑本机做
@@ -87,10 +89,15 @@ def index():
 @app.route("/api/config")
 def api_config():
     rs = resume.resume_status()
+    try:
+        camps, records_error = {r.get("campaign") for r in records.load()}, ""
+    except records.RecordsCorrupt as e:  # 记录文件坏了：面板照样打开，顶部提示
+        camps, records_error = set(), str(e)
     return jsonify({
+        "records_error": records_error,
         "model": config.CLAUDE_MODEL, "effort": config.CLAUDE_EFFORT, "backend": config.LLM_BACKEND,
         "sender": config.SENDER_EMAIL,
-        "campaign": config.CURRENT_CAMPAIGN, "campaigns": sorted({r.get("campaign") for r in records.load()} | {config.CURRENT_CAMPAIGN}),
+        "campaign": config.CURRENT_CAMPAIGN, "campaigns": sorted(c for c in camps | {config.CURRENT_CAMPAIGN} if c),
         "statuses": records.STATUSES, "position_types": llm.POSITION_TYPES, "resume_versions": llm.RESUME_VERSIONS,
         "resume": {k: rs.get(k) for k in ("ok", "error", "pages", "zh_pages", "en_pages", "grad_problems", "sha", "size_kb")},
         "report_exists": config.REPORT_PATH.exists(), "report_default_name": config.REPORT_DEFAULT_NAME,
@@ -194,27 +201,148 @@ def api_check():
     return jsonify(pipeline.review(result, d.get("jd_text", ""), source_label=d.get("source_label", "")))
 
 
+QUEUE_TAKEN = "这条在队列里已经在发送或已经处理过了（可能在另一个窗口 / 一键发送里），刷新看看。"
+
+
 @app.route("/api/send", methods=["POST"])
 def api_send():
     d = _body()
+    mode = d.get("mode")
+    if mode not in ("send", "draft"):  # 不可逆操作：只认这两个值，不给默认
+        return _err("发送方式不对（只能是 send 或 draft）")
+    qid = d.get("queue_id")
+    if qid and not jobqueue.claim(qid):
+        return _err(QUEUE_TAKEN, 409, queue_taken=True)
     try:
-        out = pipeline.deliver(d.get("result") or {}, d.get("jd_text", ""), mode=d.get("mode", "send"),
-                               force=bool(d.get("force")), source_label=d.get("source_label", ""),
+        out = pipeline.deliver(d.get("result") or {}, d.get("jd_text", ""), mode=mode,
+                               force=d.get("force") is True, source_label=d.get("source_label", ""),
                                source_url=d.get("source_url", ""), target_job=d.get("target_job", ""),
                                publish_date=d.get("publish_date", ""), source_type="网页面板")
     except pipeline.Blocked as e:
+        qid and jobqueue.release(qid)
         return _err("还有必须处理的问题，没有发出", 409, issues=e.issues)
     except gmail_client.GmailAuthError as e:
+        qid and jobqueue.release(qid)
         return _err(str(e), 401, need_auth=True)
+    except gmail_client.SendUncertain as e:  # 可能已经发出：条目标成需处理，不让它回到待审核被再发一遍
+        qid and jobqueue.mark_uncertain(qid, str(e))
+        return _err(str(e), 504, uncertain=True, mode=mode)
+    except gmail_client.SendFailed as e:  # 肯定没发出：退回去，改完可以再发
+        qid and jobqueue.release(qid, error=str(e))
+        return _err(str(e), 502)
+    except Exception:
+        qid and jobqueue.release(qid)
+        raise
+    if qid:
+        jobqueue.mark_done(qid, "已存草稿" if out["mode"] == "草稿" else "已发送", out.get("record_id", ""))
     return jsonify(out)
 
 
 @app.route("/api/record", methods=["POST"])
 def api_record():
+    """网申投完了：记一笔（连同当时用的网申问答）。"""
     d = _body()
-    out = pipeline.record_web_application(d.get("result") or {}, d.get("jd_text", ""),
-                                          source_label=d.get("source_label", ""), source_url=d.get("source_url", ""),
-                                          target_job=d.get("target_job", ""), publish_date=d.get("publish_date", ""))
+    # 「邮箱+网申」邮件已发（有 record_id）：只在原记录上补记，队列条目已经是「已发送」，不用再认领
+    qid = "" if d.get("record_id") else d.get("queue_id")
+    if qid and not jobqueue.claim(qid):
+        return _err(QUEUE_TAKEN, 409, queue_taken=True)
+    try:
+        out = pipeline.record_web_application(
+            d.get("result") or {}, d.get("jd_text", ""), source_label=d.get("source_label", ""),
+            source_url=d.get("source_url", ""), target_job=d.get("target_job", ""),
+            publish_date=d.get("publish_date", ""), kit=d.get("kit"), upload_version=d.get("upload_version", ""),
+            record_id=d.get("record_id", ""))
+    except Exception:
+        qid and jobqueue.release(qid)
+        raise
+    if qid:
+        jobqueue.mark_done(qid, "已记录", out.get("record_id", ""))
+    elif d.get("record_id") and d.get("queue_id"):
+        jobqueue.mark_ws_recorded(d["queue_id"])
+    return jsonify(out)
+
+
+# ── 网申 ───────────────────────────────────────────────────
+
+@app.route("/api/kit")
+def api_kit():
+    """网申表格常用字段（application_kit.json，和简历逐字一致），给「我的资料」页一键复制。"""
+    path = config.BASE_DIR / "application_kit.json"
+    if not path.exists():
+        path = config.BASE_DIR / "application_kit.example.json"
+    if not path.exists():
+        return _err("没有找到网申资料文件 application_kit.json", 404)
+    return jsonify(json.loads(path.read_text(encoding="utf-8")))
+
+
+@app.route("/api/wangshen", methods=["POST"])
+def api_wangshen():
+    """给这个岗位生成网申问答（自我介绍 / 为什么申请 / JD 里列出的问题）和投递步骤。"""
+    d = _body()
+    jd = d.get("jd_text", "")
+    if len(jd.strip()) < 50:
+        return _err("JD 内容太短，先把招聘信息贴进来。")
+    try:
+        kit, meta = pipeline.wangshen(jd, result=d.get("result") or {}, source_label=d.get("source_label", ""),
+                                      target_job=d.get("target_job", ""))
+    except llm.LLMError as e:
+        return _err(str(e))
+    if d.get("queue_id"):
+        jobqueue.save_wangshen(d["queue_id"], kit)
+    return jsonify({"kit": kit, "meta": meta})
+
+
+# ── 批量队列 ───────────────────────────────────────────────
+
+@app.route("/api/queue")
+def api_queue():
+    items = jobqueue.list_items()
+    return jsonify({"items": items, "counts": jobqueue.counts(items), "workers": jobqueue.WORKERS})
+
+
+@app.route("/api/queue", methods=["POST"])
+def api_queue_add():
+    try:
+        new = jobqueue.enqueue(_body().get("text", ""))
+    except ValueError as e:
+        return _err(str(e))
+    return jsonify({"ok": True, "added": len(new)})
+
+
+@app.route("/api/queue/<item_id>", methods=["PUT"])
+def api_queue_edit(item_id):
+    """审核时的改动：邮件内容（edited）、最新检查结果（issues）、改过的网申问答（wangshen），各自可选。"""
+    d = _body()
+    return jsonify({"ok": jobqueue.save_edits(item_id, d.get("edited"), issues=d.get("issues"),
+                                              wangshen=d.get("wangshen"), rev=d.get("rev"))})
+
+
+@app.route("/api/queue/<item_id>", methods=["DELETE"])
+def api_queue_delete(item_id):
+    return jsonify({"ok": jobqueue.delete(item_id)})
+
+
+@app.route("/api/queue/<item_id>/retry", methods=["POST"])
+def api_queue_retry(item_id):
+    return jsonify({"ok": jobqueue.retry(item_id)})
+
+
+@app.route("/api/queue/clear-done", methods=["POST"])
+def api_queue_clear():
+    return jsonify({"ok": True, "removed": jobqueue.clear_done()})
+
+
+@app.route("/api/queue/process-ready", methods=["POST"])
+def api_queue_process_ready():
+    mode = _body().get("mode")
+    if mode not in ("send", "draft"):
+        return _err("发送方式不对（只能是 send 或 draft）")
+    try:
+        out = jobqueue.process_ready(mode=mode)
+    except jobqueue.Busy as e:
+        return _err(str(e), 409)
+    except gmail_client.GmailAuthError as e:
+        return _err(str(e), 401, need_auth=True)
     return jsonify(out)
 
 
@@ -231,7 +359,9 @@ def api_records():
 
 @app.route("/api/stats")
 def api_stats():
-    return jsonify(records.stats(records.filter_campaign(records.load(), request.args.get("campaign"))))
+    out = records.stats(records.filter_campaign(records.load(), request.args.get("campaign")))
+    out["excel"] = dict(records.EXCEL_STATUS)
+    return jsonify(out)
 
 
 EDITABLE = ("status", "job_source", "job_location", "notes", "focus_industry", "position_type",
@@ -241,6 +371,8 @@ EDITABLE = ("status", "job_source", "job_location", "notes", "focus_industry", "
 @app.route("/api/records/<record_id>", methods=["PUT"])
 def api_update_record(record_id):
     fields = {k: v for k, v in _body().items() if k in EDITABLE}
+    if "reply_status" in fields:  # 手动纠正过的回复状态，以后查回复不再覆盖
+        fields["reply_locked"] = True
     if not records.update(record_id, fields):
         return _err("记录不存在", 404)
     return jsonify({"ok": True})
@@ -251,35 +383,50 @@ def api_delete_record(record_id):
     return jsonify({"ok": records.delete(record_id)})
 
 
-@app.route("/api/gmail-sync", methods=["POST"])
-def api_gmail_sync():
+_gmail_job_lock = threading.Lock()  # 同步 Gmail / 查回复：同一时间只跑一个（两个窗口同时点会重复建记录）
+
+
+def _gmail_job(fn):
+    if not _gmail_job_lock.acquire(blocking=False):
+        return _err("另一个 Gmail 操作（同步 / 查回复）正在进行，等它结束再点。", 409)
     logs = []
     try:
-        result = pipeline.sync_gmail(progress=logs.append)
+        return jsonify({"ok": True, "result": fn(logs.append), "logs": logs})
     except gmail_client.GmailAuthError as e:
         return _err(str(e), 401, need_auth=True, logs=logs)
-    return jsonify({"ok": True, "result": result, "logs": logs})
+    finally:
+        _gmail_job_lock.release()
+
+
+@app.route("/api/gmail-sync", methods=["POST"])
+def api_gmail_sync():
+    return _gmail_job(lambda log: pipeline.sync_gmail(progress=log))
 
 
 @app.route("/api/check-replies", methods=["POST"])
 def api_check_replies():
-    logs = []
-    try:
-        d = _body()
-        result = pipeline.refresh_replies(campaign=d.get("campaign"), progress=logs.append,
-                                          record_ids=d.get("record_ids"))
-    except gmail_client.GmailAuthError as e:
-        return _err(str(e), 401, need_auth=True, logs=logs)
-    return jsonify({"ok": True, "result": result, "logs": logs})
+    d = _body()
+    return _gmail_job(lambda log: pipeline.refresh_replies(campaign=d.get("campaign"), progress=log,
+                                                         record_ids=d.get("record_ids")))
 
 
 @app.route("/api/export-excel")
 def api_export_excel():
-    path = records.export_excel(records.load())
-    return send_file(path, as_attachment=True, download_name="投递记录.xlsx")
+    # 导出到临时文件、读进内存再删掉，不碰桌面的 Excel 镜像（后台保存时也在写它）
+    with tempfile.TemporaryDirectory(prefix="jobapply-") as tmp:
+        path = records.export_excel(records.load(), path=f"{tmp}/投递记录.xlsx")
+        data = open(path, "rb").read()
+    return send_file(io.BytesIO(data), as_attachment=True, download_name="投递记录.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 if __name__ == "__main__":
-    records.migrate()
+    try:
+        records.migrate()
+    except records.RecordsCorrupt as e:  # 面板照样打开（能看到提示），只是写记录会被拦下
+        print(f"⚠️  {e}")
+    resumed = jobqueue.resume_pending()
+    if resumed:
+        print(f"批量队列：接着处理上次没做完的 {resumed} 条")
     print(f"投递面板：http://localhost:5001   模型：{config.CLAUDE_MODEL}   代理：{config.PROXY or '无'}")
     app.run(host="127.0.0.1", port=5001, debug=False, threaded=True)

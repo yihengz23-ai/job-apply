@@ -1,5 +1,6 @@
 """流程编排（网页面板和剪贴板模式共用）：分析 → 自动修正 → 检查 → 发送/存草稿 → 记录。"""
 
+import time
 from datetime import datetime
 
 from . import checks, config, gmail_client, llm, records, resume
@@ -62,6 +63,7 @@ def _normalize_edits(result):
         result["report_filename"] = checks.sanitize_filename(result.get("report_filename"), config.REPORT_DEFAULT_NAME)
     result["email_subject"] = (result.get("email_subject") or "").strip()
     result["email_body"] = (result.get("email_body") or "").replace("\r\n", "\n").strip() + "\n"
+    result["apply_url"] = checks.safe_url(result.get("apply_url"))
     return result
 
 
@@ -83,9 +85,17 @@ def _record_fields(result, jd_text, *, source_label, source_url, target_job, pub
     )
 
 
+UNCERTAIN_HINT = ("发送结果不确定（{err}）：邮件可能已经发出了。请先到 Gmail「已发送」里确认有没有这封："
+                  "发出去了就不要再发（点看板的「Gmail 同步」把它补进记录）；确认没有再点发送。")
+DRAFT_UNCERTAIN_HINT = ("存草稿结果不确定（{err}）：请到 Gmail「草稿」里看看有没有这封，有就不用再存了"
+                        "（草稿发出后点看板的「Gmail 同步」会补进记录）。")
+
+
 def deliver(result, jd_text, *, mode="send", force=False, source_label="", source_url="",
             target_job="", publish_date="", source_type="网页面板"):
-    """mode: send=直接发送；draft=存为 Gmail 草稿。"""
+    """mode: send=直接发送；draft=存为 Gmail 草稿（只认这两个值，写错就报错，不会默认去发）。"""
+    if mode not in ("send", "draft"):
+        raise ValueError(f"不认识的发送方式：{mode!r}")
     result = _normalize_edits(dict(result))
     rev = review(result, jd_text, source_label=source_label)
     errors = [i for i in rev["issues"] if i["level"] == "error"]
@@ -106,10 +116,23 @@ def deliver(result, jd_text, *, mode="send", force=False, source_label="", sourc
     kw = dict(to=result["to_emails"], cc=result["cc_emails"], subject=result["email_subject"],
               body=result["email_body"], attachments=attachments)
     if mode == "draft":
-        ids = gmail_client.create_draft(**kw)
+        try:
+            ids = gmail_client.create_draft(**kw)
+        except gmail_client.SendUncertain as e:
+            raise gmail_client.SendUncertain(DRAFT_UNCERTAIN_HINT.format(err=e)) from e
         send_mode, status = "草稿", "草稿"
     else:
-        ids = gmail_client.send(**kw)
+        t0 = time.time()
+        try:
+            ids = gmail_client.send(**kw)
+        except gmail_client.SendUncertain as e:
+            # 超时 / 断线：先去「已发送」里找一下，真发出去了就照常记录，找不到才让用户去确认（绝不自动重发）
+            try:
+                ids = gmail_client.find_sent(kw["to"], kw["subject"], t0)
+            except Exception:
+                ids = None
+            if not ids:
+                raise gmail_client.SendUncertain(UNCERTAIN_HINT.format(err=e)) from e
         send_mode, status = "发送", "已投递"
 
     out = {"ok": True, "mode": send_mode, "attachments": [a["filename"] for a in att_meta], **ids}
@@ -129,14 +152,42 @@ def deliver(result, jd_text, *, mode="send", force=False, source_label="", sourc
     return out
 
 
+def is_wangshen(result):
+    return result.get("apply_channel") in ("网申/链接", "邮箱+网申") or not checks.split_emails(result.get("to_emails"))
+
+
+def wangshen(jd_text, *, result=None, source_label="", target_job=""):
+    """生成网申资料包（AI 部分）。返回 (kit, meta)。"""
+    return llm.wangshen_kit(jd_text, result=result, source_label=source_label, target_job=target_job)
+
+
+KIT_KEYS = ("platform", "apply_steps", "self_intro_short", "self_intro", "why_this_role", "fit_points",
+            "custom_answers", "notes")
+
+
 def record_web_application(result, jd_text, *, source_label="", source_url="", target_job="",
-                           publish_date="", source_type="网页面板"):
-    """网申 / 链接投递：不发邮件，只记录。"""
+                           publish_date="", source_type="网页面板", kit=None, upload_version="", record_id=""):
+    """网申 / 链接投递：不发邮件，只记录（连同当时填表用的问答，面试前可以回看）。
+    「邮箱+网申」的岗位邮件已经发过（有 record_id）：不新建记录，在原记录上补一笔「已同时网申」。"""
     result = _normalize_edits(dict(result))
+    kit = {k: v for k, v in (kit or {}).items() if k in KIT_KEYS}
+    version = upload_version or "中文"
+    if record_id:
+        def _merge(recs):
+            for r in recs:
+                if r.get("id") == record_id:
+                    r.update(platform=kit.get("platform", "") or r.get("platform", ""), wangshen=kit or r.get("wangshen"))
+                    if "已同时网申" not in (r.get("notes") or ""):  # 重复点 / 重复请求只记一次
+                        r["notes"] = ((r.get("notes") or "") + f"\n[{records.now_str()}] 已同时网申（上传{version}简历）").strip()
+                    return True
+            return False
+        if records.mutate(_merge):
+            return {"ok": True, "record_id": record_id, "merged": True}
     rec = records.new_record(
         **_record_fields(result, jd_text, source_label=source_label, source_url=source_url,
                          target_job=target_job, publish_date=publish_date, source_type=source_type),
-        status="已投递", send_mode="未发邮件", attach_report=False, resume_version="网申（按网站要求上传）",
+        status="已投递", send_mode="未发邮件", attach_report=False,
+        resume_version=f"网申上传（{version}）", platform=kit.get("platform", ""), wangshen=kit,
     )
     return {"ok": True, "record_id": records.add(rec)}
 
@@ -157,7 +208,7 @@ def sync_gmail(progress=print):
                 job_title=c.get("job_title", ""), job_location=c.get("job_location", ""),
                 position_type=c.get("position_type", ""), to_email="; ".join(checks.split_emails(e["to"])),
                 cc_email="; ".join(checks.split_emails(e["cc"])), subject=e["subject"],
-                email_body=e["body"][:6000], sent_at=e["sent_at"], created_at=e["sent_at"],
+                email_body=e["body"][:6000], sent_at=e["sent_at"], sent_ts=e.get("sent_ts", 0), created_at=e["sent_at"],
                 source_type="Gmail同步", send_mode="发送", gmail_message_id=e["id"],
                 gmail_thread_id=e["thread_id"], campaign=campaign_for(e["sent_at"]),
                 resume_version="（Gmail 同步，未知）")
@@ -174,18 +225,28 @@ def refresh_replies(campaign=None, progress=print, record_ids=None):
     if record_ids:
         recs = [r for r in recs if r.get("id") in set(record_ids)]
     progress(f"检查 {len(recs)} 条记录的回复…")
-    updates = gmail_client.check_replies(recs, progress=progress)
+    auth_error = None
+    try:
+        updates = gmail_client.check_replies(recs, progress=progress)
+    except gmail_client.PartialAuthError as e:  # 查到一半授权失效：先把查到的存上，再提示重新授权
+        updates, auth_error = e.updates, e
+    rank = gmail_client.REPLY_RANK
 
     def _apply(all_recs):
         n = 0
         for r in all_recs:
             upd = updates.get(r.get("id"))
             if upd:
-                if r.get("reply_status") == "有回复" and upd.get("reply_status") in ("自动回复", "退信"):
+                # 你在看板里手动改过回复状态的不动；已经记过更重要的（如「有回复」），后来的自动回复 / 来信不覆盖它
+                if upd.get("reply_status") and (r.get("reply_locked")
+                                                or rank.get(upd["reply_status"], 0) < rank.get(r.get("reply_status"), 0)):
                     upd = {k: v for k, v in upd.items() if not k.startswith("reply_") or k == "reply_checked_at"}
                 r.update(upd)
                 n += 1 if upd.get("reply_status") == "有回复" else 0
         return n
     replied = records.mutate(_apply)
+    if auth_error:
+        progress(f"授权中途失效，已保存前面查到的结果（{replied} 条有回复）")
+        raise gmail_client.GmailAuthError(str(auth_error))
     progress(f"完成：{replied} 条有回复 / 来信")
     return {"checked": len(recs), "replied": replied, "at": datetime.now().strftime("%Y-%m-%d %H:%M")}

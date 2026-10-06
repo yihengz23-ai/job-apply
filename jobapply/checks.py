@@ -8,11 +8,27 @@ level:
 
 import re
 from datetime import datetime, date
+from zoneinfo import ZoneInfo
 
 from . import config
 
+BEIJING = ZoneInfo("Asia/Shanghai")
+
+
+def beijing_now():
+    """HR 在国内：凌晨提醒、截止日期都按北京时间算（人在美国时也对）。"""
+    return datetime.now(BEIJING).replace(tzinfo=None)
+
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)*\.[A-Za-z]{2,}")
 PLACEHOLDER_RE = re.compile(r"\[[^\[\]\n]{1,30}\]")
+# 方括号里整个就是「要你填的字段名」（哪怕 JD 模板里原样写着）→ 一定是没填的占位；
+# 「[实习申请]」「[2027届实习]」「[Full-time Application]」这种是 JD 要求原样照抄的字面量，不算
+FIELD_NAME = re.compile(r"(?:您的|你的|your\s*)?(?:姓名|名字|学校|院校|毕业院校|专业|学历|年级|届别|毕业时间|毕业年份|"
+                        r"应聘岗位|申请岗位|岗位名称|岗位|职位|职位名称|到岗时间|可到岗时间|最早到岗时间|入职时间|实习时长|实习天数|"
+                        r"每周天数|每周实习天数|实习期|期望薪资|期望日薪|薪资|城市|工作城市|工作地点|地点|电话|手机|手机号|微信|邮箱|"
+                        r"方向|研究方向|来源|渠道|招聘信息来源|信息来源|身份证号|排名|"
+                        r"(?:full\s*)?name|school|university|major|degree|position|role|job\s*title|start\s*date|"
+                        r"date|salary|city|phone|email|wechat)", re.I)
 PUBLIC_DOMAINS = {
     "gmail.com", "163.com", "126.com", "qq.com", "foxmail.com", "sina.com", "sina.cn",
     "sohu.com", "yeah.net", "139.com", "outlook.com", "hotmail.com", "live.com",
@@ -31,6 +47,8 @@ CLAIMS = ["CFA", "CPA", "FRM", "ACCA", "法律职业资格", "博士", "PhD", "�
 ENTITIES = ["哈佛", "斯坦福", "清华", "北大", "复旦", "高盛", "摩根", "黑石", "红杉", "赋能", "助力"]
 HONORIFICS_ZH = ["总", "老师", "女士", "先生", "经理", "博士", "同学"]
 FILENAME_BAD = re.compile(r'[\\/:*?"<>|\r\n\t]')
+# fetch 抓公众号时，图片里识别出来的文字放在这个标记后面
+OCR_MARKER = "【以下是文章图片里的文字（系统自动识别，可能有错字）】"
 
 
 def split_emails(value):
@@ -48,6 +66,25 @@ def split_emails(value):
     return out
 
 
+# 变形写法还原成 @ / .；「at」「#」后面必须是一个完整域名（后面不再跟 @ 或字母），免得把「lead at jane.doe@x.com」拆坏
+_DOMAIN_AHEAD = r"(?=[\w-]+(?:\.[\w-]+)+(?![\w@-]|\.[\w-]))"
+_OBFUSCATIONS = [
+    (re.compile(r"\s*[\[\(（【{]\s*(?:dot|点)\s*[\]\)）】}]\s*", re.I), "."),   # 先还原 [dot]，域名才完整
+    (re.compile(r"\s*[\[\(（【{]\s*(?:at|艾特)\s*[\]\)）】}]\s*", re.I), "@"),
+    (re.compile(r"(?<=[\w.])\s*#\s*" + _DOMAIN_AHEAD, re.I), "@"),
+    (re.compile(r"(?<=\w)\s+at\s+" + _DOMAIN_AHEAD, re.I), "@"),
+]
+
+
+def jd_emails(jd_text):
+    """JD 里原样写出的邮箱 → (精确集合, 还原 [at]/# 等变形写法后的集合)。"""
+    exact = set(split_emails(jd_text or ""))
+    t = (jd_text or "").replace("＠", "@")
+    for pat, rep in _OBFUSCATIONS:
+        t = pat.sub(rep, t)
+    return exact, set(split_emails(t))
+
+
 def _issue(level, field, msg):
     return {"level": level, "field": field, "msg": msg}
 
@@ -58,6 +95,23 @@ def _is_en(result):
 
 def _strip_emails(text):
     return EMAIL_RE.sub(" ", text or "")
+
+
+# 链接到空白、中文、全角标点为止（「https://a.com/x，截止10月底」只取链接）
+_URL_IN_TEXT = re.compile(r"https?://[^\s<>\"'\u3000-\u303f\u4e00-\u9fff\uff00-\uffef)】]+", re.I)
+
+
+def safe_url(u):
+    """只放行 http(s) 链接；「www.xx.com/…」补上 https://；文字里夹着链接就取第一个；其他一律清空。"""
+    u = (u or "").strip()
+    if not u:
+        return ""
+    m = _URL_IN_TEXT.match(u) or _URL_IN_TEXT.search(u)
+    if m:
+        return m.group(0).rstrip(".,;:!?")
+    if "@" not in u and re.fullmatch(r"(?:www\.)?[\w-]+(?:\.[\w-]+)*\.[a-z]{2,}(?:/[^\s\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]*)?", u, re.I):
+        return "https://" + u
+    return ""
 
 
 def sanitize_filename(name, default):
@@ -76,23 +130,61 @@ def _greeting_parts(body):
     return first, lines
 
 
+_PUNCT = r"[，,：:！!。]"
+_THEN_HELLO = rf"(?:{_PUNCT}+\s*(?:(?:您好|你好){_PUNCT}*\s*)?|(?:您好|你好){_PUNCT}*\s*|$)"
+_GREET_ZH = re.compile(
+    rf"^(?:(?:尊敬的)?[^，,：:！!。\s]{{0,12}}?(?:您好|你好)(?:{_PUNCT}+\s*|\s+|$)"            # 王总您好， / 您好！
+    rf"|(?:大家|各位(?:老师)?|老师|[^，,：:！!。\s我]{{1,3}}?(?:总|老师|女士|先生|经理))好(?:{_PUNCT}+\s*|$)"  # 李老师好！
+    rf"|尊敬的[^，,：:！!。\s]{{1,12}}?{_THEN_HELLO}"                                          # 尊敬的王总，您好：
+    rf"|[^，,：:！!。\s我]{{1,3}}?(?:总|老师|女士|先生|经理){_THEN_HELLO})")                       # 王经理，您好！
+_GREET_EN = re.compile(r"^(?:dear|hi|hello)\b(?:\s+(?!I\b|I'm\b|I am\b)[A-Za-z.'’]+){0,4}\s*(?:[,，:：!]+\s*|$)", re.I)
+
+
+def _split_greeting(line):
+    """第一行开头的称呼 → (称呼, 同一行后面的正文)；第一行不是以称呼开头（比如直接「我是…」）→ None。"""
+    s = line.strip()
+    m = _GREET_ZH.match(s) or _GREET_EN.match(s)
+    return (s[:m.end()].strip(), s[m.end():].strip()) if m else None
+
+
+def _name_ok(name, contact, jd_plain):
+    """称呼里的名字要有 JD 依据：和 JD 里的联系人对得上，或者名字本身（2 个字以上）出现在 JD 正文里。"""
+    n = name.lower()
+    cjk = bool(re.search(r"[\u4e00-\u9fff]", name))
+    # 英文名按整词、至少 3 个字母比（「Ma」不能因为 JD 里有 market 就算有依据）
+    word = (lambda x, text: x in text) if cjk else (lambda x, text: len(x) >= 3 and re.search(rf"\b{re.escape(x)}\b", text))
+    if len(name) >= 2 and word(n, jd_plain):
+        return True
+    c = (contact or "").strip().lower()
+    if not c or c not in jd_plain:
+        return False
+    if cjk:                                          # 中文：同姓即可（王总 ↔ 王女士）
+        return n in c or c in n or name[0] == contact.strip()[0]
+    return bool(word(n, c) or word(c, n))            # 英文名必须对得上（Jack ≠ Jessica）
+
+
+GENERIC_GREETINGS = {"", "各位", "各位老师", "老师", "老师们", "hr", "各位hr", "大家", "招聘官", "招聘团队", "招聘负责人", "招聘组",
+                     "there", "all", "team", "hiring team", "hiring manager", "recruiter", "recruiting team",
+                     "talent team", "sir or madam", "sir/madam"}
+
+
 def _greeting_name(first):
-    """从称呼行里拆出「名字」部分；通用称呼返回 ''。"""
-    s = first.rstrip("，,:： ")
-    if s in ("您好", "你好", "Hello", "Hi", "Hi there", "Dear all", "Hello there"):
-        return ""
-    m = re.match(r"^(?:Hi|Hello|Dear)\s+(.+)$", s, re.I)
+    """从称呼行里拆出「名字」部分；通用称呼返回 ''。
+    认得：X您好 / X你好 / X好 / 尊敬的X / Hi X / Dear X / X，您好（标点、感叹号都去掉）。"""
+    s = re.sub(r"[，,:：！!。.\s]+$", "", first.strip())
+    m = re.match(r"^(?:hi|hello|dear)\b[\s,]*(.*)$", s, re.I)
     if m:
-        name = re.sub(r"^(Mr|Ms|Mrs|Miss|Dr)\.?\s+", "", m.group(1).strip(), flags=re.I)
-        return name.strip()
-    if s.endswith("您好") or s.endswith("你好"):
-        name = s[:-2].strip()
-        for h in HONORIFICS_ZH:
-            if name.endswith(h) and len(name) > len(h):
-                name = name[: -len(h)]
-                break
-        return name.strip()
-    return ""
+        name = re.sub(r"^(mr|ms|mrs|miss|dr)\.?\s+", "", m.group(1).strip(), flags=re.I)
+        return "" if name.lower() in GENERIC_GREETINGS else name
+    s = re.sub(r"^尊敬的", "", s)
+    s = re.sub(r"[，,\s]*(?:您好|你好|好)$", "", s).strip("，, ")
+    if s.lower() in GENERIC_GREETINGS:
+        return ""
+    for h in HONORIFICS_ZH:
+        if s.endswith(h) and len(s) > len(h):
+            s = s[: -len(h)]
+            break
+    return "" if s.lower() in GENERIC_GREETINGS else s.strip()
 
 
 def autofix(result, jd_text):
@@ -104,20 +196,17 @@ def autofix(result, jd_text):
     result["cc_emails"] = [e for e in split_emails(result.get("cc_emails")) if e not in result["to_emails"]]
 
     body = (result.get("email_body") or "").replace("\r\n", "\n").strip()
-    # 称呼必须有 JD 依据（防止从邮箱地址猜名字）
+    # 称呼必须有 JD 依据（防止从邮箱地址猜名字）；只换称呼本身，同一行后面的正文原样保留
     first, lines = _greeting_parts(body)
-    name = _greeting_name(first)
-    if name:
-        jd_plain = _strip_emails(jd_text).lower()
-        contact = (result.get("contact_in_jd") or "").strip()
-        contact_ok = bool(contact) and contact.lower() in jd_plain
-        name_ok = contact_ok and (name.lower() in contact.lower() or name[0] == contact[0])
-        if not name_ok:
-            generic = "Hello," if en else "您好，"
-            lines[0] = generic
-            body = "\n".join(lines)
-            result["contact_in_jd"] = ""
-            fixes.append(f"称呼「{first}」在 JD 原文里找不到依据（可能是从邮箱地址猜的），已改成「{generic}」")
+    split = _split_greeting(first)
+    name = _greeting_name(split[0]) if split else ""
+    if name and not _name_ok(name, result.get("contact_in_jd"), _strip_emails(jd_text).lower()):
+        greet, rest = split
+        generic = "Hello," if en else "您好，"
+        lines[0] = generic + ((" " if en else "") + rest if rest else "")
+        body = "\n".join(lines)
+        result["contact_in_jd"] = ""
+        fixes.append(f"称呼「{greet}」在 JD 原文里找不到依据（可能是从邮箱地址猜的），已改成「{generic}」")
     # 统一成简历上的写法（candidate_settings.json 的 spelling_fixes）
     for wrong, right in config.SPELLING_FIXES.items():
         if wrong in body:
@@ -127,6 +216,7 @@ def autofix(result, jd_text):
 
     subject = re.sub(r"\s+", " ", (result.get("email_subject") or "").strip())
     result["email_subject"] = subject
+    result["apply_url"] = safe_url(result.get("apply_url"))
 
     default_resume = config.RESUME_DEFAULT_EN if result.get("resume_version") == "英文" else config.RESUME_DEFAULT_ZH
     for key, default in (("resume_filename", default_resume),
@@ -148,10 +238,21 @@ def autofix(result, jd_text):
 
 # ── 检查 ───────────────────────────────────────────────────
 
+def _grad_numbers():
+    """简历上的毕业时间（如 2027.06）的各种写法里会出现的数字：2027、27、06、6。"""
+    out = set()
+    for v in config.RESUME_MUST_CONTAIN.values():
+        for y, m in re.findall(r"(20\d\d)\D{0,3}(\d{1,2})?", v):
+            out |= {y, y[2:]}
+            if m:
+                out |= {m, str(int(m)), f"{int(m):02d}"}
+    return out
+
+
 def _numbers_allowed(jd_text, extra_texts):
     pool = jd_text + "\n" + "\n".join(extra_texts)
-    nums = set(re.findall(r"\d+(?:\.\d+)?", pool))
-    now = datetime.now()
+    nums = set(re.findall(r"\d+(?:\.\d+)?", pool)) | _grad_numbers()
+    now = beijing_now()
     nums |= {str(now.year), str(now.month), str(now.day), str(now.year + 1), "1", "2"}
     return nums
 
@@ -167,9 +268,8 @@ def run(result, jd_text, *, related=(), resume_status=None, profile_text="",
         rules_text="", source_label="", now=None):
     """返回问题列表（不修改 result）。"""
     issues = []
-    now = now or datetime.now()
+    now = now or beijing_now()
     en = _is_en(result)
-    jd_lower = (jd_text or "").lower().replace("＠", "@")
     to, cc = split_emails(result.get("to_emails")), split_emails(result.get("cc_emails"))
     subject = result.get("email_subject") or ""
     body = result.get("email_body") or ""
@@ -179,25 +279,35 @@ def run(result, jd_text, *, related=(), resume_status=None, profile_text="",
     # 收件人
     if not to:
         if channel == "网申/链接":
-            issues.append(_issue("info", "to", "这个岗位要求网申 / 链接投递：打开链接投完后点「记录网申」即可，不用发邮件。"))
+            issues.append(_issue("info", "to", "这个岗位要网申，不用发邮件：按「网申资料包」投完，点「我已网申，记一笔」。"))
         else:
             issues.append(_issue("error", "to", "没有收件邮箱。JD 里如果确实有投递邮箱，请手动填上。"))
+    jd_text = jd_text or ""
+    exact, deob = jd_emails(jd_text)
+    known = exact | deob
+    typed = set().union(*jd_emails(jd_text.split(OCR_MARKER, 1)[0])) if OCR_MARKER in jd_text else known
     for e in to + cc:
-        if e in jd_lower:
-            continue
-        local, _, domain = e.partition("@")
-        if local and domain and local in jd_lower and domain in jd_lower:
-            issues.append(_issue("warn", "to", f"邮箱 {e} 在 JD 里是变形写法（如 [at]、#），请核对拼写。"))
-        else:
+        if e not in known:
             issues.append(_issue("error", "to", f"邮箱 {e} 在 JD 原文里找不到，可能是 AI 编的或抄错了，请核对。"))
+            continue
+        if e not in exact:
+            issues.append(_issue("warn", "to", f"邮箱 {e} 在 JD 里是变形写法（如 [at]、#），请核对拼写。"))
+        if e not in typed:
+            issues.append(_issue("warn", "to", f"邮箱 {e} 是从文章图片里识别出来的，可能认错字母（rn/m、l/1、0/o），"
+                                               "请对照原文图片核对一遍。"))
     if config.SENDER_EMAIL.lower() in to + cc:
         issues.append(_issue("error", "to", "收件人里有你自己的邮箱。"))
+    others = sorted(exact - set(to) - set(cc))  # 只列原文写明的邮箱（「look at abc.com」还原出来的假邮箱不算）
+    if to and others:
+        issues.append(_issue("info", "to", f"JD 里还有别的邮箱（{'、'.join(others[:4])}），确认选的是这个岗位对应的那个。"))
 
-    # 占位符
+    # 占位符（JD 自己要求的方括号写法，如「[实习申请]姓名-学校」，不算占位）
+    literal = (jd_text or "") + (rules.get("subject_format") or "") + (rules.get("resume_filename_format") or "") \
+        + (rules.get("report_filename_format") or "")
     for field, text in (("subject", subject), ("body", body),
                         ("resume_filename", result.get("resume_filename") or ""),
                         ("report_filename", result.get("report_filename") or "")):
-        ph = PLACEHOLDER_RE.findall(text)
+        ph = [p for p in PLACEHOLDER_RE.findall(text) if p not in literal or FIELD_NAME.fullmatch(p[1:-1].strip())]
         if ph:
             issues.append(_issue("error", field, f"还有没填的占位：{'、'.join(ph)}"))
 
@@ -240,10 +350,10 @@ def run(result, jd_text, *, related=(), resume_status=None, profile_text="",
     for kw in ENTITIES:
         if kw.lower() in body.lower() and kw.lower() not in known:
             issues.append(_issue("warn", "body", f"正文出现「{kw}」，简历和 JD 里都没有，确认不是编的。"))
-    allowed = _numbers_allowed(jd_text or "", [profile_text, resume_text, rules_text, source_label, subject])
-    odd = [n for n in re.findall(r"\d+(?:\.\d+)?", body) if n not in allowed]
+    allowed = _numbers_allowed(jd_text or "", [profile_text, resume_text, source_label])
+    odd = [n for n in re.findall(r"\d+(?:\.\d+)?", subject + "\n" + body) if n not in allowed]
     if odd:
-        issues.append(_issue("warn", "body", f"正文里的数字 {'、'.join(sorted(set(odd)))} 在简历和 JD 里都找不到，确认没写错。"))
+        issues.append(_issue("warn", "body", f"标题 / 正文里的数字 {'、'.join(sorted(set(odd)))} 在简历和 JD 里都找不到，确认没写错。"))
     sentences = len(re.findall(r"[。？?；]", body)) if not en else len(re.findall(r"[.?!](\s|$)", body))
     if sentences > 8:
         issues.append(_issue("warn", "body", f"正文偏长（约 {sentences} 句），HR 一般只看前三行。"))
@@ -282,7 +392,7 @@ def run(result, jd_text, *, related=(), resume_status=None, profile_text="",
     post = _parse_date(result.get("job_post_date") or "")
     if post and (now.date() - post).days > 45:
         issues.append(_issue("info", "post_date", f"岗位发布于 {post}，已经 {(now.date() - post).days} 天，可能已招满。"))
-    if now.hour < 7:
+    if now.hour < 7 and to:
         issues.append(_issue("info", "time", "现在是凌晨，可以先「存草稿」，早上在 Gmail 里发出或定时发送。"))
 
     for w in result.get("fit_warnings") or []:

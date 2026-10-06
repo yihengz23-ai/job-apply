@@ -5,6 +5,10 @@ token.json
 .panel_key
 candidate_settings.json
 records.json
+.records.lock
+application_kit.json
+queue.json
+queue.bad-*.json
 gmail_state.json
 backups/
 _archive_*/
@@ -17,6 +21,7 @@ __pycache__/
 .pytest_cache/
 
 # 其他
+tools/qrdecode
 .DS_Store
 .claude/
 cloudflared

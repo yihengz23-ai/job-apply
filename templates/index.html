@@ -4,6 +4,7 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>求职投递面板</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23005bbf' d='M2 21l21-9L2 3v7l15 2-15 2z'/%3E%3C/svg%3E"/>
 <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
@@ -18,6 +19,13 @@ body{font-family:'Inter','PingFang SC',sans-serif}
 .field{width:100%;background:#f1f5f9;border:none;border-radius:.75rem;font-size:.875rem;padding:.5rem .75rem}
 .field:focus{outline:none;box-shadow:0 0 0 2px rgba(0,91,191,.2)}
 .chip{display:inline-flex;align-items:center;gap:.25rem;padding:.125rem .5rem;border-radius:9999px;font-size:11px;font-weight:600;white-space:nowrap}
+.ws-step{display:flex;gap:.75rem;padding:.75rem 0;border-top:1px dashed #e2e8f0}
+.ws-n{flex:none;width:1.5rem;height:1.5rem;border-radius:9999px;background:#ccfbf1;color:#0f766e;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.copy-btn{display:inline-flex;align-items:center;gap:.125rem;padding:.125rem .5rem;border-radius:.5rem;font-size:11px;font-weight:600;color:#0f766e;background:#f0fdfa;border:1px solid #99f6e4;white-space:nowrap}
+.copy-btn:hover{background:#ccfbf1}
+.kv{display:flex;align-items:flex-start;gap:.75rem;padding:.5rem 0;border-bottom:1px solid #f1f5f9;font-size:.875rem}
+.kv .k{width:7rem;flex:none;color:#94a3b8;font-size:12px;font-weight:600;padding-top:.125rem}
+.kv .v{flex:1;min-width:0;white-space:pre-wrap;word-break:break-word}
 @media(max-width:767px){
   #sidebar{display:none!important}
   #topbar{left:0!important;width:100%!important}
@@ -41,8 +49,10 @@ tailwind.config={theme:{extend:{colors:{primary:'#005bbf'},fontFamily:{sans:['In
   </div>
   <nav class="flex-1 space-y-1 px-3">
     <a class="nav-link flex items-center gap-3 px-4 py-2 cursor-pointer rounded-lg" data-tab="new"><span class="material-symbols-outlined">add_box</span><span>新投递</span></a>
+    <a class="nav-link flex items-center gap-3 px-4 py-2 cursor-pointer rounded-lg" data-tab="queue"><span class="material-symbols-outlined">playlist_add</span><span>批量队列</span><span id="queueBadge" class="ml-auto chip bg-primary text-white hidden"></span></a>
     <a class="nav-link flex items-center gap-3 px-4 py-2 cursor-pointer rounded-lg" data-tab="board"><span class="material-symbols-outlined">dashboard</span><span>投递看板</span></a>
     <a class="nav-link flex items-center gap-3 px-4 py-2 cursor-pointer rounded-lg" data-tab="analytics"><span class="material-symbols-outlined">analytics</span><span>数据分析</span></a>
+    <a class="nav-link flex items-center gap-3 px-4 py-2 cursor-pointer rounded-lg" data-tab="kit"><span class="material-symbols-outlined">badge</span><span>我的资料（网申）</span></a>
   </nav>
   <div class="px-4 mt-auto space-y-3 text-xs">
     <div id="sysStatus" class="space-y-1.5 text-slate-500"></div>
@@ -65,6 +75,12 @@ tailwind.config={theme:{extend:{colors:{primary:'#005bbf'},fontFamily:{sans:['In
 
 <!-- ─── Tab 1: 新投递 ─── -->
 <div id="tab-new" class="tab-content active animate-in">
+  <div id="reviewBanner" class="hidden mb-4 p-3 rounded-2xl bg-indigo-50 border border-indigo-200 flex flex-wrap items-center gap-3 text-sm">
+    <span class="material-symbols-outlined text-indigo-600">rate_review</span>
+    <span id="reviewText" class="flex-1 text-indigo-900"></span>
+    <button id="reviewSkip" class="px-3 py-1.5 bg-white border rounded-lg text-xs font-bold">跳过，看下一个</button>
+    <button id="reviewBack" class="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold">回到队列</button>
+  </div>
   <div class="grid grid-cols-12 gap-6">
     <div class="col-span-12 lg:col-span-7 space-y-5">
       <!-- 链接 -->
@@ -106,6 +122,30 @@ tailwind.config={theme:{extend:{colors:{primary:'#005bbf'},fontFamily:{sans:['In
 
       <!-- 信息卡 -->
       <section id="infoCards" class="hidden grid grid-cols-2 md:grid-cols-4 gap-3 animate-in"></section>
+      <!-- 网申资料包 -->
+      <section id="wsCard" class="hidden bg-white rounded-2xl p-5 border-2 border-teal-200 shadow-sm animate-in">
+        <div class="flex flex-wrap items-center gap-2 mb-1">
+          <span class="material-symbols-outlined text-teal-600">assignment_ind</span>
+          <h3 class="text-sm font-bold">网申资料包</h3>
+          <span id="wsPlatform" class="chip bg-teal-100 text-teal-700 hidden"></span>
+          <span id="wsChannel" class="chip bg-slate-100 text-slate-600 hidden"></span>
+          <button id="wsGenBtn" class="ml-auto px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-bold flex items-center gap-1"><span class="material-symbols-outlined text-sm">auto_awesome</span>生成问答</button>
+        </div>
+        <p class="text-xs text-slate-500 mb-2">按 1→4 做完，回到这个页面点最下面的「我已网申，记一笔」。</p>
+        <div class="ws-step"><div class="ws-n">1</div><div class="flex-1 min-w-0"><p class="text-sm font-bold mb-1">打开网申页面</p><div id="wsLinks" class="space-y-1.5 text-sm"></div></div></div>
+        <div class="ws-step"><div class="ws-n">2</div><div class="flex-1 min-w-0"><p class="text-sm font-bold mb-1">上传简历 <span class="text-xs font-normal text-slate-400">网申默认传单页中文版；英文岗位传英文版</span></p>
+          <div class="flex flex-wrap gap-2 items-center">
+            <select id="wsResumeVer" class="text-xs bg-slate-100 border-none rounded-lg py-1.5 pl-2 pr-7"><option>中文</option><option>英文</option><option>双语</option></select>
+            <input id="wsResumeName" class="field !w-auto flex-1 min-w-[12rem] !text-xs" placeholder="简历文件名"/>
+            <button id="wsResumeDl" class="copy-btn !py-1.5"><span class="material-symbols-outlined text-sm">download</span>下载这份简历</button>
+          </div></div></div>
+        <div class="ws-step"><div class="ws-n">3</div><div class="flex-1 min-w-0"><p class="text-sm font-bold mb-1">填姓名、学校、经历等固定栏目</p>
+          <p class="text-xs text-slate-600">在网申页面点浏览器右上角的「牛客网申助手」→「一键填充」，填完逐项核对。插件没填上的栏目，到<a class="text-teal-700 underline cursor-pointer" data-tab="kit">「我的资料」</a>页一键复制。</p></div></div>
+        <div class="ws-step"><div class="ws-n">4</div><div class="flex-1 min-w-0"><p class="text-sm font-bold mb-1">开放问题（AI 按这个岗位写的，可以先改再复制）</p><div id="wsAnswers" class="space-y-3"></div></div></div>
+        <div id="wsExtra" class="hidden ws-step"><div class="ws-n"><span class="material-symbols-outlined text-sm">info</span></div><div id="wsExtraBody" class="flex-1 min-w-0 text-xs space-y-2"></div></div>
+        <button id="wsRecordBtn" class="mt-2 w-full py-3 bg-teal-600 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-40"><span class="material-symbols-outlined">task_alt</span>我已网申，记一笔</button>
+        <button id="wsSkipMail" class="hidden mt-2 w-full text-xs text-slate-500 underline">邮件发不了 / 已经在别处发过？不发邮件，只记网申</button>
+      </section>
       <!-- JD 要求 -->
       <section id="rulesCard" class="hidden bg-white rounded-2xl p-5 border shadow-sm animate-in">
         <h3 class="text-sm font-bold mb-3 flex items-center gap-2"><span class="material-symbols-outlined text-amber-600">rule</span>JD 的要求（AI 从原文提取，用来对照邮件）</h3>
@@ -125,6 +165,7 @@ tailwind.config={theme:{extend:{colors:{primary:'#005bbf'},fontFamily:{sans:['In
           <h3 class="text-white text-sm font-medium flex items-center gap-2"><span class="material-symbols-outlined">mail</span>邮件</h3>
           <span id="gmailPill" class="chip bg-slate-700 text-slate-200">Gmail…</span>
         </div>
+        <div id="wsOnlyNote" class="hidden m-5 mb-0 p-3 rounded-xl bg-teal-50 text-teal-800 text-xs">这个岗位要网申，不用发邮件：按「网申资料包」投，投完点「我已网申，记一笔」。</div>
         <div id="emailFields" class="p-5 space-y-3">
           <div class="flex items-center gap-3 pb-2 border-b"><span class="text-xs font-bold text-slate-400 w-12 shrink-0">收件人</span><input id="emailTo" class="flex-1 text-sm bg-transparent border-none p-0 focus:ring-0 font-medium" placeholder="等待分析…"/></div>
           <div class="flex items-center gap-3 pb-2 border-b"><span class="text-xs font-bold text-slate-400 w-12 shrink-0">抄送</span><input id="emailCc" class="flex-1 text-sm bg-transparent border-none p-0 focus:ring-0" placeholder="JD 写了抄送才填"/></div>
@@ -153,7 +194,7 @@ tailwind.config={theme:{extend:{colors:{primary:'#005bbf'},fontFamily:{sans:['In
           <div class="grid grid-cols-2 gap-2">
             <button id="sendBtn" disabled class="py-3 bg-primary text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary/20 disabled:opacity-40 disabled:cursor-not-allowed"><span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1">send</span>发送</button>
             <button id="draftBtn" disabled class="py-3 bg-white border-2 border-primary/30 text-primary rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><span class="material-symbols-outlined">drafts</span>存为草稿</button>
-            <button id="recordBtn" disabled class="py-2.5 bg-slate-200 text-slate-700 rounded-xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><span class="material-symbols-outlined">bookmark_add</span>只记录（网申）</button>
+            <button id="recordBtn" disabled class="py-2.5 bg-slate-200 text-slate-700 rounded-xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><span class="material-symbols-outlined">bookmark_add</span>只记录（不发邮件）</button>
             <button id="regenBtn" disabled class="py-2.5 bg-slate-200 text-slate-700 rounded-xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><span class="material-symbols-outlined">refresh</span>按补充要求重写</button>
           </div>
           <p id="metaLine" class="text-[10px] text-center text-slate-400">发送 = 直接发出；存为草稿 = 放进 Gmail 草稿箱，可在 Gmail 里改完或定时发送</p>
@@ -161,6 +202,25 @@ tailwind.config={theme:{extend:{colors:{primary:'#005bbf'},fontFamily:{sans:['In
       </section>
     </div>
   </div>
+</div>
+
+<!-- ─── Tab: 批量队列 ─── -->
+<div id="tab-queue" class="tab-content">
+  <section class="bg-white rounded-2xl p-5 border shadow-sm mb-4">
+    <h2 class="text-sm font-bold flex items-center gap-2 mb-1"><span class="material-symbols-outlined text-primary">playlist_add</span>一次贴很多个，AI 在后台做完等你</h2>
+    <p class="text-xs text-slate-500 mb-3">贴公众号/网页链接（一行一个，可一次贴多行），或一整段 JD 文字。后台同时处理 <span id="queueWorkers">3</span> 个：抓文章 → 拆多岗位 → 写邮件 → 检查；全部做完会弹 Mac 通知。</p>
+    <textarea id="queueInput" rows="3" class="w-full bg-slate-50 border-none rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary/20" placeholder="在这里 ⌘V 粘贴；勾着「粘贴后自动加入」时，贴完就进队列，可以马上贴下一个"></textarea>
+    <div class="flex flex-wrap items-center gap-3 mt-3">
+      <button id="queueAddBtn" class="px-4 py-2 bg-primary text-white rounded-xl text-sm font-bold flex items-center gap-1"><span class="material-symbols-outlined">add</span>加入队列（⌘+回车）</button>
+      <label class="flex items-center gap-1.5 text-xs text-slate-600"><input id="autoAdd" type="checkbox" checked class="rounded text-primary"/>粘贴后自动加入</label>
+      <div class="ml-auto flex gap-2">
+        <button id="queueClearDone" class="px-3 py-2 bg-white border rounded-xl text-xs">清除已完成</button>
+        <button id="queueReadyBtn" class="px-3 py-2 bg-green-600 text-white rounded-xl text-xs font-bold disabled:opacity-40" disabled>一键处理就绪的</button>
+      </div>
+    </div>
+  </section>
+  <div id="queueSummary" class="text-xs text-slate-500 mb-2"></div>
+  <section id="queueList" class="space-y-2"></section>
 </div>
 
 <!-- ─── Tab 2: 看板 ─── -->
@@ -189,6 +249,20 @@ tailwind.config={theme:{extend:{colors:{primary:'#005bbf'},fontFamily:{sans:['In
     </table>
   </div>
   <div class="md:hidden space-y-3" id="boardCards"></div>
+</div>
+
+<!-- ─── Tab: 我的资料（网申） ─── -->
+<div id="tab-kit" class="tab-content">
+  <section class="bg-white rounded-2xl p-5 border shadow-sm mb-4">
+    <h2 class="text-sm font-bold flex items-center gap-2 mb-2"><span class="material-symbols-outlined text-teal-600">extension</span>网申填表：牛客网申助手（只需设置一次）</h2>
+    <ol class="text-sm text-slate-700 space-y-2 list-decimal pl-5">
+      <li>装插件：<a class="text-primary underline" target="_blank" rel="noopener" href="https://chromewebstore.google.com/detail/jmejcdhpfajaoooiimlhlfojljblkeni">Chrome 应用商店「牛客网申助手」</a>（要开代理）→「添加至 Chrome」。打不开的话用牛客官网的<a class="text-primary underline" target="_blank" rel="noopener" href="https://www.nowcoder.com/my/resume-plugin-intro">安装包</a>。装好后点浏览器右上角拼图图标，把它「固定」到工具栏。</li>
+      <li>点插件图标，登录牛客账号；打开<a class="text-primary underline" target="_blank" rel="noopener" href="https://www.nowcoder.com/my/resume-plugin">牛客「网申信息预填写」</a>，把下面的资料逐项复制进去（和简历逐字一致，经历描述就是简历原文）。</li>
+      <li>以后网申：在网申页面点插件 →「一键填充」→ 逐项核对 → 自己点提交。插件没填上的栏目回这里复制；开放问题用「新投递」页里 AI 写好的回答。</li>
+    </ol>
+    <p class="text-[11px] text-slate-400 mt-2">提醒：插件会读取你当前打开的网申页面并发给牛客做识别（商店隐私声明里写了会处理个人信息和网页内容），只在网申页面点它就好。</p>
+  </section>
+  <div id="kitBody" class="grid grid-cols-1 lg:grid-cols-2 gap-4"></div>
 </div>
 
 <!-- ─── Tab 3: 分析 ─── -->
@@ -233,8 +307,10 @@ tailwind.config={theme:{extend:{colors:{primary:'#005bbf'},fontFamily:{sans:['In
 
 <nav id="mobileNav" class="hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-50 justify-around items-center py-2 px-4">
   <button class="mob-tab flex flex-col items-center gap-0.5 py-1 px-3" data-tab="new"><span class="material-symbols-outlined text-xl">add_box</span><span class="text-[10px]">新投递</span></button>
+  <button class="mob-tab flex flex-col items-center gap-0.5 py-1 px-3" data-tab="queue"><span class="material-symbols-outlined text-xl">playlist_add</span><span class="text-[10px]">队列</span></button>
   <button class="mob-tab flex flex-col items-center gap-0.5 py-1 px-3" data-tab="board"><span class="material-symbols-outlined text-xl">dashboard</span><span class="text-[10px]">看板</span></button>
   <button class="mob-tab flex flex-col items-center gap-0.5 py-1 px-3" data-tab="analytics"><span class="material-symbols-outlined text-xl">analytics</span><span class="text-[10px]">分析</span></button>
+  <button class="mob-tab flex flex-col items-center gap-0.5 py-1 px-3" data-tab="kit"><span class="material-symbols-outlined text-xl">badge</span><span class="text-[10px]">资料</span></button>
 </nav>
 
 <script>
@@ -243,6 +319,23 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const escBr = s => esc(s).replace(/\n/g, '<br>');
 const opt = (v, label, sel) => `<option value="${esc(v)}" ${v === sel ? 'selected' : ''}>${esc(label ?? v)}</option>`;
+// 收件人可能是列表，也可能是用户在框里改过的「a; b」字符串
+const listArr = v => Array.isArray(v) ? v.filter(Boolean) : String(v || '').split(/[;,，；\s]+/).filter(Boolean);
+const listStr = v => listArr(v).join('; ');
+// 只放行 http(s) 链接（防止 javascript: 之类的东西被点开）
+const safeUrl = u => /^https?:\/\/[^\s"'<>]+$/i.test(String(u || '').trim()) ? String(u).trim() : '';
+const isWangshen = r => !!r && (['网申/链接', '邮箱+网申'].includes(r.apply_channel) || !listArr(r.to_emails).length);
+// HR 在国内：凌晨提醒按北京时间算（人在美国时也对）
+const bjHour = () => +new Intl.DateTimeFormat('en-US', {timeZone: 'Asia/Shanghai', hour: 'numeric', hourCycle: 'h23'}).format(new Date());
+const BASE_TITLE = document.title;
+async function copyText(text, label = '') {
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) {  // 通过隧道用 http 打开时没有剪贴板权限，退回老办法
+    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); ta.remove();
+  }
+  toast('已复制' + (label ? '：' + label : ''), 1500);
+}
 
 async function api(url, opts = {}) {
   const o = {...opts, headers: {'Content-Type': 'application/json', 'X-Requested-With': 'jobapply', ...(opts.headers || {})}};
@@ -263,7 +356,13 @@ function toast(msg, ms = 4000) {
   clearTimeout(t._h); t._h = setTimeout(() => t.classList.add('-translate-y-24', 'opacity-0'), ms);
 }
 
-function modal({title, html, buttons}) {
+let modalChain = Promise.resolve();
+function modal(opts) {
+  const p = modalChain.then(() => showModal(opts));
+  modalChain = p.then(() => {}, () => {});
+  return p;
+}
+function showModal({title, html, buttons}) {
   return new Promise(resolve => {
     $('#modalTitle').textContent = title;
     $('#modalBody').innerHTML = html;
@@ -280,12 +379,24 @@ function modal({title, html, buttons}) {
 }
 
 function setBusy(btn, busy, label) {
-  if (busy) { btn._html = btn.innerHTML; btn.disabled = true; btn.innerHTML = `<span class="material-symbols-outlined animate-spin">progress_activity</span>${esc(label || '处理中…')}`; }
-  else { btn.disabled = false; if (btn._html) btn.innerHTML = btn._html; }
+  if (busy) { if (btn._busyHtml == null) btn._busyHtml = btn.innerHTML; btn.disabled = true; btn.innerHTML = `<span class="material-symbols-outlined animate-spin">progress_activity</span>${esc(label || '处理中…')}`; }
+  else { btn.disabled = false; if (btn._busyHtml != null) { btn.innerHTML = btn._busyHtml; btn._busyHtml = null; } }
+}
+// 发送 / 草稿 / 记录 按钮：做完后会变成「已发送」等，换下一条时要恢复原样
+const ACTION_BTNS = ['sendBtn', 'draftBtn', 'recordBtn', 'regenBtn', 'wsRecordBtn'];
+const ORIG_HTML = {};
+ACTION_BTNS.forEach(id => ORIG_HTML[id] = $('#' + id).innerHTML);
+function resetActionButtons(enabled) {
+  ACTION_BTNS.forEach(id => { const b = $('#' + id); b.innerHTML = ORIG_HTML[id]; b._busyHtml = null; b.disabled = !enabled; });
+}
+function markDone(btn, text) {
+  btn._busyHtml = null; btn.innerHTML = `<span class="material-symbols-outlined">check_circle</span>${esc(text)}`; btn.disabled = true;
 }
 
 // ━━━ 全局状态 ━━━
-const S = {cfg: null, page: null, analysis: null, result: null, records: [], fixes: [], sent: false};
+const S = {cfg: null, page: null, pageJd: '', analysis: null, result: null, records: [], fixes: [], sent: false, queue: [], queueId: null,
+  queueRev: '', tab: 'new', kit: null, kitData: null, sentRecordId: '', wsRecorded: false, wsOpened: null,
+  gen: 0, lock: null, analyzeBusy: false, kitLoadingGen: null, editsDirty: false, userEdited: false, uncertain: false, lastIssues: []};
 
 // ━━━ Tab ━━━
 function switchTab(tab) {
@@ -296,9 +407,12 @@ function switchTab(tab) {
       (el.dataset.tab === tab ? 'text-slate-900 font-semibold bg-slate-200/60' : 'text-slate-500 hover:bg-slate-200/40');
   });
   document.querySelectorAll('.mob-tab').forEach(el => el.classList.toggle('text-primary', el.dataset.tab === tab));
-  $('#pageTitle').textContent = {new: '新投递', board: '投递看板', analytics: '数据分析'}[tab];
+  $('#pageTitle').textContent = {new: '新投递', queue: '批量队列', board: '投递看板', analytics: '数据分析', kit: '我的资料（网申）'}[tab];
+  S.tab = tab;
+  if (tab === 'queue') loadQueue(true);
   if (tab === 'board') loadBoard();
   if (tab === 'analytics') loadAnalytics();
+  if (tab === 'kit') loadKitPage();
 }
 document.querySelectorAll('[data-tab]').forEach(el => el.addEventListener('click', () => switchTab(el.dataset.tab)));
 
@@ -308,6 +422,8 @@ async function init() {
     S.cfg = await api('/api/config');
   } catch (e) { toast('读取配置失败：' + e.message); return; }
   const c = S.cfg;
+  if (c.records_error) modal({title: '投递记录文件读不了', html: `<p class="text-red-700">${esc(c.records_error)}</p><p class="text-xs mt-2">为了不覆盖历史记录，系统已停止写入。把这个提示截图给帮你维护的人，或从 backups 文件夹里的备份恢复。</p>`,
+    buttons: [{label: '知道了', value: true, kind: 'primary'}]});
   $('#campaignLabel').textContent = '本轮：' + c.campaign;
   $('#reportLabel').textContent = c.report_label || '研究样本';
   $('#modelBadge').textContent = c.model + ' · ' + c.effort + (c.backend === 'claude_code' ? ' · 会员额度' : ' · API');
@@ -335,7 +451,7 @@ async function refreshGmail() {
   try {
     const st = await api('/api/gmail/status');
     if (st.ok) {
-      pill.className = 'chip bg-green-600/20 text-green-300'; pill.textContent = 'Gmail 已连接';
+      pill.className = 'chip bg-green-600/20 text-green-300'; pill.textContent = 'Gmail 已连接'; pill.onclick = null;
       $('#gmailSide').innerHTML = 'Gmail：' + esc(st.email);
     } else {
       pill.className = 'chip bg-red-500/30 text-red-100 cursor-pointer'; pill.textContent = 'Gmail 未授权（点这里）';
@@ -356,14 +472,79 @@ async function gmailAuth() {
 
 $('#copyTunnel').onclick = () => { navigator.clipboard.writeText($('#tunnelUrl').href); toast('已复制'); };
 
+// ━━━ 页面上下文：防止「请求回来时已经换了内容」━━━
+// S.gen：「新投递」页现在装的是哪一份（打开队列条目 / 抓新文章 / 新分析 / 清空时 +1）。
+//        分析、重写、生成问答、检查这些异步请求回来时先对一下，对不上就丢掉结果，绝不落到别的岗位上。
+// S.lock：正在发送 / 记录的那几秒里，不许换条目、清空、重写、抓取。
+function busyGuard() {
+  if (S.lock) { toast(`正在${S.lock}，等几秒它完成再操作`, 2500); return true; }
+  return false;
+}
+const isDone = () => S.sent || S.wsRecorded;
+const reviewingLive = () => !!S.queueId && !isDone();   // 队列里正在审核、还没发 / 记的条目：改动要存回队列
+// 「邮箱+网申」邮件已发、网申还没补记：问答的改动也要存回队列（只存问答）
+const kitEditable = () => reviewingLive() || (!!S.queueId && S.sent && !S.wsRecorded && !!S.result && S.result.apply_channel === '邮箱+网申');
+
+function newContext() {
+  S.gen++;
+  clearTimeout(checkTimer); checkTimer = null;
+  clearTimeout(kitSaveTimer); kitSaveTimer = null;
+  S.editsDirty = false; S.userEdited = false; S.uncertain = false;
+  const g = $('#wsGenBtn'); g._busyHtml = null; g.disabled = false;
+  g.innerHTML = '<span class="material-symbols-outlined text-sm">auto_awesome</span>生成问答';
+}
+
+// 离开审核（回到队列 / 没有下一条 / 条目在别处被处理掉）：页面一起清空，不留一封能脱离队列发出去的旧邮件
+function leaveReview() {
+  exitReview();
+  newContext(); clearResultView();
+  ['#urlInput', '#jdInput', '#sourceInput', '#targetJob', '#extraInput'].forEach(s => $(s).value = '');
+  ['#fetchInfo', '#jobPicker'].forEach(s => $(s).classList.add('hidden'));
+  S.page = null; S.pageJd = '';
+}
+
+// 清掉上一份的分析结果和邮件（JD、链接、多岗位选择保留）
+function clearResultView() {
+  ['#emailTo', '#emailCc', '#emailSub', '#emailBody', '#resumeName', '#resumeNameEn', '#reportName'].forEach(s => $(s).value = '');
+  ['#infoCards', '#rulesCard', '#issuesCard', '#analyzeStatus', '#wsCard', '#wsOnlyNote'].forEach(s => $(s).classList.add('hidden'));
+  $('#applyUrlBtn').classList.add('hidden'); $('#applyUrlBtn').classList.remove('flex');
+  $('#recordBtn').classList.remove('hidden');
+  resetActionButtons(false);
+  S.analysis = null; S.result = null; S.fixes = []; S.sent = false; S.lastIssues = [];
+  S.kit = null; S.sentRecordId = ''; S.wsRecorded = false; S.wsOpened = null;
+  $('#metaLine').textContent = '发送 = 直接发出；存为草稿 = 放进 Gmail 草稿箱，可在 Gmail 里改完或定时发送';
+}
+
+// 按当前状态决定几个按钮能不能点（「已发送」这类文字由 markDone 负责）
+function refreshActionButtons() {
+  const has = !!S.result, busy = !!S.lock || !!S.analyzeBusy, noTo = !listArr($('#emailTo').value).length;
+  ['sendBtn', 'draftBtn'].forEach(id => { const b = $('#' + id); if (b._busyHtml == null) b.disabled = !has || isDone() || busy || noTo; });
+  ['recordBtn', 'regenBtn'].forEach(id => { const b = $('#' + id); if (b._busyHtml == null) b.disabled = !has || isDone() || busy; });
+  renderWsRecordButton();
+}
+$('#emailTo').addEventListener('input', () => refreshActionButtons());
+
+// 新投递页上改过、还没发的邮件：换成别的内容前问一句
+async function confirmDiscard() {
+  if (S.queueId || !S.result || isDone() || !S.userEdited) return true;
+  return await modal({title: '换掉还没发的邮件？', html: '<p>新投递页上这封邮件你改过、还没发出。继续的话会被新内容替换。</p>',
+    buttons: [{label: '取消', value: false}, {label: '继续', value: true, kind: 'danger'}]});
+}
+
 // ━━━ 抓取链接 ━━━
 $('#fetchBtn').onclick = async () => {
+  if (busyGuard()) return;
   const url = $('#urlInput').value.trim();
   if (!url) return toast('请先粘贴链接');
-  const btn = $('#fetchBtn'); setBusy(btn, true, '抓取中…');
+  if (!(await confirmDiscard())) return;
+  const gen = S.gen, btn = $('#fetchBtn'); setBusy(btn, true, '抓取中…');
   try {
     const d = await api('/api/fetch-url', {method: 'POST', body: {url}});
-    S.page = d;
+    if (gen !== S.gen || S.lock || S.analyzeBusy) { toast('抓取结果没用上：期间换了别的内容或正在发送。需要的话再点一次「抓取」。', 5000); return; }
+    // 换了一篇新文章：原来的分析和邮件作废；正在审核的队列条目先把修改存好，再退出审核
+    if (S.queueId) { await flushQueueEdits(); exitReview(); }
+    newContext(); clearResultView();
+    S.page = d; S.pageJd = d.content;
     $('#jdInput').value = d.content;
     $('#sourceInput').value = d.source_label || '';
     $('#targetJob').value = '';
@@ -375,9 +556,13 @@ $('#fetchBtn').onclick = async () => {
         `<label class="flex items-start gap-2 p-3 rounded-xl border bg-slate-50 hover:bg-blue-50 cursor-pointer text-sm">
            <input type="radio" name="jobpick" value="${i}" class="mt-1"/>
            <span><b>${esc(j.title)}</b> <span class="text-slate-400">${esc(j.location)}</span><br>
-           <span class="text-xs text-slate-500">${esc(j.summary)}${j.emails.length ? ' ｜ ' + esc(j.emails.join(', ')) : ''}</span></span></label>`).join('');
+           <span class="text-xs text-slate-500">${esc(j.summary)}${(j.emails || []).length ? ' ｜ ' + esc(j.emails.join(', ')) : ''}</span></span></label>`).join('');
       $('#jobPicker').classList.remove('hidden');
-      $('#jobPicker').querySelectorAll('input').forEach(el => el.onchange = () => { $('#targetJob').value = jobs[+el.value].title; });
+      const dup = t => jobs.filter(x => x.title === t).length > 1;
+      $('#jobPicker').querySelectorAll('input').forEach(el => el.onchange = () => {
+        const j = jobs[+el.value];
+        $('#targetJob').value = dup(j.title) && j.location ? `${j.title}（${j.location}）` : j.title;  // 同名岗位带上地点
+      });
       toast(`识别到 ${jobs.length} 个岗位，请先选一个再分析`);
     } else {
       $('#jobPicker').classList.add('hidden');
@@ -395,59 +580,114 @@ function payloadBase() {
     target_job: $('#targetJob').value.trim(),
     source_url: S.page ? S.page.url : '',
     publish_date: S.page ? (S.page.publish_date || '') : '',
+    queue_id: S.queueId || '',
   };
 }
 
 async function analyze(regen = false) {
+  if (busyGuard()) return;
+  if (S.analyzeBusy) return toast('正在分析 / 重写，等它回来再点', 2500);
+  const jd = $('#jdInput').value;
+  if (jd.trim().length < 50) { toast('请粘贴完整 JD（至少 50 字）'); return; }
+  if (regen && (!S.result || isDone())) { toast('这封已经发出 / 记录过了，不能再重写'); return; }
+  S.analyzeBusy = true;   // 第一个 await 之前就占住，双击 / 慢网也只发一次
+  const btn = regen ? $('#regenBtn') : $('#analyzeBtn'), st = $('#analyzeStatus');
+  let gen;
+  try {
+    if (!regen) {
+      if (!(await confirmDiscard())) return;
+      if (S.queueId) { await flushQueueEdits(); exitReview(); }  // 审核中的条目：先存好修改再脱离队列（条目留在队列里）
+      newContext(); clearResultView();   // 旧邮件一开始就清掉：分析期间 / 分析失败后都不会被误发
+      if (S.page && S.pageJd !== jd) { S.page = null; S.pageJd = ''; }  // 手动换了 JD：旧文章的链接、发布日期、二维码都不要了
+    }
+    gen = S.gen;
+    refreshActionButtons();  // 重写期间不能发送（发出去的必须是你看过、确认过的那封）
+    setBusy(btn, true, regen ? '重写中…' : '分析中（约 15 秒）…');
+    st.classList.add('hidden');
+    await runAnalysis(regen, gen, btn, st);
+  } finally {
+    S.analyzeBusy = false;
+    setBusy(btn, false);
+    if (gen === S.gen) refreshActionButtons();
+  }
+}
+
+async function runAnalysis(regen, gen, btn, st) {
   const base = payloadBase();
-  const st = $('#analyzeStatus');
-  if (base.jd_text.trim().length < 50) { toast('请粘贴完整 JD（至少 50 字）'); return; }
-  const btn = regen ? $('#regenBtn') : $('#analyzeBtn');
-  setBusy(btn, true, regen ? '重写中…' : '分析中（约 15 秒）…');
-  st.classList.add('hidden');
   try {
     const d = await api('/api/analyze', {method: 'POST', body: {...base,
       position_hint: $('#posHint').value, resume_hint: $('#resumeHint').value, extra: $('#extraInput').value.trim()}});
-    S.analysis = d; S.result = d.result; S.fixes = d.fixes || []; S.sent = false;
+    if (gen !== S.gen || S.lock || (regen && isDone())) {
+      toast(regen ? '重写结果没用上：期间已经发出 / 记录，或换了别的岗位' : '分析结果没用上：期间换了别的内容', 4000);
+      return;
+    }
+    S.analysis = d; S.result = d.result; S.fixes = d.fixes || []; S.userEdited = false;
     fillEmail(d.result);
     renderInfo(d.result); renderRules(d.result); renderIssues(d.issues);
+    renderKit();
+    if (isWangshen(d.result) && !S.kit) genKit(true);   // 重写邮件时不动已有的问答（可能改过）
+    if (regen && S.queueId) { S.editsDirty = false; saveQueueEdits({edited: collectResult(), issues: d.issues}); }
     const m = d.meta;
     const how = m.backend === '会员额度' ? '走 Claude Max 会员额度（不扣 API 余额）'
       : (m.backend || 'API') + (m.cost_usd != null ? ` · 约 $${m.cost_usd}` : '');
     $('#metaLine').textContent = `${m.model} · ${m.seconds} 秒 · ${how}`;
-    st.textContent = '✓ 已生成，请看右边的邮件和下方的检查结果';
+    st.textContent = isWangshen(d.result) && !listArr(d.result.to_emails).length
+      ? '✓ 这是网申岗位：看下方「网申资料包」' : '✓ 已生成：看邮件和检查结果';
     st.className = 'mt-3 p-3 rounded-xl text-sm bg-green-50 text-green-700';
-    ['sendBtn', 'draftBtn', 'recordBtn', 'regenBtn'].forEach(id => $('#' + id).disabled = false);
     if (window.innerWidth < 1024) setTimeout(() => $('#infoCards').scrollIntoView({behavior: 'smooth'}), 100);
   } catch (e) {
-    st.textContent = '分析失败：' + e.message;
-    st.className = 'mt-3 p-3 rounded-xl text-sm bg-red-50 text-red-700';
-  } finally { setBusy(btn, false); }
+    if (gen === S.gen) {
+      st.textContent = '分析失败：' + e.message;
+      st.className = 'mt-3 p-3 rounded-xl text-sm bg-red-50 text-red-700';
+    }
+  }
 }
 $('#analyzeBtn').onclick = () => analyze(false);
 $('#regenBtn').onclick = () => analyze(true);
 
 function fillEmail(r) {
-  $('#emailTo').value = (r.to_emails || []).join('; ');
-  $('#emailCc').value = (r.cc_emails || []).join('; ');
+  $('#emailTo').value = listStr(r.to_emails);
+  $('#emailCc').value = listStr(r.cc_emails);
+  $('#wsOnlyNote').classList.toggle('hidden', listArr(r.to_emails).length > 0);
   $('#emailSub').value = r.email_subject || '';
   $('#emailBody').value = r.email_body || '';
   $('#resumeVersion').value = r.resume_version || '双语';
   $('#resumeName').value = r.resume_filename || '';
   $('#resumeNameEn').value = r.resume_filename_en || '';
-  $('#chkResume').checked = true;
+  $('#chkResume').checked = r.attach_resume !== false;
   $('#chkReport').checked = !!r.attach_report;
   $('#reportName').value = r.report_filename || S.cfg.report_default_name;
   updateResumeControls();
   autoGrow($('#emailSub')); autoGrow($('#emailBody'));
-  const url = r.apply_url || '';
+  const url = safeUrl(r.apply_url);
   const a = $('#applyUrlBtn');
-  if (url && /^https?:\/\//.test(url)) { a.href = url; a.classList.remove('hidden'); a.classList.add('flex'); }
+  if (url) { a.href = url; a.classList.remove('hidden'); a.classList.add('flex'); }
   else { a.classList.add('hidden'); a.classList.remove('flex'); }
 }
+$('#applyUrlBtn').addEventListener('click', () => noteWsOpened());
+
+// 「招聘信息来源」这一栏填了以后，自动替换标题 / 正文里的 [招聘信息来源] 占位
+const SOURCE_PH = /\[(?:招聘信息来源|信息来源|来源|招聘渠道|渠道)\]/g;
+function applySource() {
+  const src = $('#sourceInput').value.trim().replace(/[（(]公众号[)）]$/, '').replace(/公众号$/, '').trim();
+  if (!src || !S.result || isDone()) return false;
+  let changed = false;
+  for (const id of ['#emailSub', '#emailBody']) {
+    const el = $(id);
+    if (SOURCE_PH.test(el.value)) { el.value = el.value.replace(SOURCE_PH, src); changed = true; autoGrow(el); }
+    SOURCE_PH.lastIndex = 0;
+  }
+  return changed;
+}
+$('#sourceInput').addEventListener('change', () => { if (applySource()) { toast('已把来源填进邮件', 2000); onUserEdit(); } });
 
 function autoGrow(el) { el.style.height = 'auto'; el.style.height = (el.scrollHeight + 2) + 'px'; }
 document.querySelectorAll('.grow-y').forEach(el => el.addEventListener('input', () => autoGrow(el)));
+let resizeTimer = null;
+window.addEventListener('resize', () => {  // 窗口变窄 / 变宽后，文字框高度跟着重算
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => document.querySelectorAll('.grow-y, #wsAnswers textarea').forEach(autoGrow), 150);
+});
 $('#emailSub').addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
 $('#emailSub').addEventListener('input', e => { if (/\n/.test(e.target.value)) e.target.value = e.target.value.replace(/\n/g, ' '); });
 
@@ -461,7 +701,7 @@ $('#resumeVersion').onchange = () => {
   if (v === '英文' && $('#resumeName').value === S.cfg.resume_default_zh) $('#resumeName').value = S.cfg.resume_default_en;
   if (v !== '英文' && $('#resumeName').value === S.cfg.resume_default_en) $('#resumeName').value = S.cfg.resume_default_zh;
   if (v === '中英两份' && !$('#resumeNameEn').value) $('#resumeNameEn').value = S.cfg.resume_default_en;
-  updateResumeControls(); scheduleCheck();
+  updateResumeControls(); onUserEdit();
 };
 
 function collectResult() {
@@ -485,7 +725,7 @@ function renderInfo(r) {
   $('#infoCards').innerHTML = card('机构', r.company_name) + card('岗位', r.job_title) + posSel + card('地点', r.job_location) +
     card('机构性质', r.company_type) + card('行业', r.focus_industry) + card('投递方式', r.apply_channel) + card('日期', dates || '—');
   $('#infoCards').classList.remove('hidden');
-  $('#posSelect').onchange = scheduleCheck;
+  $('#posSelect').onchange = onUserEdit;
 }
 
 function renderRules(r) {
@@ -511,34 +751,96 @@ function renderIssues(issues) {
   S.lastIssues = issues;
 }
 
+// ━━━ 实时检查 + 队列条目自动保存 ━━━
 let checkTimer = null;
+function onUserEdit() { if (!S.result || isDone()) return; S.userEdited = true; S.editsDirty = true; scheduleCheck(); }
 function scheduleCheck() {
-  if (!S.result) return;
+  if (!S.result || isDone()) return;
   clearTimeout(checkTimer);
+  const gen = S.gen;
   checkTimer = setTimeout(async () => {
+    checkTimer = null;
+    if (gen !== S.gen || isDone()) return;
+    const result = collectResult();
+    if (reviewingLive() && S.editsDirty) { S.editsDirty = false; saveQueueEdits({edited: result}); }  // 先把内容存上，不等检查结果
     try {
-      const d = await api('/api/check', {method: 'POST', body: {result: collectResult(), jd_text: $('#jdInput').value, source_label: $('#sourceInput').value}});
+      const d = await api('/api/check', {method: 'POST', body: {result, jd_text: $('#jdInput').value, source_label: $('#sourceInput').value}});
+      if (gen !== S.gen) return;
       renderIssues(d.issues);
+      if (reviewingLive()) saveQueueEdits({issues: d.issues});
     } catch (e) {}
   }, 700);
 }
-['#emailTo', '#emailCc', '#emailSub', '#emailBody', '#resumeName', '#resumeNameEn', '#reportName'].forEach(s => $(s).addEventListener('input', scheduleCheck));
-['#chkResume', '#chkReport'].forEach(s => $(s).addEventListener('change', scheduleCheck));
+function saveQueueEdits(body, keepalive = false) {
+  const qid = S.queueId, gen = S.gen;
+  if (!qid) return Promise.resolve();
+  return api('/api/queue/' + encodeURIComponent(qid), {method: 'PUT', body: {...body, rev: S.queueRev || undefined}, keepalive})
+    .then(d => {
+      if (d && d.ok === false && gen === S.gen && !isDone() && !S.lock)
+        toast('这条在别处发送或重做过了，刚才的修改没存上。回队列刷新看看。', 6000);
+    })
+    .catch(() => {});
+}
+// 换条目 / 离开页面前：还没来得及存的修改立刻存掉（邮件 + 网申问答）
+async function flushQueueEdits(keepalive = false) {
+  const jobs = [];
+  if (checkTimer) { clearTimeout(checkTimer); checkTimer = null; }
+  if (reviewingLive() && S.editsDirty && S.result) { S.editsDirty = false; jobs.push(saveQueueEdits({edited: collectResult()}, keepalive)); }
+  if (kitSaveTimer) {
+    clearTimeout(kitSaveTimer); kitSaveTimer = null;
+    if (kitEditable() && S.kit) jobs.push(saveQueueEdits({wangshen: S.kit}, keepalive));
+  }
+  await Promise.all(jobs);
+}
+['#emailTo', '#emailCc', '#emailSub', '#emailBody', '#resumeName', '#resumeNameEn', '#reportName'].forEach(s => $(s).addEventListener('input', onUserEdit));
+['#chkResume', '#chkReport'].forEach(s => $(s).addEventListener('change', onUserEdit));
 
-// ━━━ 发送 / 草稿 / 网申 ━━━
+// ━━━ 发送 / 草稿 ━━━
+const openGmail = box => window.open(`https://mail.google.com/mail/u/0/#${box}`, '_blank', 'noopener');
+
 async function deliver(mode) {
-  if (!S.result) return;
-  const r = collectResult();
-  if (!String(r.to_emails).trim()) return toast('收件人为空：网申岗位请用「只记录（网申）」');
+  if (!S.result || isDone() || busyGuard()) return;
+  if (S.analyzeBusy) return toast('正在重写 / 分析，等它回来、看过新内容再发', 3000);
+  const gen = S.gen;
+  S.lock = mode === 'draft' ? '存草稿' : '发送';
+  refreshActionButtons();
+  try {
+    await doDeliver(mode, gen);
+  } finally {
+    S.lock = null;
+    if (gen === S.gen) refreshActionButtons();
+  }
+}
+
+async function doDeliver(mode, gen) {
+  const qid = S.queueId;
+  const stale = () => gen !== S.gen || isDone();
+  let r = collectResult();
+  if (!listArr(r.to_emails).length) return toast('收件人为空：网申岗位按「网申资料包」投，投完点「我已网申，记一笔」', 6000);
+  const it = qid && S.queue.find(x => x.id === qid);
+  if (S.uncertain || (it && it.send_uncertain)) {  // 上次发送结果不确定：先去 Gmail 确认
+    const msg = S.uncertain ? '上次点发送时结果不确定，邮件可能已经发出了。' : it.error;
+    const ans = await modal({title: '先确认一下', html: `<p class="text-red-700">${esc(msg)}</p><p class="text-xs mt-2">请先到 Gmail「已发送」里看看有没有这封，确认没有再继续，免得给 HR 发两封。</p>`,
+      buttons: [{label: '取消', value: false}, {label: '去 Gmail 看看', value: 'gmail'}, {label: '确认没发出，继续', value: true, kind: 'danger'}]});
+    if (ans === 'gmail') openGmail('sent');
+    if (ans !== true || stale()) return;
+  }
+  if (mode === 'send' && bjHour() < 7) {
+    const go = await modal({title: '现在是北京时间凌晨', html: '<p>凌晨发出的邮件，HR 早上打开时会被压在一堆新邮件下面。建议先「存为草稿」，早上 9 点左右在 Gmail 里发出（或用 Gmail 的定时发送）。</p>',
+      buttons: [{label: '取消', value: null}, {label: '仍然现在发', value: 'send'}, {label: '改存草稿', value: 'draft', kind: 'primary'}]});
+    if (!go || stale()) return;
+    mode = go; S.lock = mode === 'draft' ? '存草稿' : '发送';
+  }
   let rev;
   try { rev = await api('/api/check', {method: 'POST', body: {result: r, jd_text: $('#jdInput').value, source_label: $('#sourceInput').value}}); }
   catch (e) { return toast('检查失败：' + e.message); }
+  if (stale()) return;
   renderIssues(rev.issues);
   const errors = rev.issues.filter(i => i.level === 'error');
   const warns = rev.issues.filter(i => i.level === 'warn');
   const verb = mode === 'draft' ? '存为草稿' : '发送';
   const att = [r.attach_resume ? `简历（${r.resume_version}）：${r.resume_filename}${r.resume_version === '中英两份' ? ' + ' + r.resume_filename_en : ''}` : '', r.attach_report ? '研究样本：' + r.report_filename : ''].filter(Boolean);
-  const summary = `<div class="p-3 bg-slate-50 rounded-xl space-y-1 text-xs"><div><b>收件人：</b>${esc(r.to_emails)}${String(r.cc_emails).trim() ? ' ｜ <b>抄送：</b>' + esc(r.cc_emails) : ''}</div><div><b>标题：</b>${esc(r.email_subject)}</div><div><b>附件：</b>${esc(att.join('；') || '无')}</div></div>`;
+  const summary = `<div class="p-3 bg-slate-50 rounded-xl space-y-1 text-xs"><div><b>收件人：</b>${esc(listStr(r.to_emails))}${listArr(r.cc_emails).length ? ' ｜ <b>抄送：</b>' + esc(listStr(r.cc_emails)) : ''}</div><div><b>标题：</b>${esc(r.email_subject)}</div><div><b>附件：</b>${esc(att.join('；') || '无')}</div></div>`;
   let force = false;
   if (errors.length) {
     const ok = await modal({title: '还有必须处理的问题', html: errors.map(i => `<div class="p-2 bg-red-50 text-red-700 rounded-lg">${esc(i.msg)}</div>`).join('') + summary,
@@ -549,19 +851,35 @@ async function deliver(mode) {
       buttons: [{label: '取消', value: false}, {label: verb, value: true, kind: 'primary'}]});
     if (!ok) return;
   }
+  if (stale()) return;
+  // 发出的就是上面检查过、确认框里给你看过的那封（r），不再重新读表单
   const btn = mode === 'draft' ? $('#draftBtn') : $('#sendBtn');
   setBusy(btn, true, mode === 'draft' ? '存草稿中…' : '发送中…');
+  clearTimeout(checkTimer); checkTimer = null;
   try {
     const d = await api('/api/send', {method: 'POST', body: {...payloadBase(), result: r, mode, force}});
-    S.sent = true;
-    btn._html = `<span class="material-symbols-outlined">check_circle</span>${mode === 'draft' ? '已存草稿' : '已发送'}`;
-    setBusy(btn, false); btn.disabled = true;
-    $('#sendBtn').disabled = true; $('#draftBtn').disabled = true; $('#recordBtn').disabled = true;
+    setBusy(btn, false);
+    if (gen !== S.gen) { toast(`${d.mode === '草稿' ? '已存草稿' : '已发送'}：${r.company_name || ''}（已记入看板）`, 6000); return; }
+    S.sent = true; S.sentRecordId = d.record_id || ''; S.uncertain = false; S.editsDirty = false;
+    markDone(btn, mode === 'draft' ? '已存草稿' : '已发送');
     toast(d.record_error ? d.record_error : `${d.mode === '草稿' ? '已存入 Gmail 草稿箱' : '已发送'}，并记入看板（附件：${d.attachments.join('、')}）`, 7000);
     if (d.mode !== '草稿' && d.record_id) setTimeout(() => checkBounce(d.record_id, r.company_name), 90000);
+    renderKit();
+    // 「邮箱+网申」：邮件发完还要网申，不自动跳到下一条
+    if (S.result && S.result.apply_channel === '邮箱+网申' && !S.wsRecorded) toast('邮件已发出。这个岗位还要网申：按「网申资料包」做完，再点「我已网申」', 9000);
+    else if (qid) setTimeout(() => nextQueueItem(qid), 1200);
   } catch (e) {
     setBusy(btn, false);
-    if (e.status === 409 && e.data && e.data.issues) { renderIssues(e.data.issues); toast('还有必须处理的问题，没发出'); }
+    if (e.status === 504 && e.data && e.data.uncertain) {
+      S.uncertain = true;
+      const box = mode === 'draft' ? 'drafts' : 'sent';
+      modal({title: mode === 'draft' ? '不确定草稿存上了没有' : '不确定有没有发出去', html: `<p>${esc(e.message)}</p>`,
+        buttons: [{label: '知道了', value: true}, {label: mode === 'draft' ? '去 Gmail「草稿」看看' : '去 Gmail「已发送」看看', value: 'gmail', kind: 'primary'}]})
+        .then(v => { if (v === 'gmail') openGmail(box); });
+      if (qid) loadQueue(true);
+    }
+    else if (e.status === 409 && e.data && e.data.queue_taken) { toast(e.message, 6000); loadQueue(true); }
+    else if (e.status === 409 && e.data && e.data.issues) { renderIssues(e.data.issues); toast('还有必须处理的问题，没发出'); }
     else if (e.status === 401) { toast(e.message, 8000); refreshGmail(); }
     else toast(verb + '失败：' + e.message, 8000);
   }
@@ -580,19 +898,49 @@ async function checkBounce(id, company) {
 $('#sendBtn').onclick = () => deliver('send');
 $('#draftBtn').onclick = () => deliver('draft');
 
+// ━━━ 只记录 / 我已网申 ━━━
 $('#recordBtn').onclick = async () => {
-  if (!S.result) return;
-  const ok = await modal({title: '只记录，不发邮件？', html: '<p>适用于网申 / 飞书 / 官网投递：投完后点这里记一笔，看板里就能跟进。</p>',
+  if (!S.result || isDone() || busyGuard()) return;
+  const ok = await modal({title: '只记录，不发邮件？', html: '<p>适用于已经在别处投过（网申 / 官网 / 别的邮箱）：记一笔，看板里就能跟进。</p>',
     buttons: [{label: '取消', value: false}, {label: '记录', value: true, kind: 'primary'}]});
-  if (!ok) return;
-  const btn = $('#recordBtn'); setBusy(btn, true, '记录中…');
-  try {
-    await api('/api/record', {method: 'POST', body: {...payloadBase(), result: collectResult()}});
-    btn._html = '<span class="material-symbols-outlined">check_circle</span>已记录'; setBusy(btn, false); btn.disabled = true;
-    $('#sendBtn').disabled = true; $('#draftBtn').disabled = true;
-    toast('已记录这次网申');
-  } catch (e) { setBusy(btn, false); toast('记录失败：' + e.message); }
+  if (ok) recordApplication($('#recordBtn'), {standalone: true});
 };
+$('#wsRecordBtn').onclick = () => recordApplication($('#wsRecordBtn'));
+$('#wsSkipMail').onclick = async () => {
+  if (!S.result || isDone() || busyGuard()) return;
+  const ok = await modal({title: '不发邮件，只记网申？', html: '<p>适用于邮箱失效、退信，或者邮件已经在别处发过。会单独记一条网申记录。</p>',
+    buttons: [{label: '取消', value: false}, {label: '只记网申', value: true, kind: 'primary'}]});
+  if (ok) recordApplication($('#wsRecordBtn'), {standalone: true});
+};
+
+async function recordApplication(btn, {standalone = false} = {}) {
+  if (!S.result || S.wsRecorded || busyGuard()) return;
+  if (!standalone && needMailFirst()) return;
+  if (S.analyzeBusy) return toast('正在重写 / 分析，等它回来再记', 3000);
+  const gen = S.gen, qid = S.queueId;
+  S.lock = '记录';
+  refreshActionButtons();
+  setBusy(btn, true, '记录中…');
+  clearTimeout(checkTimer); checkTimer = null;
+  try {
+    const inWs = !$('#wsCard').classList.contains('hidden');
+    const d = await api('/api/record', {method: 'POST', body: {...payloadBase(), result: collectResult(), kit: collectKit(),
+      upload_version: inWs ? $('#wsResumeVer').value : $('#resumeVersion').value, record_id: standalone ? '' : S.sentRecordId}});
+    setBusy(btn, false);
+    if (gen !== S.gen) return;
+    S.wsRecorded = true; S.wsOpened = null; S.editsDirty = false;
+    markDone($('#wsRecordBtn'), d.merged ? '已记在刚发的邮件记录上' : '已记录');
+    markDone($('#recordBtn'), '已记录');
+    toast(d.merged ? '已在这条投递记录上补记「已同时网申」' : '已记录，之后「检查回复」会帮你盯这家机构的来信', 5000);
+    if (qid) setTimeout(() => nextQueueItem(qid), 1200);
+  } catch (e) {
+    setBusy(btn, false);
+    if (e.status === 409) { toast(e.message, 6000); loadQueue(true); } else toast('记录失败：' + e.message);
+  } finally {
+    S.lock = null;
+    if (gen === S.gen) refreshActionButtons();
+  }
+}
 
 $('#downloadResume').onclick = async () => {
   const body = {version: $('#resumeVersion').value, filename: $('#resumeName').value, filename_en: $('#resumeNameEn').value};
@@ -608,22 +956,27 @@ $('#downloadResume').onclick = async () => {
   }
 };
 
-$('#clearBtn').onclick = () => {
-  ['#urlInput', '#jdInput', '#sourceInput', '#targetJob', '#extraInput', '#emailTo', '#emailCc', '#emailSub', '#emailBody', '#resumeName', '#resumeNameEn', '#reportName'].forEach(s => $(s).value = '');
+$('#clearBtn').onclick = async () => {
+  if (busyGuard() || !(await confirmDiscard())) return;
+  if (S.queueId) await flushQueueEdits();
+  exitReview();
+  newContext(); clearResultView();
+  ['#urlInput', '#jdInput', '#sourceInput', '#targetJob', '#extraInput'].forEach(s => $(s).value = '');
   $('#posHint').value = ''; $('#resumeHint').value = '';
-  ['#fetchInfo', '#jobPicker', '#infoCards', '#rulesCard', '#issuesCard', '#analyzeStatus'].forEach(s => $(s).classList.add('hidden'));
-  $('#applyUrlBtn').classList.add('hidden');
-  ['sendBtn', 'draftBtn', 'recordBtn', 'regenBtn'].forEach(id => { const b = $('#' + id); if (b._html) b.innerHTML = b._html; b.disabled = true; });
-  S.page = null; S.analysis = null; S.result = null; S.fixes = []; S.sent = false;
-  $('#metaLine').textContent = '发送 = 直接发出；存为草稿 = 放进 Gmail 草稿箱，可在 Gmail 里改完或定时发送';
+  ['#fetchInfo', '#jobPicker'].forEach(s => $(s).classList.add('hidden'));
+  S.page = null; S.pageJd = '';
 };
 
-window.addEventListener('beforeunload', e => { if (S.result && !S.sent && $('#emailBody').value) { e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('beforeunload', e => {
+  if (S.queueId) flushQueueEdits(true);  // 队列条目：改动自动存回队列（keepalive，页面关了也能发出去），不用拦
+  else if (S.result && !isDone() && S.userEdited) { e.preventDefault(); e.returnValue = ''; }
+});
+window.addEventListener('pagehide', () => { if (S.queueId) flushQueueEdits(true); });
 
 // ━━━ 看板 ━━━
 const STATUS_CLS = {'草稿': 'bg-slate-200 text-slate-600', '已投递': 'bg-blue-100 text-blue-700', '已电联': 'bg-indigo-100 text-indigo-700', '面试中': 'bg-amber-100 text-amber-800', 'offer': 'bg-green-100 text-green-700', '拒绝': 'bg-red-100 text-red-700', '无回复': 'bg-slate-100 text-slate-500'};
 const statusBadge = s => `<span class="chip ${STATUS_CLS[s] || 'bg-slate-100 text-slate-600'}">${esc(s)}</span>`;
-const REPLY_CLS = {'有回复': 'bg-green-600 text-white', '退信': 'bg-red-600 text-white', '自动回复': 'bg-slate-200 text-slate-600'};
+const REPLY_CLS = {'有回复': 'bg-green-600 text-white', '退信': 'bg-red-600 text-white', '来信': 'bg-amber-100 text-amber-800', '自动回复': 'bg-slate-200 text-slate-600'};
 const replyBadge = r => r.reply_status ? `<span class="chip ${REPLY_CLS[r.reply_status] || 'bg-slate-200 text-slate-600'}" title="${esc((r.reply_at || '') + ' ' + (r.reply_from || '') + '：' + (r.reply_snippet || ''))}">${esc(r.reply_status === '退信' ? '退信·没送达' : r.reply_status)}</span>` : '';
 const posBadge = p => p ? `<span class="chip ${p === '全职' ? 'bg-purple-100 text-purple-700' : p === '留用实习' ? 'bg-teal-100 text-teal-700' : 'bg-slate-100 text-slate-600'}">${esc(p)}</span>` : '';
 
@@ -645,8 +998,9 @@ async function loadBoard() {
     const [recs, stats] = await Promise.all([api('/api/records?campaign=' + encodeURIComponent(camp)), api('/api/stats?campaign=' + encodeURIComponent(camp))]);
     S.records = recs;
     $('#boardMetrics').innerHTML = metric('总投递', stats.total) + metric('本周新增', '+' + stats.week_new) +
-      metric('有回复 / 来信', stats.replied, '#16a34a') + metric('待跟进（>7天无回复）', stats.followup.length, '#b45309', stats.followup) +
-      (stats.bounced.length ? metric('退信·没送达（换邮箱重投）', stats.bounced.length, '#dc2626', stats.bounced) : '');
+      metric('有回复', stats.replied, '#16a34a') + metric('待跟进（>7天无回复）', stats.followup.length, '#b45309', stats.followup) +
+      (stats.bounced.length ? metric('退信·没送达（换邮箱重投）', stats.bounced.length, '#dc2626', stats.bounced) : '') +
+      (stats.excel && !stats.excel.ok ? `<div class="col-span-full text-xs text-amber-700 bg-amber-50 rounded-xl p-2">桌面的 Excel 镜像没同步上（${esc(stats.excel.error)}）。多半是 Excel 正开着这个文件：关掉后下次保存会自动补上。</div>` : '');
     bindTips($('#boardMetrics'));
     const keep = (id, vals) => { const sel = $(id), cur = sel.value, first = sel.options[0].outerHTML; sel.innerHTML = first + vals.map(v => opt(v, v, cur)).join(''); };
     keep('#fType', Object.keys(stats.type_dist)); keep('#fCity', Object.keys(stats.loc_dist));
@@ -685,24 +1039,35 @@ function renderBoard() {
 $('#fSearch').addEventListener('input', renderBoard);
 $('#fCampaign').addEventListener('change', loadBoard);
 
+const EDIT_DEFAULTS = {status: '已投递', position_type: '不明确', reply_status: ''};  // 旧记录没填时下拉框显示的值
 function detailHtml(r, mobile = false) {
   const atts = (r.attachments && r.attachments.length) ? r.attachments.map(a => `${a.kind}（${a.version}）：${a.filename}`) :
     [r.resume_version ? '简历：' + r.resume_version : '', r.attach_report === true ? '研究样本' : ''].filter(Boolean);
   const gmailLink = r.gmail_thread_id ? `<a class="text-primary hover:underline" target="_blank" rel="noopener" href="https://mail.google.com/mail/u/0/#all/${encodeURIComponent(r.gmail_thread_id)}">在 Gmail 打开</a>` : '';
-  const links = [gmailLink, r.apply_url ? `<a class="text-primary hover:underline" target="_blank" rel="noopener" href="${esc(r.apply_url)}">网申链接</a>` : '', r.source_url ? `<a class="text-primary hover:underline" target="_blank" rel="noopener" href="${esc(r.source_url)}">原文</a>` : ''].filter(Boolean).join(' ｜ ');
+  const au = safeUrl(r.apply_url), su = safeUrl(r.source_url);
+  const links = [gmailLink, au ? `<a class="text-primary hover:underline" target="_blank" rel="noopener" href="${esc(au)}">网申链接</a>` : '', su ? `<a class="text-primary hover:underline" target="_blank" rel="noopener" href="${esc(su)}">原文</a>` : ''].filter(Boolean).join(' ｜ ');
+  const ws = r.wangshen || {};
+  const wsQA = [['自我介绍（短）', ws.self_intro_short], ['自我介绍', ws.self_intro], ['为什么申请', ws.why_this_role], ['匹配点', ws.fit_points]]
+    .concat((ws.custom_answers || []).map(a => [a.question, a.answer])).filter(x => x[1]);
+  const wsHtml = wsQA.length ? `<details class="text-xs"><summary class="cursor-pointer text-teal-700 font-bold">网申时填的问答（面试前回看）${ws.platform ? ' · ' + esc(ws.platform) : ''}</summary>
+      <div class="mt-2 space-y-2">${wsQA.map(([q, a]) => `<div><p class="text-slate-400 font-bold">${esc(q)}</p><p class="whitespace-pre-wrap">${esc(a)}</p></div>`).join('')}</div></details>` : '';
   const reply = r.reply_status ? `<div class="p-3 rounded-xl ${r.reply_status === '有回复' ? 'bg-green-50 text-green-800' : r.reply_status === '退信' ? 'bg-red-50 text-red-700' : 'bg-slate-50 text-slate-600'} text-xs"><b>${esc(r.reply_status)}</b> ${esc(r.reply_at)} ${esc(r.reply_from)}<br>${esc(r.reply_snippet)}</div>` : '';
-  const sel = (key, vals) => `<select data-k="${key}" class="field mt-1">${vals.map(v => opt(v, v, r[key])).join('')}</select>`;
+  const sel = (key, vals) => {  // 旧记录里不在选项中的值也列出来，免得保存别的栏目时被悄悄改掉
+    const cur = r[key] || EDIT_DEFAULTS[key], all = vals.includes(cur) ? vals : [cur, ...vals];
+    return `<select data-k="${key}" class="field mt-1">${all.map(v => opt(v, v || '（没有）', cur)).join('')}</select>`;
+  };
   const inp = (key, ph = '') => `<input data-k="${key}" class="field mt-1" value="${esc(r[key])}" placeholder="${esc(ph)}"/>`;
   const lbl = (t, x) => `<label class="block text-[11px] font-bold text-slate-400">${esc(t)}${x}</label>`;
   const edit = `<div class="space-y-2 edit-box" data-id="${esc(r.id)}">
       ${lbl('状态', sel('status', S.cfg.statuses))}${lbl('岗位类型', sel('position_type', S.cfg.position_types))}
+      ${lbl('回复（判断错了可以改，改过就不再自动覆盖）', sel('reply_status', ['', '有回复', '来信', '自动回复', '退信']))}
       ${lbl('来源', inp('job_source', '公众号 / Boss / 官网'))}${lbl('地点', inp('job_location'))}${lbl('行业', inp('focus_industry'))}
       ${lbl('截止日期', inp('deadline', 'YYYY-MM-DD'))}
       ${lbl('备注', `<textarea data-k="notes" class="field mt-1" rows="4" placeholder="面试时间、联系人…">${esc(r.notes)}</textarea>`)}
       <div class="flex gap-2 pt-1"><button class="save-btn flex-1 bg-primary text-white py-2 rounded-xl text-xs font-bold">保存</button><button class="del-btn px-4 border-2 border-red-200 text-red-600 rounded-xl text-xs font-bold">删除</button></div></div>`;
   const content = `<div class="space-y-3">
       <div class="text-[11px] text-slate-400 flex flex-wrap gap-x-3">${r.campaign ? `<span>批次：${esc(r.campaign)}</span>` : ''}<span>方式：${esc(r.send_mode)}</span>${r.status_updated_at ? `<span>状态更新 ${esc(r.status_updated_at)}</span>` : ''}${r.job_post_date ? `<span>岗位发布 ${esc(r.job_post_date)}</span>` : ''}${links ? `<span>${links}</span>` : ''}</div>
-      ${reply}
+      ${reply}${wsHtml}
       <div class="grid ${mobile ? 'grid-cols-1' : 'grid-cols-2'} gap-4">
         <div><h4 class="text-[11px] font-bold text-slate-400 mb-2">发出的邮件</h4>
           <div class="bg-blue-50/60 p-3 rounded-xl text-xs leading-relaxed max-h-72 overflow-y-auto border border-blue-100">
@@ -723,13 +1088,18 @@ document.addEventListener('click', async e => {
   const tr = e.target.closest('tr[data-rid]');
   if (tr) { $('#detail-' + CSS.escape(tr.dataset.rid))?.classList.toggle('open'); return; }
   const mc = e.target.closest('[data-mid]');
-  if (mc && !e.target.closest('.edit-box')) { mc.querySelector('.mob-detail').classList.toggle('hidden'); return; }
+  if (mc && !e.target.closest('.mob-detail')) { mc.querySelector('.mob-detail').classList.toggle('hidden'); return; }
   const box = e.target.closest('.edit-box');
   if (!box) return;
   const id = box.dataset.id;
   if (e.target.closest('.save-btn')) {
+    const orig = S.records.find(x => x.id === id) || {};
     const data = {};
-    box.querySelectorAll('[data-k]').forEach(el => data[el.dataset.k] = el.value);
+    box.querySelectorAll('[data-k]').forEach(el => {
+      const k = el.dataset.k, cur = String(orig[k] ?? '') || EDIT_DEFAULTS[k] || '';
+      if (el.value !== cur) data[k] = el.value;
+    });
+    if (!Object.keys(data).length) return toast('没有改动', 1500);
     try { await api('/api/records/' + encodeURIComponent(id), {method: 'PUT', body: data}); toast('已保存'); loadBoard(); }
     catch (err) { toast('保存失败：' + err.message); }
   }
@@ -770,7 +1140,7 @@ async function loadAnalytics() {
   const sd = s.status_dist || {};
   const progressed = ['已电联', '面试中', 'offer'].reduce((a, k) => a + (sd[k] || 0), 0);
   const pct = n => s.total ? Math.round(n / s.total * 100) + '%' : '—';
-  $('#analyticsMetrics').innerHTML = metric('总投递', s.total) + metric('覆盖机构', s.companies, '#475569') + metric('有回复 / 来信', s.replied, '#16a34a') +
+  $('#analyticsMetrics').innerHTML = metric('总投递', s.total) + metric('覆盖机构', s.companies, '#475569') + metric('有回复', s.replied, '#16a34a') +
     metric('推进率（电联及以后）', pct(progressed), '#005bbf') + metric('Offer', sd['offer'] || 0, '#16a34a') + metric('待跟进', s.followup.length, '#ba1a1a', s.followup);
   bindTips($('#analyticsMetrics'));
   const daily = s.daily || {}; _dailyDetail = s.daily_detail || {};
@@ -778,7 +1148,7 @@ async function loadAnalytics() {
   const maxV = Math.max(1, ...Object.values(daily));
   let cum = 0; const cumData = days.map(d => (cum += daily[d]));
   $('#trendChart').innerHTML = days.map((d, i) => `<div class="trend-col flex-1 h-full flex flex-col items-center justify-end gap-1 group cursor-pointer" data-day="${esc(d)}" data-n="${daily[d]}" data-c="${cumData[i]}">
-      <div class="w-full bg-primary/25 group-hover:bg-primary/60 rounded-t min-h-[4px]" style="height:${daily[d] / maxV * 190}px"></div><span class="text-[10px] text-slate-400">${esc(d)}</span></div>`).join('') || '<p class="text-slate-400 text-sm m-auto">暂无数据</p>';
+      <div class="w-full bg-primary/25 group-hover:bg-primary/60 rounded-t min-h-[4px]" style="height:${daily[d] / maxV * 190}px"></div><span class="text-[10px] text-slate-400">${esc(d.slice(5).replace('-', '/'))}</span></div>`).join('') || '<p class="text-slate-400 text-sm m-auto">暂无数据</p>';
   document.querySelectorAll('.trend-col').forEach(el => {
     el.onmouseenter = ev => showTip(ev, el.dataset.day, el.dataset.n, el.dataset.c);
     el.onmouseleave = () => $('#trendTooltip').classList.add('hidden');
@@ -811,8 +1181,400 @@ function showTip(e, day, n, c) {
   tip.style.top = Math.max(e.clientY - cr.top - 80, 0) + 'px';
 }
 
+// ━━━ 批量队列 ━━━
+const Q_ORDER = {'待审核': 0, '需处理': 1, '发送中': 2, '处理中': 2, '排队中': 3, '失败': 4, '已发送': 5, '已存草稿': 5, '已记录': 5};
+const Q_CLS = {'待审核': 'bg-green-100 text-green-700', '需处理': 'bg-red-100 text-red-700', '处理中': 'bg-blue-100 text-blue-700',
+  '发送中': 'bg-blue-600 text-white', '排队中': 'bg-slate-100 text-slate-600', '失败': 'bg-red-600 text-white',
+  '已发送': 'bg-slate-200 text-slate-500', '已存草稿': 'bg-slate-200 text-slate-500', '已记录': 'bg-slate-200 text-slate-500'};
+// 审核时改过的条目，用最新一次检查的结果
+const issuesOf = it => it.live_issues || (it.analysis ? it.analysis.issues : []);
+const resultOf = it => it.analysis ? (it.edited || it.analysis.result) : null;
+const isReady = it => it.status === '待审核' && it.analysis && !issuesOf(it).some(i => i.level === 'error' || i.level === 'warn')
+  && listArr(resultOf(it).to_emails).length > 0 && resultOf(it).apply_channel !== '邮箱+网申' && !it.send_uncertain;
+const reviewable = it => it.status === '待审核' || it.status === '需处理';
+// 「邮箱+网申」：邮件已经发了 / 存了草稿，网申还没补记 → 还能打开来补记
+const canAddWs = it => ['已发送', '已存草稿'].includes(it.status) && !!it.analysis && resultOf(it).apply_channel === '邮箱+网申'
+  && !it.ws_recorded && !!it.record_id;
+const sortedQueue = () => [...S.queue].sort((a, b) => (Q_ORDER[a.status] ?? 9) - (Q_ORDER[b.status] ?? 9) || a.created_at.localeCompare(b.created_at));
+
+async function loadQueue(force = false) {
+  let d;
+  try { d = await api('/api/queue'); }
+  catch (e) { if (!S.queueErrShown) { S.queueErrShown = true; toast('读取队列失败：' + e.message, 5000); } return; }
+  S.queueErrShown = false;
+  try {
+    S.queue = d.items; $('#queueWorkers').textContent = d.workers;
+    const c = d.counts, waiting = (c['待审核'] || 0) + (c['需处理'] || 0), active = (c['排队中'] || 0) + (c['处理中'] || 0) + (c['发送中'] || 0);
+    const badge = $('#queueBadge');
+    badge.textContent = active ? `${waiting}·${active}…` : waiting;
+    badge.classList.toggle('hidden', !waiting && !active);
+    document.title = (waiting ? `(${waiting}) ` : '') + BASE_TITLE;
+    const sig = JSON.stringify(d.items.map(i => [i.id, i.status, i.updated_at]));
+    if (S.tab === 'queue' && (sig !== S.queueSig || force)) { S.queueSig = sig; renderQueue(c); }
+    if (S.queueId) updateReviewBanner();
+    if (reviewingLive() && !S.kit && S.kitLoadingGen !== S.gen) {  // 网申问答在后台生成完了：补上
+      const it = S.queue.find(x => x.id === S.queueId);
+      if (it && it.wangshen && !it.wangshen.error) { S.kit = it.wangshen; renderKit(); }
+    }
+  } catch (e) { console.error('队列显示出错', e); }
+}
+
+function renderQueue(c) {
+  const items = sortedQueue();
+  const ready = S.queue.filter(isReady).length;
+  if (!S.readyRunning) {  // 一键处理进行中：按钮保持「发送中…」，不被轮询刷回去
+    $('#queueReadyBtn').textContent = `一键处理就绪的（${ready}）`;
+    $('#queueReadyBtn').disabled = !ready;
+  }
+  $('#queueSummary').textContent = Object.entries(c).map(([k, v]) => `${k} ${v}`).join(' ｜ ') || '队列是空的';
+  $('#queueList').innerHTML = items.map(it => {
+    const r = resultOf(it);
+    const title = r ? `${r.company_name || '—'}｜${r.job_title || '—'}` : (it.page && it.page.title) || it.input.slice(0, 80);
+    const ws = r && isWangshen(r), wsOnly = ws && !listArr(r.to_emails).length;
+    const iss = wsOnly ? [] : issuesOf(it);
+    const errs = iss.filter(i => i.level === 'error').length, warns = iss.filter(i => i.level === 'warn').length;
+    const sub = it.error ? `<span class="text-red-600">${esc(it.error)}</span>` : r ? esc(wsOnly ? '网申岗位' + (r.apply_url ? '：' + r.apply_url : '（可能要扫码）') : r.email_subject) :
+      (it.status === '处理中' ? '正在抓取 / 写邮件…' : '等待处理…');
+    const done = ['已发送', '已存草稿', '已记录'].includes(it.status), addWs = canAddWs(it);
+    const wsChip = (ws ? `<span class="chip bg-teal-100 text-teal-700">${wsOnly ? '网申' : '邮箱+网申'}</span>` : '') +
+      (it.send_uncertain && !done ? '<span class="chip bg-red-600 text-white">可能已发出</span>' : '');
+    const kitTip = ws && !done ? (it.wangshen && !it.wangshen.error ? '<span class="text-[11px] text-teal-700 whitespace-nowrap">问答已写好</span>' : it.wangshen && it.wangshen.error ? '<span class="text-[11px] text-amber-700 whitespace-nowrap">问答生成失败，打开后可重试</span>' : '') : '';
+    const counts = it.analysis && !wsOnly && !done ? `<span class="text-[11px] whitespace-nowrap ${errs ? 'text-red-600' : warns ? 'text-amber-700' : 'text-green-700'}">${errs ? errs + ' 必须处理 ' : ''}${warns ? warns + ' 注意' : (errs ? '' : '检查全过')}</span>` : '';
+    return `<div class="bg-white rounded-xl border p-3 flex flex-wrap xl:flex-nowrap items-center gap-x-3 gap-y-2 ${done && !addWs ? 'opacity-50' : ''}">
+      <span class="chip ${Q_CLS[it.status] || ''}">${['处理中', '发送中'].includes(it.status) ? '<span class="material-symbols-outlined animate-spin text-xs">progress_activity</span>' : ''}${esc(it.status)}</span>
+      <div class="flex-1 min-w-[10rem]"><div class="text-sm font-semibold truncate">${esc(title)} ${r && r.position_type ? posBadge(r.position_type) : ''} ${wsChip}</div>
+        <div class="text-xs text-slate-500 truncate">${sub}</div></div>
+      <div class="flex flex-wrap items-center justify-end gap-2 ml-auto">
+        ${kitTip}${counts}
+        ${reviewable(it) ? `<button class="q-open px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold" data-id="${esc(it.id)}">审核</button>` : ''}
+        ${addWs ? `<button class="q-open px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-bold" data-id="${esc(it.id)}">补记网申</button>` : ''}
+        ${['失败', '需处理'].includes(it.status) ? `<button class="q-retry px-2 py-1.5 border rounded-lg text-xs" data-id="${esc(it.id)}">重做</button>` : ''}
+        ${!done && it.status !== '发送中' ? `<button class="q-del px-2 py-1.5 text-slate-400 hover:text-red-600 text-xs" data-id="${esc(it.id)}" title="删除"><span class="material-symbols-outlined text-base">close</span></button>` : ''}
+      </div>
+    </div>`;
+  }).join('') || '<p class="text-sm text-slate-400 p-4">还没有内容。去公众号复制链接，回来在上面的框里 ⌘V。</p>';
+}
+
+// 一条一条地加（连着粘贴时，后一条等前一条提交完，只提交新粘贴的那部分）
+let addChain = Promise.resolve();
+function addToQueue() { addChain = addChain.then(doAddToQueue, doAddToQueue); return addChain; }
+async function doAddToQueue() {
+  const text = $('#queueInput').value.trim();
+  if (!text) return;
+  try {
+    const d = await api('/api/queue', {method: 'POST', body: {text}});
+    const cur = $('#queueInput').value;
+    $('#queueInput').value = cur.trim() === text ? '' : cur.replace(text, '').trim();  // 提交期间又粘贴进来的保留
+    toast(d.added ? `已加入 ${d.added} 条，后台处理中` : '这些链接已经在队列里了', 2500);
+    loadQueue(true);
+  } catch (e) { toast(e.message, 5000); }
+}
+$('#queueAddBtn').onclick = addToQueue;
+$('#queueInput').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addToQueue(); } });
+$('#queueInput').addEventListener('paste', () => { if ($('#autoAdd').checked) setTimeout(addToQueue, 50); });
+
+$('#queueList').addEventListener('click', async e => {
+  const b = e.target.closest('button[data-id]');
+  if (!b) return;
+  const id = b.dataset.id, it = S.queue.find(x => x.id === id);
+  try {
+    if (b.classList.contains('q-open')) return await openQueueItem(id);
+    if (b.classList.contains('q-retry')) {
+      const d = await api(`/api/queue/${encodeURIComponent(id)}/retry`, {method: 'POST', body: {}});
+      if (!d.ok) toast('这条现在不能重做（可能正在处理或已经完成）');
+    }
+    if (b.classList.contains('q-del')) {
+      if (it && it.analysis) {
+        const r = resultOf(it);
+        const ok = await modal({title: '从队列里删掉这条？', html: `<p><b>${esc(r.company_name || '')}｜${esc(r.job_title || '')}</b></p><p class="text-xs text-slate-500">只是从队列里删掉，不影响已发的邮件和看板记录。</p>`,
+          buttons: [{label: '取消', value: false}, {label: '删除', value: true, kind: 'danger'}]});
+        if (!ok) return;
+      }
+      if (id === S.queueId) { if (busyGuard()) return; exitReview(); }
+      const d = await api('/api/queue/' + encodeURIComponent(id), {method: 'DELETE'});
+      if (!d.ok) toast('删不了：这条正在发送');
+    }
+  } catch (err) { toast('操作失败：' + err.message, 5000); }
+  loadQueue(true);
+});
+$('#queueClearDone').onclick = async () => {
+  try { await api('/api/queue/clear-done', {method: 'POST', body: {}}); } catch (e) { toast('清除失败：' + e.message); }
+  loadQueue(true);
+};
+
+$('#queueReadyBtn').onclick = async () => {
+  const ready = S.queue.filter(isReady);
+  if (!ready.length || S.readyRunning) return;
+  const list = ready.map(it => { const r = resultOf(it); return `<div class="text-xs py-0.5">· ${esc(r.company_name)}｜${esc(r.email_subject)}</div>`; }).join('');
+  const night = bjHour() < 7;
+  const mode = await modal({title: `检查全部通过的 ${ready.length} 封`,
+    html: `<p class="text-xs text-slate-500">这些没有任何红色、黄色提示。有提示的、网申的不在里面，需要你逐个审核。直接发送时每封间隔几秒，不会像群发。</p>` +
+      (night ? '<p class="text-xs text-amber-700 font-bold">现在是北京时间凌晨：建议「全部存为草稿」，早上再在 Gmail 里发出。</p>' : '') +
+      `<div class="p-3 bg-slate-50 rounded-xl max-h-60 overflow-y-auto">${list}</div>`,
+    buttons: [{label: '取消', value: null}, {label: '全部存为草稿', value: 'draft', kind: night ? 'primary' : ''}, {label: '全部直接发送', value: 'send', kind: night ? '' : 'primary'}]});
+  if (!mode) return;
+  const btn = $('#queueReadyBtn');
+  S.readyRunning = true; setBusy(btn, true, mode === 'draft' ? '存草稿中…' : `发送中（约 ${ready.length * 4} 秒）…`);
+  try {
+    const d = await api('/api/queue/process-ready', {method: 'POST', body: {mode}});
+    await modal({title: '完成', html: `<p>${mode === 'draft' ? '已存草稿' : '已发送'} ${d.done.length} 封</p>` +
+      (d.skipped.length ? `<p class="text-xs text-amber-700 mt-2">跳过 ${d.skipped.length} 封（留给你审核）：</p>` + d.skipped.map(s => `<div class="text-xs">· ${esc(s)}</div>`).join('') : ''),
+      buttons: [{label: '好', value: true, kind: 'primary'}]});
+  } catch (e) { toast(e.message, 6000); if (e.status === 401) refreshGmail(); }
+  finally { S.readyRunning = false; setBusy(btn, false); loadQueue(true); }
+};
+
+async function openQueueItem(id) {
+  if (busyGuard()) return;
+  if (!(await confirmDiscard())) return;
+  await flushQueueEdits();
+  await loadQueue();  // 用最新的内容，不用几秒前的快照
+  const it = S.queue.find(x => x.id === id);
+  if (!it || !it.analysis) return;
+  const addWs = canAddWs(it);
+  if (!reviewable(it) && !addWs) { toast('这条已经在发送或处理过了'); loadQueue(true); return; }
+  newContext(); clearResultView();
+  switchTab('new');
+  S.queueId = id; S.queueRev = it.rev || '';
+  S.sent = addWs; S.sentRecordId = addWs ? it.record_id : '';
+  S.page = it.page || null; S.pageJd = it.jd_text || '';
+  $('#urlInput').value = it.kind === 'url' ? it.input : '';
+  $('#jdInput').value = it.jd_text || '';
+  $('#sourceInput').value = (it.page && it.page.source_label) || '';
+  $('#targetJob').value = it.target_job || '';
+  $('#extraInput').value = ''; $('#posHint').value = ''; $('#resumeHint').value = '';
+  ['#fetchInfo', '#jobPicker'].forEach(s => $(s).classList.add('hidden'));
+  S.analysis = it.analysis; S.result = resultOf(it); S.fixes = it.analysis.fixes || [];
+  S.kit = it.wangshen && !it.wangshen.error ? it.wangshen : null;
+  fillEmail(S.result); renderInfo(S.result); renderRules(S.result); renderIssues(issuesOf(it));
+  renderKit(it.wangshen && it.wangshen.error ? it.wangshen.error : '');
+  if (addWs) markDone($('#sendBtn'), it.status === '已存草稿' ? '已存草稿' : '已发送');
+  refreshActionButtons();
+  const m = it.analysis.meta || {};
+  $('#metaLine').textContent = `${m.model || ''} · ${m.seconds || '?'} 秒 · ${m.backend || ''}（队列里生成）`;
+  updateReviewBanner();
+  window.scrollTo(0, 0);
+  if (reviewable(it)) scheduleCheck();  // 只刷新检查结果；没改过就不往回存
+  // 网申岗位还没有问答（老条目 / 后台没来得及写）：顺手生成；后台生成失败的不自动重试，留「生成问答」按钮
+  if (reviewable(it) && isWangshen(S.result) && !S.kit && !(it.wangshen && it.wangshen.error)) genKit(true);
+}
+
+function updateReviewBanner() {
+  const it = S.queue.find(x => x.id === S.queueId);
+  if (!it && !S.lock) { leaveReview(); toast('这条已经不在队列里了，页面已清空', 4000); return; }
+  if (!it) return;
+  // 这条在别处（一键处理 / 另一个窗口）被发掉了：页面清空，免得再发一封
+  if (!reviewable(it) && !canAddWs(it) && !isDone() && !S.lock) {
+    leaveReview(); toast(`这条已经在别处处理（${it.status}），页面已清空`, 5000); return;
+  }
+  const left = S.queue.filter(x => reviewable(x) && x.id !== S.queueId).length;
+  const r = resultOf(it) || {};
+  const what = canAddWs(it) && !S.wsRecorded ? '补记网申' : '正在审核队列';
+  $('#reviewText').innerHTML = `${what}：<b>${esc(r.company_name || '')}｜${esc(r.job_title || '')}</b>（队列里还有 ${left} 个待审核）` +
+    (it.error && reviewable(it) ? `<br><span class="text-red-600 text-xs">${esc(it.error)}</span>` : '');
+  $('#reviewBanner').classList.remove('hidden'); $('#reviewBanner').classList.add('flex');
+}
+
+function exitReview() {
+  S.queueId = null; S.queueRev = '';
+  $('#reviewBanner').classList.add('hidden'); $('#reviewBanner').classList.remove('flex');
+}
+
+// 下一条：按队列顺序往后找（到底再从头），fromId 是「发完 / 记完自动跳」时那一条——用户已经去别处了就不跳
+async function nextQueueItem(fromId) {
+  if (fromId !== undefined && (fromId !== S.queueId || S.tab !== 'new')) return;
+  if (busyGuard()) return;
+  await flushQueueEdits();
+  await loadQueue();
+  const order = sortedQueue(), cur = S.queueId;
+  const i = order.findIndex(x => x.id === cur);
+  const rest = i >= 0 ? order.slice(i + 1).concat(order.slice(0, i)) : order;
+  const next = rest.find(x => reviewable(x) && x.id !== cur);
+  if (next) await openQueueItem(next.id);
+  else if (fromId === undefined && cur && reviewable(S.queue.find(x => x.id === cur) || {})) toast('队列里没有别的待审核了', 3000);  // 点「跳过」时就是最后一条：留在这条
+  else { leaveReview(); toast('队列里没有待审核的了', 3000); switchTab('queue'); }
+}
+$('#reviewSkip').onclick = () => nextQueueItem();
+$('#reviewBack').onclick = async () => { if (busyGuard()) return; await flushQueueEdits(); leaveReview(); switchTab('queue'); };
+
+// ━━━ 网申资料包 ━━━
+const QR_MARK = '【文章图片里的二维码链接（系统自动识别）】';
+function wsLinks() {
+  const out = [];
+  const add = (u, label) => { u = safeUrl(u); if (u && !out.some(x => x.u === u)) out.push({u, label}); };
+  if (S.result) add(S.result.apply_url, '网申链接');
+  ((S.page && S.page.qr_urls) || []).forEach(u => add(u, '文章二维码里的链接'));
+  const jd = $('#jdInput').value, i = jd.indexOf(QR_MARK);
+  if (i >= 0) jd.slice(i + QR_MARK.length).split('\n').map(s => s.trim()).filter(Boolean).forEach(u => add(u, '文章二维码里的链接'));
+  return out;
+}
+
+function renderKit(error = '') {
+  const r = S.result;
+  if (!r || !isWangshen(r)) { $('#wsCard').classList.add('hidden'); $('#recordBtn').classList.remove('hidden'); return; }
+  $('#wsCard').classList.remove('hidden');
+  $('#recordBtn').classList.add('hidden');  // 网申岗位用卡片里的「我已网申」
+  const k = S.kit;
+  $('#wsChannel').textContent = r.apply_channel === '邮箱+网申' ? '邮件 + 网申都要' : '只网申';
+  $('#wsChannel').classList.remove('hidden');
+  $('#wsPlatform').textContent = k && k.platform ? k.platform : '';
+  $('#wsPlatform').classList.toggle('hidden', !(k && k.platform && !['不明确', '其他'].includes(k.platform)));
+  // ① 链接
+  const links = wsLinks();
+  $('#wsLinks').innerHTML = links.length ? links.map(l => `<div class="flex items-center gap-2 min-w-0">
+      <a href="${esc(l.u)}" target="_blank" rel="noopener" class="ws-open shrink-0 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-bold flex items-center gap-1"><span class="material-symbols-outlined text-sm">open_in_new</span>打开</a>
+      <span class="text-xs text-slate-400 shrink-0">${esc(l.label)}</span><span class="text-xs truncate text-slate-600" title="${esc(l.u)}">${esc(l.u)}</span>
+      <button class="copy-btn shrink-0" data-copy="${esc(l.u)}">复制</button></div>`).join('')
+    : '<p class="text-xs text-amber-700">JD 里没找到网申链接：可能要用手机微信扫文章里的二维码，或者去机构官网的招聘页投。</p>';
+  // ② 简历：英文 JD 默认英文版，其余默认中文单页；JD 规定了文件名就用 JD 的（换了岗位才重置，免得冲掉你改的）
+  const en = r.jd_language === '英文';
+  if ($('#wsResumeName').dataset.gen !== String(S.gen)) {
+    $('#wsResumeVer').value = en ? '英文' : '中文';
+    const fmt = (r.jd_rules || {}).resume_filename_format;
+    $('#wsResumeName').value = fmt && r.resume_filename ? r.resume_filename : (en ? S.cfg.resume_default_en : S.cfg.resume_default_zh);
+    $('#wsResumeName').dataset.gen = String(S.gen);
+  }
+  // ④ 问答
+  const box = $('#wsAnswers'), loading = S.kitLoadingGen === S.gen;
+  if (!k) {
+    box.innerHTML = loading ? '<p class="text-xs text-slate-500 flex items-center gap-1"><span class="material-symbols-outlined animate-spin text-sm">progress_activity</span>AI 正在按这个岗位写自我介绍、为什么申请等回答（约 20 秒）…</p>'
+      : error ? `<p class="text-xs text-red-600">问答生成失败：${esc(error)}。点右上角「生成问答」重试。</p>`
+      : '<p class="text-xs text-slate-500">还没生成。点右上角「生成问答」，AI 会按这个岗位写好自我介绍、为什么申请、匹配点，以及 JD 里点名要回答的问题。</p>';
+    if (!loading) $('#wsGenBtn').innerHTML = '<span class="material-symbols-outlined text-sm">auto_awesome</span>生成问答';
+  } else {
+    const qa = [['self_intro_short', '自我介绍（短版）'], ['self_intro', '自我介绍（长版）'], ['why_this_role', '为什么申请这个岗位'], ['fit_points', '我和岗位的匹配点']]
+      .filter(([key]) => k[key]).map(([key, label]) => ({key, label, text: k[key]}))
+      .concat((k.custom_answers || []).map((a, i) => ({key: 'custom:' + i, label: 'JD 里的问题：' + a.question, text: a.answer})));
+    box.innerHTML = qa.map(x => `<div><div class="flex items-center gap-2 mb-1"><span class="text-xs font-bold text-slate-600 flex-1">${esc(x.label)}</span>
+        <span class="ws-count text-[11px] text-slate-400">${x.text.length} 字</span><button class="copy-btn ws-copy">复制</button></div>
+        <textarea class="ws-ans grow-y w-full bg-slate-50 border-none rounded-xl p-3 text-sm leading-relaxed resize-none overflow-hidden focus:ring-2 focus:ring-teal-200" data-key="${esc(x.key)}">${esc(x.text)}</textarea>
+        ${/\[待填\]/.test(x.text) ? '<p class="text-[11px] text-amber-700">里面有 [待填]，复制前先改成你的实际情况。</p>' : ''}</div>`).join('');
+    box.querySelectorAll('textarea').forEach(autoGrow);
+    if (!loading) $('#wsGenBtn').innerHTML = '<span class="material-symbols-outlined text-sm">refresh</span>重新生成';
+  }
+  // 步骤 / 注意事项
+  const steps = (k && k.apply_steps) || [], notes = (k && k.notes) || [];
+  $('#wsExtraBody').innerHTML = (steps.length ? `<div><p class="font-bold text-slate-600 mb-1">AI 看 JD 整理的投递步骤</p><ol class="list-decimal pl-4 space-y-0.5 text-slate-600">${steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol></div>` : '') +
+    (notes.length ? `<div><p class="font-bold text-amber-700 mb-1">注意</p><ul class="list-disc pl-4 space-y-0.5 text-amber-800">${notes.map(s => `<li>${esc(s)}</li>`).join('')}</ul></div>` : '');
+  $('#wsExtra').classList.toggle('hidden', !(steps.length || notes.length));
+  renderWsRecordButton();
+}
+
+// 「邮箱+网申」：先发邮件，网申补记在同一条记录上（一个岗位只留一条记录）；邮件发不了就给个「只记网申」的出口
+const needMailFirst = () => !!S.result && S.result.apply_channel === '邮箱+网申' && !S.sent && !S.wsRecorded;
+function renderWsRecordButton() {
+  const btn = $('#wsRecordBtn'), skip = $('#wsSkipMail');
+  skip.classList.toggle('hidden', !needMailFirst() || !!S.lock);
+  if (S.wsRecorded || btn._busyHtml != null) return;
+  btn.innerHTML = needMailFirst() ? '<span class="material-symbols-outlined">mail</span>这个岗位还要发邮件：先把邮件发出，再点这里补记网申' : ORIG_HTML.wsRecordBtn;
+  btn.disabled = !S.result || needMailFirst() || !!S.lock;
+}
+
+function collectKit() {
+  if (!S.kit) return null;
+  const k = JSON.parse(JSON.stringify(S.kit));
+  $('#wsAnswers').querySelectorAll('textarea[data-key]').forEach(t => {
+    const key = t.dataset.key;
+    if (key.startsWith('custom:')) { const a = (k.custom_answers || [])[+key.slice(7)]; if (a) a.answer = t.value; }
+    else k[key] = t.value;
+  });
+  return k;
+}
+
+let kitSaveTimer = null;
+$('#wsAnswers').addEventListener('input', e => {
+  const t = e.target.closest('textarea'); if (!t) return;
+  autoGrow(t);
+  t.parentElement.querySelector('.ws-count').textContent = t.value.length + ' 字';
+  S.kit = collectKit();
+  clearTimeout(kitSaveTimer); kitSaveTimer = null;
+  if (!kitEditable()) return;  // 非队列：记录时会连同问答一起存
+  const gen = S.gen;
+  kitSaveTimer = setTimeout(() => { kitSaveTimer = null; if (gen === S.gen) saveQueueEdits({wangshen: S.kit}); }, 800);
+});
+document.addEventListener('click', e => {
+  const c = e.target.closest('.ws-copy');
+  if (c) { const t = c.parentElement.parentElement.querySelector('textarea'); copyText(t.value, c.parentElement.querySelector('span').textContent); return; }
+  const d = e.target.closest('[data-copy]');
+  if (d) { copyText(d.dataset.copy, d.dataset.label || ''); return; }
+  if (e.target.closest('.ws-open')) noteWsOpened();
+});
+
+async function genKit(auto = false) {
+  if (!S.result || busyGuard() || S.kitLoadingGen === S.gen) return;
+  const gen = S.gen, btn = $('#wsGenBtn');
+  S.kitLoadingGen = gen; renderKit(); setBusy(btn, true, '生成中…');
+  let err = '';
+  try {
+    const d = await api('/api/wangshen', {method: 'POST', body: {...payloadBase(), result: collectResult()}});
+    if (gen === S.gen) { S.kit = d.kit; if (!auto) toast('网申问答已生成'); }  // 期间换了岗位就不用（队列条目的服务器那边已经存好了）
+  } catch (e) {
+    if (gen === S.gen) err = e.message;
+  }
+  if (S.kitLoadingGen === gen) S.kitLoadingGen = null;
+  if (gen === S.gen) { setBusy(btn, false); renderKit(err); }
+}
+$('#wsGenBtn').onclick = () => genKit(false);
+
+$('#wsResumeDl').onclick = async () => {
+  const body = {version: $('#wsResumeVer').value, filename: $('#wsResumeName').value, i: 0};
+  const resp = await fetch('/api/resume-download', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Requested-With': 'jobapply'}, body: JSON.stringify(body)});
+  if (!resp.ok) return toast('下载失败');
+  const blob = await resp.blob(), a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (body.filename || '简历').replace(/\.pdf$/i, '') + '.pdf';
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast('已下载：' + a.download + '（在「下载」文件夹，网申页面上传它）', 5000);
+};
+
+// 点了「打开网申页面」→ 去别的标签页投 → 回到面板时问一句「投完了吗？」
+function noteWsOpened() { if (S.result && !S.wsRecorded) S.wsOpened = {at: Date.now(), gen: S.gen}; }
+async function askWsDone() {
+  const o = S.wsOpened;
+  if (!o || S.wsRecorded || document.hidden || Date.now() - o.at < 20000 || S.asking || S.lock) return;
+  if (o.gen !== S.gen || !S.result) { S.wsOpened = null; return; }
+  S.asking = true;
+  try {
+    const r = S.result;
+    if (needMailFirst()) {
+      S.wsOpened = null;
+      await modal({title: '网申投完了？还差一封邮件', html: '<p>这个岗位除了网申还要发邮件。先把邮件发出（或存草稿），再点网申卡片最下面的「我已网申，记一笔」，会记在同一条投递记录上。</p><p class="text-xs text-slate-500">邮件发不了的话，点卡片最下面的「只记网申」。</p>',
+        buttons: [{label: '好', value: true, kind: 'primary'}]});
+      return;
+    }
+    const ans = await modal({title: '网申投完了吗？', html: `<p><b>${esc(r.company_name)}｜${esc(r.job_title)}</b></p><p class="text-xs text-slate-500">投完了点「记一笔」，看板里就有这条，之后「检查回复」会帮你盯这家机构的来信（笔试、面试通知）。</p>`,
+      buttons: [{label: '不投了', value: 'no'}, {label: '还没投完', value: 'later'}, {label: '投完了，记一笔', value: 'yes', kind: 'primary'}]});
+    if (o.gen !== S.gen) return;
+    if (ans === 'yes') recordApplication($('#wsRecordBtn'));
+    else if (ans === 'later') S.wsOpened = {...o, at: Date.now()};
+    else S.wsOpened = null;
+  } finally { S.asking = false; }
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(askWsDone, 400); });
+window.addEventListener('focus', () => setTimeout(askWsDone, 400));
+
+// ━━━ 我的资料（网申常用栏目，一键复制）━━━
+async function loadKitPage() {
+  if (!S.kitData) {
+    try { S.kitData = await api('/api/kit'); } catch (e) { $('#kitBody').innerHTML = `<p class="text-red-600 text-sm">${esc(e.message)}</p>`; return; }
+  }
+  const K = S.kitData;
+  const row = (k, v) => { const todo = /\[待填\]/.test(v); return `<div class="kv"><span class="k">${esc(k)}</span><span class="v ${todo ? 'text-amber-700' : ''}">${esc(todo ? v + '（按岗位自己填）' : v)}</span>${v && !todo ? `<button class="copy-btn" data-copy="${esc(v)}" data-label="${esc(k)}">复制</button>` : ''}</div>`; };
+  const pairs = (title, list, icon) => `<section class="bg-white rounded-2xl p-5 border shadow-sm"><h3 class="text-sm font-bold mb-2 flex items-center gap-2"><span class="material-symbols-outlined text-teal-600">${icon}</span>${esc(title)}</h3>${(list || []).map(([k, v]) => row(k, v)).join('')}</section>`;
+  const objs = (title, list, icon) => `<section class="bg-white rounded-2xl p-5 border shadow-sm ${title === '实习经历' ? 'lg:col-span-2' : ''}"><h3 class="text-sm font-bold mb-2 flex items-center gap-2"><span class="material-symbols-outlined text-teal-600">${icon}</span>${esc(title)}</h3>` +
+    (list || []).map(o => `<div class="mb-4 p-3 rounded-xl bg-slate-50/70">${Object.entries(o).map(([k, v]) => Array.isArray(v)
+        ? `<div class="kv"><span class="k">${esc(k)}</span><div class="v space-y-1.5">${v.map(b => `<div class="flex gap-2 items-start"><span class="flex-1">${esc(b)}</span><button class="copy-btn" data-copy="${esc(b)}" data-label="这一条">复制</button></div>`).join('')}</div><button class="copy-btn" data-copy="${esc(v.join('\n'))}" data-label="${esc(k)}（全部）">全部</button></div>`
+        : row(k, v)).join('')}</div>`).join('') + '</section>';
+  $('#kitBody').innerHTML = pairs('基本信息', K['基本信息'], 'person') + pairs('求职意向', K['求职意向'], 'flag') +
+    objs('教育经历', K['教育经历'], 'school') + pairs('技能与其他', K['技能与其他'], 'construction') + objs('实习经历', K['实习经历'], 'work') +
+    `<p class="lg:col-span-2 text-[11px] text-slate-400">${esc(K['_说明'] || '')}</p>`;
+}
+
+setInterval(() => { if (!document.hidden) loadQueue(); }, 4000);
+
 switchTab('new');
 init();
+loadQueue();
 </script>
 </body>
 </html>
