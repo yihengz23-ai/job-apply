@@ -11,7 +11,7 @@
  * 写值、点下拉选项、分级地区、单选按文字匹配的做法参考了 OpenJobAutofill（MIT License, Br1an67）。
  */
 (() => {
-  const VERSION = '1.1';
+  const VERSION = '1.2';
   if (window.__wsfill && window.__wsfill.version === VERSION) return;
 
   const ID = 'data-wsf-id';
@@ -341,19 +341,51 @@
     return {ok: true};
   }
 
+  // 日期框：能直接写的就写；只读的（antd 3 等）点开后在弹出日历自带的输入框里写，再回车
+  const DATE_POPUP_INPUT = '.ant-calendar-input,.ant-picker-dropdown input,.ant-picker-panel input,.el-picker-panel input,.el-date-picker input,.ivu-date-picker-cells input';
   async function fillDate(root, value, inner) {
     const input = inner || root.querySelector('input') || root;
     const v = normDate(value);
     input.focus();
     click(input);
-    await sleep(150);
-    setNative(input, v);
-    press(input, 'Enter');
-    await sleep(120);
-    input.dispatchEvent(new Event('blur', {bubbles: true}));
-    await closeChoice(root);
+    await sleep(250);
+    const pop = Array.from(document.querySelectorAll(DATE_POPUP_INPUT)).find(visible);
+    const target = input.readOnly && pop ? pop : input;
+    setNative(target, v);
+    await sleep(80);
+    press(target, 'Enter');
+    await sleep(200);
+    target.dispatchEvent(new Event('blur', {bubbles: true}));
+    if (Array.from(document.querySelectorAll(DATE_POPUP_INPUT)).some(visible)) await closeChoice(root);
     const now = norm(input.value);
-    return now ? {ok: true, warning: now === v ? '' : '日期显示为 ' + now} : {ok: false, reason: '日期没写进去'};
+    if (!now) return {ok: false, reason: '日期没写进去（' + (input.readOnly ? '只读日期框' : '可写日期框') + '）'};
+    return {ok: true, warning: normDate(now) === v ? '' : '日期显示为 ' + now};
+  }
+
+  // 自定义下拉框的全部选项（打开看一眼再关上）：拿不准选项原文时先看这个
+  async function options(id) {
+    const root = byId(id);
+    if (!root) return {ok: false, reason: '找不到这一项'};
+    const inner = document.querySelector(`[${ID}-inner="${CSS.escape(id)}"]`) || (root.matches(CONTROL) ? root : root.querySelector('input'));
+    if (root instanceof HTMLSelectElement) return {ok: true, options: Array.from(root.options).map(o => norm(o.text)).filter(Boolean)};
+    await openChoice(root, inner);
+    const seen = [];
+    const add = () => visibleOptions().forEach(o => { const t = textOf(o); if (!seen.includes(t)) seen.push(t); });
+    add();
+    const lists = Array.from(document.querySelectorAll('.rc-virtual-list-holder,.el-select-dropdown__wrap,.el-scrollbar__wrap,.ivu-select-dropdown,[class*="dropdown"] [class*="list"],[role="listbox"]')).filter(visible);
+    for (const list of lists) {
+      list.scrollTop = 0;
+      for (let i = 0; i < 30; i++) {
+        const before = list.scrollTop;
+        list.scrollTop += Math.max(120, list.clientHeight * 0.8);
+        list.dispatchEvent(new Event('scroll', {bubbles: true}));
+        await sleep(70);
+        add();
+        if (list.scrollTop === before) break;
+      }
+    }
+    await closeChoice(root);
+    return {ok: true, options: seen.slice(0, 200)};
   }
 
   function normDate(value) {
@@ -439,5 +471,5 @@
     return {ok: true};
   }
 
-  window.__wsfill = {version: VERSION, scan, fill, fillOne, clickAdd};
+  window.__wsfill = {version: VERSION, scan, fill, fillOne, clickAdd, options};
 })();
