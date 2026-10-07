@@ -363,6 +363,26 @@ def api_queue_delete(item_id):
     return jsonify({"ok": jobqueue.delete(item_id)})
 
 
+MAX_ATTACHMENT = 15 * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = MAX_ATTACHMENT + 1024 * 1024
+
+
+@app.route("/api/attachment", methods=["POST"])
+def api_attachment():
+    """审核时自己加附件（文章、作品、成绩单……）：存进 uploads/，返回名字和位置，发信时一起带上。"""
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return _err("没收到文件")
+    data = f.read(MAX_ATTACHMENT + 1)
+    if len(data) > MAX_ATTACHMENT:
+        return _err("文件超过 15MB，邮件带不了这么大的附件")
+    name = checks.FILENAME_BAD.sub("-", f.filename.strip())[-120:] or "附件"   # 保留原来的扩展名（PDF、图片、Word 都行）
+    rel = f"{secrets.token_hex(4)}-{name}"
+    config.UPLOADS_DIR.mkdir(exist_ok=True)
+    (config.UPLOADS_DIR / rel).write_bytes(data)
+    return jsonify({"ok": True, "name": name, "path": rel, "size_kb": round(len(data) / 1024)})
+
+
 @app.route("/api/queue/<item_id>/regen", methods=["POST"])
 def api_queue_regen(item_id):
     """按补充要求重写（后台做，写好存回这一条）。"""

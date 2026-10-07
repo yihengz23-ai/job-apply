@@ -8,8 +8,10 @@ import tempfile
 import threading
 import time
 from datetime import datetime, timedelta
+import mimetypes
+from email import encoders
 from email.header import Header, decode_header, make_header
-from email.mime.application import MIMEApplication
+from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr, parseaddr
@@ -140,7 +142,10 @@ def build_mime(*, to, cc, subject, body, attachments):
     msg["Subject"] = Header(subject, "utf-8")
     msg.attach(MIMEText(body, "plain", "utf-8"))
     for name, data in attachments:
-        part = MIMEApplication(data, _subtype="pdf")
+        ctype = mimetypes.guess_type(name)[0] or "application/octet-stream"
+        part = MIMEBase(*ctype.split("/", 1))
+        part.set_payload(data)
+        encoders.encode_base64(part)
         encoded = _rfc2047(name)
         part.set_param("name", encoded)
         part.add_header("Content-Disposition", "attachment", filename=encoded)

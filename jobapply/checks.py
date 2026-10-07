@@ -60,6 +60,16 @@ REPORT_COND = re.compile(r"如需|如有需要|如果需要|需要的话|可随�
                          r"if helpful|happy to (?:share|provide)|can (?:share|provide)|available", re.I)
 
 
+# 正文说附了简历、研究样本以外的东西（文章、作品、截图、成绩单……）：附件里得真有
+ATTACH_OTHER = re.compile(
+    r"(?:另附|附上|随附|一并附|附件[里中]?还?有|附件(?:是|为|包括))[^，,。！？!?\n]{0,24}(文章|作品集?|截图|成绩单|论文|证书|deck|ppt|portfolio|transcript)"
+    r"|(文章|作品集?|截图|成绩单|论文|证书)[^，,。！？!?\n]{0,10}(?:见附件|在附件|附后|已附)", re.I)
+# 没写 https:// 的链接（「xxx.github.io/路径」），有的邮箱里点不开
+BARE_LINK = re.compile(r"(?<![\w/@.:\-])((?:[a-z0-9-]+\.)+(?:io|com|cn|ai|net|org|vc|co|me|app)/[^\s，。；、）)】]*)", re.I)
+# 写了投递提速的数字：HR 会联想到这封信也是批量自动发的
+SPEEDUP = re.compile(r"15\s*[–\-~～到至]\s*20\s*分钟|约?\s*10\s*秒")
+
+
 def mentions_report(body):
     sentences = [s for s in re.split(r"(?<=[。！？!?；;\n])|(?<=\.)\s", body or "") if s.strip()]
     return any(REPORT_MENTION.search(s) for s in sentences if not REPORT_COND.search(s))
@@ -257,6 +267,11 @@ def autofix(result, jd_text):
     if new_body != body:
         body = new_body
         fixes.append("正文里的「信息来源」已去掉（来源只记在你自己的投递记录里，不写进邮件）")
+    # 链接补上 https://（纯文本邮件里，没有 https:// 的地址有的邮箱点不开）
+    linked = BARE_LINK.sub(r"https://\1", body)
+    if linked != body:
+        body = linked
+        fixes.append("链接前面补上了 https://")
     # 统一成简历上的写法（candidate_settings.json 的 spelling_fixes）
     for wrong, right in config.SPELLING_FIXES.items():
         if wrong in body:
@@ -415,10 +430,19 @@ def run(result, jd_text, *, related=(), resume_status=None, profile_text="",
         if kw.lower() in body.lower() and kw.lower() not in known:
             issues.append(_issue("warn", "body", f"正文出现「{kw}」，简历和 JD 里都没有，确认不是编的。"))
     allowed = _numbers_allowed(jd_text or "", [profile_text, resume_text, source_label])
-    odd = [n for n in re.findall(r"\d+(?:\.\d+)?", subject + "\n" + body) if n not in allowed]
+    plain = _URL_IN_TEXT.sub(" ", BARE_LINK.sub(" ", EMAIL_RE.sub(" ", subject + "\n" + body)))   # 链接、邮箱里的数字不算
+    odd = [n for n in re.findall(r"\d+(?:\.\d+)?", plain) if n not in allowed]
     if odd:
         issues.append(_issue("warn", "body", f"标题 / 正文里的数字 {'、'.join(sorted(set(odd)))} 在简历和 JD 里都找不到，确认没写错。"))
     sentences = len(re.findall(r"[。？?；]", body)) if not en else len(re.findall(r"[.?!](\s|$)", body))
+    longest = max((len(p) for p in re.split(r"\n\s*\n", body) if p.strip()), default=0)
+    if not en and longest > 170:
+        issues.append(_issue("warn", "body", f"有一段写了约 {longest} 字，经历段 120 字左右、1–2 个重点就够了。"))
+    if SPEEDUP.search(body):
+        issues.append(_issue("warn", "body", "正文写了投递提速的数字，HR 会联想到这封信也是批量自动发的，建议删掉。"))
+    m = ATTACH_OTHER.search(body)
+    if m and not result.get("extra_attachments"):
+        issues.append(_issue("error", "attach", f"正文说附了「{m.group(1) or m.group(2)}」，附件里没有：点「添加附件」加上，或删掉那句。"))
     if sentences > 8:
         issues.append(_issue("warn", "body", f"正文偏长（约 {sentences} 句），HR 一般只看前三行。"))
     tail = body.strip().splitlines()[-1].strip() if body.strip() else ""

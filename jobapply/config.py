@@ -38,6 +38,7 @@ SPELLING_FIXES = SETTINGS.get("spelling_fixes", {})
 PROFILE_PATH = BASE_DIR / "candidate_profile.md"
 RULES_PATH = BASE_DIR / "email_rules.md"
 RECORDS_PATH = BASE_DIR / "records.json"
+UPLOADS_DIR = BASE_DIR / "uploads"   # 审核时自己加的附件（文章、作品、成绩单……）
 BACKUP_DIR = BASE_DIR / "backups"
 GMAIL_STATE_PATH = BASE_DIR / "gmail_state.json"
 CREDENTIALS_PATH = BASE_DIR / "credentials.json"

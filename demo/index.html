@@ -78,10 +78,10 @@ tailwind.config={theme:{extend:{colors:{primary:'#005bbf'},fontFamily:{sans:['In
   <section id="intake" class="bg-white rounded-2xl p-5 border shadow-sm mb-4">
     <h2 class="text-sm font-bold flex items-center gap-2 mb-1"><span class="material-symbols-outlined text-primary">playlist_add</span>贴链接或 JD：一个、一堆都行</h2>
     <p class="text-xs text-slate-500 mb-3">公众号 / 网页链接一行一个，或一整段 JD 文字。后台同时写 <span id="queueWorkers">3</span> 封（抓文章 → 一篇多个岗位自动拆开 → 写邮件 → 检查），写好一封就在下面自动打开；全部写完弹 Mac 通知。</p>
-    <textarea id="queueInput" rows="3" class="w-full bg-slate-50 border-none rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary/20" placeholder="在这里 ⌘V 粘贴；勾着「粘贴后自动加入」时，贴完就开始写，可以马上贴下一个"></textarea>
+    <textarea id="queueInput" rows="3" class="w-full bg-slate-50 border-none rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary/20" placeholder="在这里 ⌘V 粘贴；勾着「粘贴后直接交给 AI 写」时，贴完就开始写，可以马上贴下一个"></textarea>
     <div class="flex flex-wrap items-center gap-3 mt-3">
-      <button id="queueAddBtn" class="px-4 py-2 bg-primary text-white rounded-xl text-sm font-bold flex items-center gap-1"><span class="material-symbols-outlined">add</span>加入（⌘+回车）</button>
-      <label class="flex items-center gap-1.5 text-xs text-slate-600"><input id="autoAdd" type="checkbox" checked class="rounded text-primary"/>粘贴后自动加入</label>
+      <button id="queueAddBtn" class="px-4 py-2 bg-primary text-white rounded-xl text-sm font-bold flex items-center gap-1"><span class="material-symbols-outlined">add</span>交给 AI 写（⌘+回车）</button>
+      <label class="flex items-center gap-1.5 text-xs text-slate-600"><input id="autoAdd" type="checkbox" checked class="rounded text-primary"/>粘贴后直接交给 AI 写</label>
       <span id="modelBadge" class="ml-auto text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-bold"></span>
     </div>
     <div id="queueOpts" class="mt-4 p-3 rounded-xl border border-dashed border-slate-200">
@@ -109,9 +109,7 @@ tailwind.config={theme:{extend:{colors:{primary:'#005bbf'},fontFamily:{sans:['In
     <span id="queueSummary" class="text-xs text-slate-500"></span>
     <button id="queueToggle" class="text-xs text-primary font-bold">收起列表</button>
     <div class="ml-auto flex gap-2">
-      <button id="queueClearDone" class="px-3 py-2 bg-white border rounded-xl text-xs" title="已发出 / 已记录的从这个列表里拿掉（看板里的记录不受影响）">把已发完的从列表拿掉</button>
-      <button id="queueDraftsBtn" class="hidden px-3 py-2 bg-purple-600 text-white rounded-xl text-xs font-bold" title="你存进 Gmail 草稿箱、还没发的信：明早到点由面板从 Gmail 原样发出（面板别关、电脑别合盖）">草稿定时发</button>
-      <button id="queueReadyBtn" class="px-3 py-2 bg-green-600 text-white rounded-xl text-xs font-bold disabled:opacity-40" disabled title="没有任何红色、黄色提示的邮件，一次全部发出（晚上会让你选明早自动发）；有提示的、网申的、同一篇拆出来的留给你一封封看">一键发出检查全过的</button>
+      <button id="queueDraftsBtn" class="hidden px-3 py-2 bg-purple-600 text-white rounded-xl text-xs font-bold" title="点了会先让你确认；到点由面板把这些草稿从 Gmail 原样发出（面板别关、电脑别合盖）"></button>
     </div>
   </div>
   <section id="queueList" class="space-y-2 mb-4 max-h-[42vh] overflow-y-auto"></section>
@@ -119,29 +117,17 @@ tailwind.config={theme:{extend:{colors:{primary:'#005bbf'},fontFamily:{sans:['In
   <div id="reviewBanner" class="hidden mb-4 p-3 rounded-2xl bg-indigo-50 border border-indigo-200 flex flex-wrap items-center gap-3 text-sm">
     <span class="material-symbols-outlined text-indigo-600">rate_review</span>
     <span id="reviewText" class="flex-1 text-indigo-900"></span>
-    <button id="reviewSkip" class="px-3 py-1.5 bg-white border rounded-lg text-xs font-bold">跳过，看下一个</button>
-    <button id="reviewBack" class="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold">关闭这封</button>
+    <button id="reviewSkip" class="px-3 py-1.5 bg-white border rounded-lg text-xs font-bold" title="这封挪到待看的最后，先打开下一封">先跳过（排到最后）</button>
+    <button id="reviewBack" class="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold" title="收起这封，写好的信先不自动打开；点列表里的「打开」继续">收起，先不看</button>
   </div>
   <div id="emptyDesk" class="p-8 rounded-2xl border-2 border-dashed border-slate-200 text-center text-sm text-slate-400">把链接或 JD 贴到上面，写好的邮件会自动在这里打开。</div>
   <div id="desk" class="hidden grid grid-cols-12 gap-6">
     <div class="col-span-12 lg:col-span-7 space-y-5">
       <!-- JD -->
       <section class="bg-slate-100/60 rounded-2xl p-5">
-        <h2 class="text-sm font-bold flex flex-wrap items-center gap-2 mb-3"><span class="material-symbols-outlined text-primary">description</span>JD 原文<span class="text-[11px] font-normal text-slate-400">可以改；改完点右边「按补充要求重写」</span></h2>
+        <h2 class="text-sm font-bold flex flex-wrap items-center gap-2 mb-3"><span class="material-symbols-outlined text-primary">description</span>JD 原文<span class="text-[11px] font-normal text-slate-400">可以改；改完点右边「按要求重写」</span></h2>
         <textarea id="jdInput" class="w-full bg-white border-none rounded-xl p-4 text-sm leading-relaxed min-h-[220px] md:min-h-[300px] focus:ring-2 focus:ring-primary/20 shadow-sm" placeholder="JD 原文"></textarea>
-        <p class="text-[11px] text-slate-400 mt-3">重写这封时按下面的来（打开时已填好这条加入时的设置）</p>
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-1">
-          <label class="text-[11px] font-bold text-slate-500">岗位类型
-            <select id="posHint" class="field mt-1"><option value="">自动识别</option></select></label>
-          <label class="text-[11px] font-bold text-slate-500">简历版本
-            <select id="resumeHint" class="field mt-1"><option value="">自动（默认中文）</option></select></label>
-          <label class="text-[11px] font-bold text-slate-500">研究样本
-            <select id="reportHint" class="field mt-1"><option value="">按 JD 判断</option><option value="附上">附上</option><option value="不附">不附</option></select></label>
-          <label class="text-[11px] font-bold text-slate-500">目标岗位（多岗位文章）
-            <input id="targetJob" class="field mt-1" placeholder="单岗位不用填"/></label>
-        </div>
-        <label class="block text-[11px] font-bold text-slate-500 mt-3">给 AI 的补充要求
-          <input id="extraInput" class="field mt-1" placeholder="如：重点写某段研究经历 / 再短一点 / 别提某段经历"/></label>
+        <input id="targetJob" type="hidden"/>
         <div id="analyzeStatus" class="hidden mt-3 p-3 rounded-xl text-sm"></div>
       </section>
 
@@ -212,17 +198,27 @@ tailwind.config={theme:{extend:{colors:{primary:'#005bbf'},fontFamily:{sans:['In
               <label class="flex items-center gap-1.5 font-bold text-orange-800"><input type="checkbox" id="chkReport" class="rounded text-orange-500"/><span id="reportLabel">研究样本</span></label>
               <input id="reportName" class="field !bg-white !text-xs" placeholder="研究样本文件名"/>
             </div>
+            <div class="p-3 bg-slate-100 rounded-xl space-y-2">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="font-bold text-slate-700">其他附件</span>
+                <span class="text-[11px] text-slate-400">文章、作品、成绩单……正文提到了就要加上</span>
+                <label class="ml-auto copy-btn cursor-pointer"><span class="material-symbols-outlined text-sm">attach_file</span>添加附件<input id="extraFile" type="file" class="hidden"/></label>
+              </div>
+              <div id="extraList" class="space-y-1"></div>
+            </div>
           </div>
         </div>
         <div class="p-5 bg-slate-50 border-t space-y-3">
           <a id="applyUrlBtn" href="#" target="_blank" rel="noopener" class="hidden w-full py-2.5 bg-slate-900 text-white rounded-xl font-bold text-sm items-center justify-center gap-2 hover:bg-slate-800"><span class="material-symbols-outlined">open_in_new</span>打开网申页面</a>
+          <label class="block text-[11px] font-bold text-slate-500">想让 AI 重写这封？写下要求（比如：再短一点 / 重点写某段经历）
+            <input id="extraInput" class="field mt-1 !bg-white" placeholder="写下要求，点「按要求重写」"/></label>
           <div class="grid grid-cols-2 gap-2">
             <button id="sendBtn" disabled class="py-3 bg-primary text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary/20 disabled:opacity-40 disabled:cursor-not-allowed"><span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1">send</span>发送</button>
-            <button id="draftBtn" disabled class="py-3 bg-white border-2 border-primary/30 text-primary rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><span class="material-symbols-outlined">drafts</span>存为草稿</button>
-            <button id="recordBtn" disabled class="py-2.5 bg-slate-200 text-slate-700 rounded-xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><span class="material-symbols-outlined">bookmark_add</span>只记录（不发邮件）</button>
-            <button id="regenBtn" disabled class="py-2.5 bg-slate-200 text-slate-700 rounded-xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><span class="material-symbols-outlined">refresh</span>按补充要求重写</button>
+            <button id="draftBtn" disabled class="py-3 bg-white border-2 border-primary/30 text-primary rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><span class="material-symbols-outlined">drafts</span>存进 Gmail 草稿（先不发）</button>
+            <button id="recordBtn" disabled class="py-2.5 bg-slate-200 text-slate-700 rounded-xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><span class="material-symbols-outlined">bookmark_add</span>不发邮件，只记一笔</button>
+            <button id="regenBtn" disabled class="py-2.5 bg-slate-200 text-slate-700 rounded-xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><span class="material-symbols-outlined">refresh</span>按要求重写</button>
           </div>
-          <p id="metaLine" class="text-[10px] text-center text-slate-400">发送 = 直接发出；存为草稿 = 放进 Gmail 草稿箱，可在 Gmail 里改完或定时发送</p>
+          <p id="metaLine" class="text-[10px] text-center text-slate-400">点「发出」会先让你再确认一遍收件人、标题和附件</p>
         </div>
       </section>
     </div>
@@ -396,6 +392,21 @@ const ORIG_HTML = {};
 ACTION_BTNS.forEach(id => ORIG_HTML[id] = $('#' + id).innerHTML);
 function resetActionButtons(enabled) {
   ACTION_BTNS.forEach(id => { const b = $('#' + id); b.innerHTML = ORIG_HTML[id]; b._busyHtml = null; b.disabled = !enabled; });
+  updateSendLabel();
+}
+// 下一个自动发送的时间，按北京时间说「今天 / 明天上午 10:00」
+function whenLabel() {
+  const [h, m] = sendAt().split(':').map(Number);
+  const now = new Intl.DateTimeFormat('en-US', {timeZone: 'Asia/Shanghai', hour: 'numeric', minute: 'numeric', hourCycle: 'h23'}).formatToParts(new Date());
+  const hh = +now.find(x => x.type === 'hour').value, mm = +now.find(x => x.type === 'minute').value;
+  return `${hh * 60 + mm < h * 60 + m ? '今天' : '明天'}上午 ${sendAt()}`;
+}
+// 「发出」按钮：白天 = 现在发；晚上 = 定在明早发（确认框里还能选现在就发）
+function updateSendLabel() {
+  const b = $('#sendBtn');
+  if (!b || b._busyHtml != null || (S.result && (S.sent || S.wsRecorded))) return;
+  b.innerHTML = isNight() ? `<span class="material-symbols-outlined">schedule</span>定在${whenLabel()} 发出`
+    : '<span class="material-symbols-outlined" style="font-variation-settings:\'FILL\' 1">send</span>发出';
 }
 function markDone(btn, text) {
   btn._busyHtml = null; btn.innerHTML = `<span class="material-symbols-outlined">check_circle</span>${esc(text)}`; btn.disabled = true;
@@ -435,9 +446,8 @@ async function init() {
     buttons: [{label: '知道了', value: true, kind: 'primary'}]});
   $('#campaignLabel').textContent = '本轮：' + c.campaign;
   $('#reportLabel').textContent = c.report_label || '研究样本';
+  updateSendLabel();
   $('#modelBadge').textContent = c.model + ' · ' + c.effort + (c.backend === 'claude_code' ? ' · 会员额度' : ' · API');
-  $('#posHint').innerHTML += c.position_types.filter(p => p !== '不明确').map(p => opt(p)).join('');
-  $('#resumeHint').innerHTML += c.resume_versions.map(v => opt(v)).join('');
   $('#qPos').innerHTML += c.position_types.filter(p => p !== '不明确').map(p => opt(p)).join('');
   $('#qResume').innerHTML += c.resume_versions.map(v => opt(v)).join('');
   $('#resumeVersion').innerHTML = c.resume_versions.map(v => opt(v)).join('');
@@ -500,7 +510,7 @@ function newContext() {
   S.gen++;
   clearTimeout(checkTimer); checkTimer = null;
   clearTimeout(kitSaveTimer); kitSaveTimer = null;
-  S.editsDirty = false; S.userEdited = false; S.uncertain = false; S.reportForced = ''; S.regenWaiting = false; S.regenRev = '';
+  S.editsDirty = false; S.userEdited = false; S.uncertain = false; S.regenWaiting = false; S.regenRev = '';
   const g = $('#wsGenBtn'); g._busyHtml = null; g.disabled = false;
   g.innerHTML = '<span class="material-symbols-outlined text-sm">auto_awesome</span>生成问答';
 }
@@ -513,9 +523,9 @@ function leaveReview() {
   showDesk(false); setListOpen(true); renderEmptyDesk();
 }
 
-// 编辑区的输入清空：JD、目标岗位、给 AI 的要求、几个「指定」
+// 编辑区的输入清空：JD、目标岗位、给 AI 的要求
 function clearInputs() {
-  ['#jdInput', '#targetJob', '#extraInput', '#posHint', '#resumeHint', '#reportHint'].forEach(s => $(s).value = '');
+  ['#jdInput', '#targetJob', '#extraInput'].forEach(s => $(s).value = '');
 }
 
 // 清掉上一份的分析结果和邮件（JD、链接、多岗位选择保留）
@@ -566,7 +576,8 @@ async function regenerate() {
   try {
     const d = await api(`/api/queue/${encodeURIComponent(qid)}/regen`, {method: 'POST', body: {
       jd_text: $('#jdInput').value, target_job: $('#targetJob').value.trim(),
-      position_hint: $('#posHint').value, resume_hint: $('#resumeHint').value, report_hint: reportHintFor(),
+      position_hint: ($('#posSelect') || {}).value || '', resume_hint: $('#resumeVersion').value,
+      report_hint: $('#chkReport').checked ? '附上' : '不附',
       extra: $('#extraInput').value.trim()}});
     if (!d.ok) { toast('这封现在不能重写（可能正在发送或已经处理过了）', 4000); return; }
     S.regenWatch.add(qid);
@@ -583,11 +594,35 @@ async function regenerate() {
     loadQueue(true);
   }
 }
-// 研究样本：附件那里手动勾过 / 取消过，重写时按你勾的来；之后改了上面的「研究样本」下拉框，就按下拉框（只管这一封）
-const reportHintFor = () => S.reportForced || $('#reportHint').value;
-$('#chkReport').addEventListener('change', () => { S.reportForced = $('#chkReport').checked ? '附上' : '不附'; });
-$('#reportHint').addEventListener('change', () => { S.reportForced = ''; });
 $('#regenBtn').onclick = regenerate;
+
+// 其他附件（文章、作品、成绩单……）：自己加，发信时一起带上
+function renderExtras() {
+  const list = (S.result && S.result.extra_attachments) || [];
+  $('#extraList').innerHTML = list.map((a, i) => `<div class="flex items-center gap-2"><span class="material-symbols-outlined text-sm text-slate-500">description</span>
+    <span class="flex-1 truncate">${esc(a.name)}</span><button class="x-del text-slate-400 hover:text-red-600" data-i="${i}" title="不带这个附件">
+    <span class="material-symbols-outlined text-base">close</span></button></div>`).join('') || '<p class="text-[11px] text-slate-400">没有</p>';
+}
+$('#extraList').addEventListener('click', e => {
+  const b = e.target.closest('.x-del');
+  if (!b || !S.result || isDone()) return;
+  S.result.extra_attachments = (S.result.extra_attachments || []).filter((_, i) => i !== +b.dataset.i);
+  renderExtras(); onUserEdit();
+});
+$('#extraFile').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  if (!S.result || isDone()) return toast('先打开一封还没发的邮件再加附件');
+  const gen = S.gen, fd = new FormData(); fd.append('file', f);
+  try {
+    const resp = await fetch('/api/attachment', {method: 'POST', body: fd, headers: {'X-Requested-With': 'jobapply'}});
+    const d = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(d.error || `HTTP ${resp.status}`);
+    if (gen !== S.gen) return toast('附件没加上：期间换了别的邮件', 4000);
+    S.result.extra_attachments = [...(S.result.extra_attachments || []), {name: d.name, path: d.path}];
+    renderExtras(); onUserEdit(); toast('已加上附件：' + d.name, 2500);
+  } catch (err) { toast('加附件失败：' + err.message, 6000); }
+});
 
 function fillEmail(r) {
   $('#emailTo').value = listStr(r.to_emails);
@@ -601,7 +636,7 @@ function fillEmail(r) {
   $('#chkResume').checked = r.attach_resume !== false;
   $('#chkReport').checked = !!r.attach_report;
   $('#reportName').value = r.report_filename || S.cfg.report_default_name;
-  updateResumeControls();
+  updateResumeControls(); renderExtras();
   autoGrow($('#emailSub')); autoGrow($('#emailBody'));
   const url = safeUrl(r.apply_url);
   const a = $('#applyUrlBtn');
@@ -762,20 +797,21 @@ async function doDeliver(mode, gen) {
   const errors = rev.issues.filter(i => i.level === 'error');
   const warns = rev.issues.filter(i => i.level === 'warn');
   const verb = mode === 'draft' ? '存为草稿' : '发送';
-  const att = [r.attach_resume ? `简历（${r.resume_version}）：${r.resume_filename}${r.resume_version === '中英两份' ? ' + ' + r.resume_filename_en : ''}` : '', r.attach_report ? '研究样本：' + r.report_filename : ''].filter(Boolean);
+  const att = [r.attach_resume ? `简历（${r.resume_version}）：${r.resume_filename}${r.resume_version === '中英两份' ? ' + ' + r.resume_filename_en : ''}` : '', r.attach_report ? '研究样本：' + r.report_filename : '',
+    ...(r.extra_attachments || []).map(a => '其他：' + a.name)].filter(Boolean);
   const summary = `<div class="p-3 bg-slate-50 rounded-xl space-y-1 text-xs"><div><b>收件人：</b>${esc(listStr(r.to_emails))}${listArr(r.cc_emails).length ? ' ｜ <b>抄送：</b>' + esc(listStr(r.cc_emails)) : ''}</div><div><b>标题：</b>${esc(r.email_subject)}</div><div><b>附件：</b>${esc(att.join('；') || '无')}</div></div>`;
   // 晚上点「发送」：默认排到明早 10:00 由面板自己发（现在发，HR 早上会被一堆新邮件压住）
   const night = mode === 'send' && isNight();
-  const nightNote = night ? `<p class="text-xs text-indigo-700">现在是北京时间晚上：选「明早 ${sendAt()} 自动发」，到点面板自己发出（面板别关、电脑别合盖）。</p>` : '';
+  const nightNote = night ? `<p class="text-xs text-indigo-700">现在是北京时间晚上：选「定在${whenLabel()} 发出」，到点面板自己发出（面板别关、电脑别合盖）。</p>` : '';
   let force = false, choice;
   if (errors.length) {
     choice = await modal({title: '还有必须处理的问题', html: errors.map(i => `<div class="p-2 bg-red-50 text-red-700 rounded-lg">${esc(i.msg)}</div>`).join('') + summary + nightNote,
-      buttons: night ? [{label: '返回修改', value: false}, {label: '我确认没问题，现在就发', value: 'now', kind: 'danger'}, {label: `我确认没问题，明早 ${sendAt()} 自动发`, value: 'schedule', kind: 'primary'}]
+      buttons: night ? [{label: '返回修改', value: false}, {label: '我确认没问题，现在就发', value: 'now', kind: 'danger'}, {label: `我确认没问题，定在${whenLabel()} 发出`, value: 'schedule', kind: 'primary'}]
         : [{label: '返回修改', value: false}, {label: '我确认没问题，仍然' + verb, value: 'now', kind: 'danger'}]});
     if (!choice) return; force = true;
   } else {
-    choice = await modal({title: night ? '现在发，还是明早自动发？' : `确认${verb}？`, html: summary + (warns.length ? `<p class="text-amber-700 text-xs">还有 ${warns.length} 条「注意」，已在左侧列出。</p>` : '') + nightNote,
-      buttons: night ? [{label: '取消', value: false}, {label: '现在就发', value: 'now'}, {label: `明早 ${sendAt()} 自动发`, value: 'schedule', kind: 'primary'}]
+    choice = await modal({title: night ? `现在发，还是定在${whenLabel()} 发？` : `确认${verb}？`, html: summary + (warns.length ? `<p class="text-amber-700 text-xs">还有 ${warns.length} 条「注意」，已在左侧列出。</p>` : '') + nightNote,
+      buttons: night ? [{label: '取消', value: false}, {label: '现在就发', value: 'now'}, {label: `定在${whenLabel()} 发出`, value: 'schedule', kind: 'primary'}]
         : [{label: '取消', value: false}, {label: verb, value: 'now', kind: 'primary'}]});
     if (!choice) return;
   }
@@ -821,19 +857,19 @@ async function doSchedule(r, force, qid, gen) {
   try {
     const d = await api('/api/schedule', {method: 'POST', body: {...payloadBase(), result: r, force}});
     setBusy(btn, false);
-    const at = d.send_at.slice(11);
-    if (gen !== S.gen) { toast(`已定时：${r.company_name || ''}，明早 ${at} 自动发出`, 6000); return; }
+    const at = whenLabel();
+    if (gen !== S.gen) { toast(`已定时：${r.company_name || ''}，${at}发出`, 6000); return; }
     S.sent = true; S.scheduled = true; S.editsDirty = false;
-    markDone(btn, `已定时 明早 ${at}`);
+    markDone(btn, `已定在${at}发出`);
     renderWsRecordButton();
-    toast(`已定时：明早 ${at} 自动发出（面板别关、电脑别合盖）`, 7000);
+    toast(`已定在${at}发出（面板别关、电脑别合盖）`, 7000);
     if (S.result && S.result.apply_channel === '邮箱+网申') toast('这个岗位还要网申：网申现在就能做，邮件发出后在列表里点「补记网申」记一笔', 9000);
     if (qid) setTimeout(() => nextQueueItem(qid), 1200);
   } catch (e) {
     setBusy(btn, false);
     if (e.status === 409 && e.data && e.data.queue_taken) { toast(e.message, 6000); loadQueue(true); }
     else if (e.status === 409 && e.data && e.data.issues) { renderIssues(e.data.issues); toast('还有必须处理的问题，没定时'); }
-    else if (e.status === 401) { toast('Gmail 授权失效，明早会发不出去：先重新授权再定时。' + e.message, 9000); refreshGmail(); }
+    else if (e.status === 401) { toast('Gmail 授权失效，到点会发不出去：先重新授权再定时。' + e.message, 9000); refreshGmail(); }
     else toast('定时失败：' + e.message, 8000);
   }
 }
@@ -1133,8 +1169,6 @@ const Q_CLS = {'待审核': 'bg-green-100 text-green-700', '需处理': 'bg-red-
 // 审核时改过的条目，用最新一次检查的结果
 const issuesOf = it => it.live_issues || (it.analysis ? it.analysis.issues : []);
 const resultOf = it => it.analysis ? (it.edited || it.analysis.result) : null;
-const isReady = it => it.status === '待审核' && it.analysis && !issuesOf(it).some(i => i.level === 'error' || i.level === 'warn')
-  && listArr(resultOf(it).to_emails).length > 0 && resultOf(it).apply_channel !== '邮箱+网申' && !it.send_uncertain && !it.multi_job;
 const reviewable = it => it.status === '待审核' || it.status === '需处理';
 // 「邮箱+网申」：邮件已经发了 / 存了草稿，网申还没补记 → 还能打开来补记
 const canAddWs = it => ['已发送', '已存草稿'].includes(it.status) && !!it.analysis && resultOf(it).apply_channel === '邮箱+网申'
@@ -1174,16 +1208,15 @@ async function loadQueue(force = false) {
   } catch (e) { console.error('队列显示出错', e); }
 }
 
+// 发出去的、记过的不在列表里待着（都在「投递看板」里）；「邮箱+网申」还要补记网申的留着
+const listed = it => !['已发送', '已记录'].includes(it.status) || canAddWs(it);
 function renderQueue(c) {
-  const items = sortedQueue();
-  const ready = S.queue.filter(isReady).length;
-  if (!S.readyRunning) {  // 一键处理进行中：按钮保持「发送中…」，不被轮询刷回去
-    $('#queueReadyBtn').textContent = ready ? `检查全过的 ${ready} 封：一键发出` : '检查全过的：暂时没有';
-    $('#queueReadyBtn').disabled = !ready;
-  }
-  $('#queueSummary').textContent = Object.entries(c).map(([k, v]) => `${k} ${v}`).join(' ｜ ') || '队列是空的';
+  const items = sortedQueue().filter(listed);
+  const gone = S.queue.length - items.length;
+  $('#queueSummary').textContent = (Object.entries(c).filter(([k]) => !['已发送', '已记录'].includes(k)).map(([k, v]) => `${k} ${v}`).join(' ｜ ') || '列表是空的')
+    + (gone ? `（已发出 / 记过的 ${gone} 封在「投递看板」里）` : '');
   const drafts = S.queue.filter(x => x.status === '已存草稿' && x.record_id).length;   // 存了草稿还没发的：可以排到明早自动发
-  $('#queueDraftsBtn').textContent = `存好的 ${drafts} 封草稿：明早 ${sendAt()} 自动发`;
+  $('#queueDraftsBtn').textContent = `把 ${drafts} 封草稿定在${whenLabel()} 发出`;
   $('#queueDraftsBtn').classList.toggle('hidden', !drafts);
   $('#queueList').innerHTML = items.map(it => {
     const r = resultOf(it);
@@ -1204,12 +1237,12 @@ function renderQueue(c) {
         <div class="text-xs text-slate-500 truncate">${sub}</div></div>
       <div class="flex flex-wrap items-center justify-end gap-2 ml-auto">
         ${kitTip}${counts}
-        ${reviewable(it) ? `<button class="q-open px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold" data-id="${esc(it.id)}">审核</button>` : ''}
+        ${reviewable(it) ? `<button class="q-open px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold" data-id="${esc(it.id)}" title="在下面打开这封，看完再决定发不发">打开</button>` : ''}
         ${addWs ? `<button class="q-open px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-bold" data-id="${esc(it.id)}">补记网申</button>` : ''}
-        ${it.status === '已存草稿' && it.record_id ? `<button class="q-draft px-2 py-1.5 border border-purple-300 text-purple-700 rounded-lg text-xs" data-id="${esc(it.id)}" title="这封草稿明早到点由面板从 Gmail 原样发出">这封草稿明早 ${sendAt()} 发</button>` : ''}
+        ${it.status === '已存草稿' && it.record_id ? `<button class="q-draft px-2 py-1.5 border border-purple-300 text-purple-700 rounded-lg text-xs" data-id="${esc(it.id)}" title="点了会先让你确认；到点由面板把这封草稿从 Gmail 原样发出">定在${whenLabel()} 发出</button>` : ''}
         ${it.status === '已定时' ? `<button class="q-unsched px-2 py-1.5 border rounded-lg text-xs" data-id="${esc(it.id)}">取消定时</button>` : ''}
-        ${['失败', '需处理'].includes(it.status) ? `<button class="q-retry px-2 py-1.5 border rounded-lg text-xs" data-id="${esc(it.id)}">重做</button>` : ''}
-        ${!done && it.status !== '发送中' ? `<button class="q-del px-2 py-1.5 text-slate-400 hover:text-red-600 text-xs" data-id="${esc(it.id)}" title="删除"><span class="material-symbols-outlined text-base">close</span></button>` : ''}
+        ${['失败', '需处理'].includes(it.status) ? `<button class="q-retry px-2 py-1.5 border rounded-lg text-xs" data-id="${esc(it.id)}" title="重新抓文章、重新写这封（你在这封上改过的内容会丢）">从头重写</button>` : ''}
+        ${!done && it.status !== '发送中' ? `<button class="q-del px-2 py-1.5 text-slate-400 hover:text-red-600 text-xs" data-id="${esc(it.id)}" title="从列表删掉这条（不影响已经发出的信和看板记录）"><span class="material-symbols-outlined text-base">close</span></button>` : ''}
       </div>
     </div>`;
   }).join('') || '<p class="text-sm text-slate-400 p-4">还没有内容。去公众号复制链接，回来在上面的框里 ⌘V。</p>';
@@ -1329,45 +1362,17 @@ $('#queueList').addEventListener('click', async e => {
 // 存了草稿还没发的：明早 10:00 由面板从 Gmail 原样发出（在 Gmail 里改过草稿，发的是改过的）
 async function scheduleDrafts(ids) {
   const n = ids ? ids.length : S.queue.filter(x => x.status === '已存草稿' && x.record_id).length;
-  const ok = await modal({title: `${n} 封草稿明早 ${sendAt()} 发出？`,
+  const ok = await modal({title: `${n} 封草稿定在${whenLabel()} 发出？`,
     html: `<p>到点由面板从 Gmail 把这${ids ? '封' : '几封'}草稿原样发出（你在 Gmail 里改过的话，发的是改过的）。面板别关、电脑别合盖。</p><p class="text-xs text-slate-500 mt-2">反悔了在列表里点「取消定时」。</p>`,
-    buttons: [{label: '取消', value: false}, {label: `明早 ${sendAt()} 发出`, value: true, kind: 'primary'}]});
+    buttons: [{label: '取消', value: false}, {label: `定在${whenLabel()} 发出`, value: true, kind: 'primary'}]});
   if (!ok) return;
   try {
     const d = await api('/api/queue/schedule-drafts', {method: 'POST', body: ids ? {ids} : {}});
     toast(`已定时 ${d.scheduled} 封草稿：${d.send_at.slice(5)} 发出`, 5000);
-  } catch (e) { toast(e.status === 401 ? 'Gmail 授权失效，明早会发不出去：先重新授权。' + e.message : '定时失败：' + e.message, 8000); if (e.status === 401) refreshGmail(); }
+  } catch (e) { toast(e.status === 401 ? 'Gmail 授权失效，到点会发不出去：先重新授权。' + e.message : '定时失败：' + e.message, 8000); if (e.status === 401) refreshGmail(); }
   loadQueue(true);
 }
 $('#queueDraftsBtn').onclick = () => scheduleDrafts(null);
-$('#queueClearDone').onclick = async () => {
-  try { await api('/api/queue/clear-done', {method: 'POST', body: {}}); } catch (e) { toast('清除失败：' + e.message); }
-  loadQueue(true);
-};
-
-$('#queueReadyBtn').onclick = async () => {
-  const ready = S.queue.filter(isReady);
-  if (!ready.length || S.readyRunning) return;
-  const list = ready.map(it => { const r = resultOf(it); return `<div class="text-xs py-0.5">· ${esc(r.company_name)}｜${esc(r.email_subject)}</div>`; }).join('');
-  const night = isNight();
-  const mode = await modal({title: `检查全部通过的 ${ready.length} 封`,
-    html: `<p class="text-xs text-slate-500">这些没有任何红色、黄色提示。有提示的、网申的不在里面，需要你逐个审核。直接发送时每封间隔几秒，不会像群发。</p>` +
-      (night ? `<p class="text-xs text-indigo-700 font-bold">现在是北京时间晚上：建议「全部明早 ${sendAt()} 自动发」，到点面板自己发出（面板别关、电脑别合盖）。</p>` : '') +
-      `<div class="p-3 bg-slate-50 rounded-xl max-h-60 overflow-y-auto">${list}</div>`,
-    buttons: night ? [{label: '取消', value: null}, {label: '全部存为草稿', value: 'draft'}, {label: '全部现在发', value: 'send'}, {label: `全部明早 ${sendAt()} 自动发`, value: 'schedule', kind: 'primary'}]
-      : [{label: '取消', value: null}, {label: '全部存为草稿', value: 'draft'}, {label: '全部直接发送', value: 'send', kind: 'primary'}]});
-  if (!mode) return;
-  const btn = $('#queueReadyBtn');
-  S.readyRunning = true; setBusy(btn, true, mode === 'draft' ? '存草稿中…' : mode === 'schedule' ? '定时中…' : `发送中（约 ${ready.length * 4} 秒）…`);
-  try {
-    const d = await api('/api/queue/process-ready', {method: 'POST', body: {mode}});
-    await modal({title: '完成', html: `<p>${mode === 'draft' ? '已存草稿' : mode === 'schedule' ? `已定时（明早 ${sendAt()} 自动发出）` : '已发送'} ${d.done.length} 封</p>` +
-      (d.skipped.length ? `<p class="text-xs text-amber-700 mt-2">跳过 ${d.skipped.length} 封（留给你审核）：</p>` + d.skipped.map(s => `<div class="text-xs">· ${esc(s)}</div>`).join('') : ''),
-      buttons: [{label: '好', value: true, kind: 'primary'}]});
-  } catch (e) { toast(e.message, 6000); if (e.status === 401) refreshGmail(); }
-  finally { S.readyRunning = false; setBusy(btn, false); loadQueue(true); }
-};
-
 // 打开一条到编辑区。scroll=false：后台写好自动打开的，不打断你（不滚动页面）
 async function openQueueItem(id, {scroll = true} = {}) {
   if (busyGuard() || S.opening) return;
@@ -1386,12 +1391,8 @@ async function openQueueItem(id, {scroll = true} = {}) {
     S.page = it.page || null; S.pageJd = it.jd_text || '';
     $('#jdInput').value = it.jd_text || '';
     $('#targetJob').value = it.target_job || '';
-    const o = it.regen_req || it.opts || {};   // 上次重写用的要求；没重写过就是加入时「这批的设置」
-    $('#posHint').value = o.position_hint || ''; $('#resumeHint').value = o.resume_hint || '';
-    $('#reportHint').value = o.report_hint || ''; $('#extraInput').value = o.extra || '';
+    $('#extraInput').value = (it.regen_req || {}).extra || '';   // 上次让 AI 重写时写的要求
     S.analysis = it.analysis; S.result = resultOf(it); S.fixes = it.analysis.fixes || [];
-    // 上次打开时手动勾过 / 取消过研究样本（和 AI 当初写的不一样）：重写时接着按你勾的
-    if (it.edited && !!it.edited.attach_report !== !!it.analysis.result.attach_report) S.reportForced = it.edited.attach_report ? '附上' : '不附';
     S.kit = it.wangshen && !it.wangshen.error ? it.wangshen : null;
     showDesk(true); setListOpen(false);
     fillEmail(S.result); renderInfo(S.result); renderRules(S.result); renderIssues(issuesOf(it));
@@ -1646,6 +1647,7 @@ async function loadKitPage() {
 }
 
 setInterval(() => { if (!document.hidden) loadQueue(); }, 4000);
+setInterval(updateSendLabel, 60000);
 
 switchTab('new');
 init();

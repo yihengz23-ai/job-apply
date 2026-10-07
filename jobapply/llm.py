@@ -321,6 +321,24 @@ def analyze_jd(jd_text, *, target_job="", position_hint="", resume_hint="", repo
     return data, meta
 
 
+REVIEW_SCHEMA = _obj({
+    "changes": {"type": "array", "items": _obj({"problem": _STR, "before": _STR, "after": _STR})},
+    "email_subject": _STR,
+    "email_body": _STR,
+})
+
+
+def self_review(jd_text, result, *, attachments, notes="", now=None):
+    """写完自查：让 AI 当审稿人，对着档案和 JD 逐条挑错（投递规则第 12 节），只改有问题的地方。返回 (dict, meta)。"""
+    head = [today_line(now), "下面是已经写好的一封投递邮件，请按投递规则第 12 节「写完自查」检查。",
+            "附件：" + ("、".join(attachments) if attachments else "无")]
+    if notes:
+        head.append(f"本人这次的补充要求（写信时已经照做，自查时别改掉）：{notes}")
+    content = ("\n".join(head) + f"\n\n【邮件标题】{result.get('email_subject', '')}\n【邮件正文】\n{result.get('email_body', '')}"
+               + "\n\n【JD 原文】\n" + (jd_text or "").strip())
+    return _call(system=build_system_prompt(), content=content, schema=REVIEW_SCHEMA, effort=config.CLAUDE_EFFORT)
+
+
 def wangshen_kit(jd_text, *, result=None, source_label="", target_job="", now=None):
     """网申岗位：生成投递步骤 + 填表要用的自我介绍 / 为什么申请 / 匹配点 / JD 里明确列出的问题的回答。"""
     r = result or {}

@@ -54,6 +54,48 @@ def chinese_resume_by_default(result, jd_text):
     return False
 
 
+def extra_path(a):
+    """自己加的附件在 uploads/ 里的位置；不在 uploads/ 里（或文件没了）返回 None。"""
+    try:
+        p = (config.UPLOADS_DIR / str(a.get("path", ""))).resolve()
+    except (OSError, ValueError):
+        return None
+    root = config.UPLOADS_DIR.resolve()
+    return p if root in p.parents and p.is_file() else None
+
+
+def attachment_names(result):
+    """这封要带的附件文件名（给 AI 自查用：正文提到的附件必须都在里面）。"""
+    names = []
+    if result.get("attach_resume", True):
+        names.append(result.get("resume_filename") or config.RESUME_DEFAULT_ZH)
+        if result.get("resume_version") == "中英两份":
+            names.append(result.get("resume_filename_en") or config.RESUME_DEFAULT_EN)
+    if result.get("attach_report"):
+        names.append(result.get("report_filename") or config.REPORT_DEFAULT_NAME)
+    names += [a.get("name", "") for a in result.get("extra_attachments") or [] if a.get("name")]
+    return names
+
+
+def self_check(result, jd_text, *, notes=""):
+    """写完自查：AI 当审稿人对着档案和 JD 挑错并直接改好（经历拼接、角色升级、编细节、提了没附的附件、篇幅……）。
+    返回改动说明列表；网申岗位（没有邮件）不查。"""
+    if not checks.split_emails(result.get("to_emails")) or not (result.get("email_body") or "").strip():
+        return []
+    try:
+        out, _ = llm.self_review(jd_text, result, attachments=attachment_names(result), notes=notes)
+    except llm.LLMError as e:
+        return [f"AI 自查这次没跑成（{e}），按原稿"]
+    changes = [c for c in out.get("changes") or [] if isinstance(c, dict)]
+    if not changes:
+        return []
+    if (out.get("email_subject") or "").strip():
+        result["email_subject"] = out["email_subject"].strip()
+    if (out.get("email_body") or "").strip():
+        result["email_body"] = out["email_body"].strip() + "\n"
+    return [f"AI 自查改了：{c.get('problem', '')}（「{c.get('before', '')}」→「{c.get('after', '')}」）" for c in changes]
+
+
 def analyze(jd_text, *, source_label="", target_job="", position_hint="", resume_hint="", report_hint="", extra=""):
     if len((jd_text or "").strip()) < 50:
         raise ValueError("JD 内容太短（至少 50 字），请粘贴完整的招聘信息。")
@@ -75,6 +117,8 @@ def analyze(jd_text, *, source_label="", target_job="", position_hint="", resume
         result["attach_report"] = report_hint == "附上"
     result["attach_resume"] = True
     fixes = checks.autofix(result, jd_text)
+    fixes += self_check(result, jd_text, notes=extra.strip() if isinstance(extra, str) else "")
+    fixes += checks.autofix(result, jd_text)   # 自查改过的稿子再规范一遍（称呼、占位、链接）
     return {"ok": True, "result": result, "fixes": fixes, "meta": meta,
             **review(result, jd_text, source_label=source_label)}
 
@@ -141,6 +185,12 @@ def deliver(result, jd_text, *, mode="send", force=False, source_label="", sourc
     if result.get("attach_report"):
         attachments.append((result["report_filename"], config.REPORT_PATH.read_bytes()))
         att_meta.append({"kind": "研究样本", "filename": result["report_filename"], "version": config.REPORT_PATH.stem})
+    for a in result.get("extra_attachments") or []:   # 审核时自己加的（文章、作品、成绩单……）
+        path = extra_path(a)
+        if not path:
+            raise Blocked([{"level": "error", "field": "attach", "msg": f"附件「{a.get('name', '')}」找不到了，重新加一次"}])
+        attachments.append((a["name"], path.read_bytes()))
+        att_meta.append({"kind": "其他", "filename": a["name"], "version": ""})
 
     kw = dict(to=result["to_emails"], cc=result["cc_emails"], subject=result["email_subject"],
               body=result["email_body"], attachments=attachments)
