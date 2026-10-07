@@ -40,10 +40,15 @@ def review(result, jd_text, *, source_label="", exclude_id=None):
     return {"issues": issues, "related": related, "resume": _resume_public(rs)}
 
 
+# JD 明确要中英文 / 英文简历（「能快速阅读中英文材料」这种说的是能力，不算）
+BILINGUAL_ASK = re.compile(r"(?:中英文?|英文|双语)(?:版|版本)?(?:的)?(?:简历|CV|resume)|(?:english|bilingual)\s+(?:cv|resume)"
+                           r"|(?:cv|resume)s?\s+in\s+(?:english|both)", re.I)
+
+
 def chinese_resume_by_default(result, jd_text):
     """简历默认只发中文页：双币基金、JD 要中英文时才发双语。改了返回 True。"""
     if (result.get("resume_version") == "双语" and result.get("company_type") != "双币VC/PE"
-            and not re.search(r"中英|英文简历|双语|english", jd_text or "", re.I)):
+            and not BILINGUAL_ASK.search(jd_text or "")):
         result["resume_version"] = "中文"
         return True
     return False

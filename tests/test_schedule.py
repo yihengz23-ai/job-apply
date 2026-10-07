@@ -177,6 +177,8 @@ def test_config_has_send_time(client):
     ("双语", "人民币VC", JD + "请附中英文简历。", "", "双语"),
     ("双语", "人民币VC", JD, "双语", "双语"),     # 你自己指定的不改
     ("英文", "美元VC", JD, "", "英文"),
+    ("双语", "券商/投行/FA", JD + "要求能快速阅读中英文材料。", "", "中文"),   # 说的是能力，不是要中英文简历
+    ("双语", "人民币VC", JD + "请投递中英文简历各一份。", "", "双语"),
 ])
 def test_resume_defaults_to_chinese(monkeypatch, ai, company_type, jd, hint, expect):
     monkeypatch.setattr(llm, "analyze_jd", lambda jd, **kw: (result(resume_version=ai, company_type=company_type), {}))
