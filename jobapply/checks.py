@@ -62,12 +62,69 @@ REPORT_COND = re.compile(r"如需|如有需要|如果需要|需要的话|可随�
 
 # 正文说附了简历、研究样本以外的东西（文章、作品、截图、成绩单……）：附件里得真有
 ATTACH_OTHER = re.compile(
-    r"(?:另附|附上|随附|一并附|附件[里中]?还?有|附件(?:是|为|包括))[^，,。！？!?\n]{0,24}(文章|作品集?|截图|成绩单|论文|证书|deck|ppt|portfolio|transcript)"
-    r"|(文章|作品集?|截图|成绩单|论文|证书)[^，,。！？!?\n]{0,10}(?:见附件|在附件|附后|已附)", re.I)
+    r"(?:另附|附上|随附|一并附|附件[里中]?还?有|附件(?:是|为|包括))[^，,。！？!?\n]{0,24}(文章|作品集?|截图|成绩单|论文|证书|想法|看法|观点|deck|ppt|portfolio|transcript)"
+    r"|(文章|作品集?|截图|成绩单|论文|证书|想法|看法|观点)[^，,。！？!?\n]{0,10}(?:见附件|在附件|附后|已附)", re.I)
+# 档案写的是「完成 / 参与」，AI 常升级成「负责…研究」
+DUTY_UPGRADE = re.compile(r"负责(?:其中的)?(?:技术|市场|竞争|客户|行业|项目|尽调|研究)")
+# 替对方许诺转正
+PROMISE = re.compile(r"毕业后(?:可|再)?转(?:为)?全职|转为全职")
+# JD 看重这些，才提「自动化简历投递系统」
+AUTOMATION_JD = re.compile(r"vibe|coding|agent|自动化|AI\s*产品|提效|workflow|工作流|编程|开发|动手", re.I)
+# 格式里的填写说明括号（「（年月）」「（如上海或者广州）」）和选项括号（「（消费基金/AI基金）」「(BJ / HK)」）：不是要原样写的分隔符
+FMT_NOTE = re.compile(r"[（(][^（）()]*(?:如|例如|年月|格式|选填|可选|示例|e\.g\.|[/／]|或)[^（）()]*[）)]", re.I)
+# AI 写进 fit_warnings 的格式 / 渠道说明（「[CaseMock] 已去掉」「已改成全角／」）：不是 JD 对人的要求，不报
+FIT_NOISE = re.compile(r"(?:招聘|信息)来源|转发渠道|渠道(?:标签|名称?|前缀)|全角|半角")
 # 没写 https:// 的链接（「xxx.github.io/路径」），有的邮箱里点不开
 BARE_LINK = re.compile(r"(?<![\w/@.:\-])((?:[a-z0-9-]+\.)+(?:io|com|cn|ai|net|org|vc|co|me|app)/[^\s，。；、）)】]*)", re.I)
 # 写了投递提速的数字：HR 会联想到这封信也是批量自动发的
 SPEEDUP = re.compile(r"15\s*[–\-~～到至]\s*20\s*分钟|约?\s*10\s*秒")
+
+
+def _channel_keys(names):
+    return [k for k in (re.sub(r"\s+", "", re.sub(r"[（(]?公众号[)）]?$", "", n or "")).lower() for n in names) if len(k) >= 3]
+
+
+def _is_channel(seg, keys):
+    flat = re.sub(r"[\s\[\]【】()（）]", "", seg or "").lower()
+    if not flat:
+        return False
+    return bool(re.fullmatch(r"[a-z][a-z0-9]{1,20}平台", flat)) or any(k == flat or (k in flat and len(flat) <= len(k) + 3) for k in keys)
+
+
+def strip_channel(text, names=()):
+    """标题 / 文件名里的渠道、平台一项（「CaseMock平台」「[CaseMock]」）去掉，连同它前后的分隔符；本人要求来源一律不写。"""
+    if not text:
+        return text
+    keys = _channel_keys(names)
+    stem, ext = (text[:-4], text[-4:]) if text.lower().endswith(".pdf") else (text, "")
+    tagged = re.sub(r"\s*[\[【(（]\s*([^\[\]【】()（）]{2,30}?)\s*[\]】)）]\s*",
+                    lambda m: " " if _is_channel(m.group(1), keys) else m.group(0), stem)
+    removed = tagged != stem
+    stem = tagged.strip() if removed else stem
+    parts = re.split(r"([-+_｜|/、])", stem)
+    segs, seps = parts[0::2], parts[1::2]
+    out, carry = "", ""
+    for i, s in enumerate(segs):
+        if _is_channel(s, keys):
+            removed = True
+            if re.match(r"^\s*[\[【]", s) and not re.search(r"[\]】]", s):
+                carry += re.match(r"^\s*([\[【])", s).group(1)          # 被删掉的那段带着开括号：留给下一段
+            if re.search(r"[\]】]\s*$", s) and not re.search(r"[\[【]", s):
+                out += re.search(r"([\]】])\s*$", s).group(1)          # 带着闭括号：留给上一段
+            continue
+        if out and i > 0:
+            out += seps[i - 1]
+        out += carry + s
+        carry = ""
+    if not removed:
+        return text
+    out = out.strip(" -+_｜|/、")
+    return (out or stem) + ext
+
+
+def fmt_clean(fmt, names=()):
+    """拿来比对的格式：去掉信息来源 / 渠道平台一项和填写说明括号。"""
+    return strip_channel(FMT_NOTE.sub("", SOURCE_FIELD.sub("", fmt or "")), names)
 
 
 def mentions_report(body):
@@ -87,6 +144,7 @@ COURTESY_BANNED = ["深感荣幸", "充满热情", "百忙之中", "祝好", "�
                    "尊敬的招聘", "HR您好", "招聘负责人您好"]
 # 关于候选人本人的能力 / 资历说法：简历和档案里没有就报（JD 里提到不算数）
 CLAIMS = ["CFA", "CPA", "FRM", "ACCA", "法律职业资格", "博士", "PhD", "获奖", "一等奖", "金奖",
+          "工作之外", "业余", "日常使用", "平时常用",
           "奖学金", "发表", "论文", "专利", "主导", "独立负责", "牵头", "建模", "财务模型", "DCF", "LBO",
           "三张表", "精通"]
 # 机构名 / 套话：JD、简历、档案里都没有才报
@@ -132,6 +190,21 @@ def jd_emails(jd_text):
     for pat, rep in _OBFUSCATIONS:
         t = pat.sub(rep, t)
     return exact, set(split_emails(t))
+
+
+_TITLE_FILLER = re.compile(r"[（）()\[\]【】\-—–·|｜/、，,\s]|实习生|实习|岗位|岗|职位|招聘|方向|日常")
+
+
+def similar_job(a, b):
+    """两个岗位名是不是同一个岗位（「美团战投实习生（海外）」≈「战投海外组实习生」；「投资实习生」≠「投后实习生」）。"""
+    a, b = _TITLE_FILLER.sub("", a or ""), _TITLE_FILLER.sub("", b or "")
+    if not a or not b:
+        return False
+    if a in b or b in a:
+        return True
+    grams = lambda s: {s[i:i + 2] for i in range(len(s) - 1)} or {s}
+    x, y = grams(a), grams(b)
+    return len(x & y) / len(x | y) >= 0.5
 
 
 def _ocr_checked(jd_text, marker):
@@ -242,7 +315,7 @@ def _greeting_name(first):
     return "" if s.lower() in GENERIC_GREETINGS else s.strip()
 
 
-def autofix(result, jd_text):
+def autofix(result, jd_text, source=()):
     """就地修正 result，返回修正说明列表。"""
     fixes = []
     en = _is_en(result)
@@ -280,6 +353,21 @@ def autofix(result, jd_text):
     result["email_body"] = body.strip() + "\n"
 
     subject = re.sub(r"\s+", " ", (result.get("email_subject") or "").strip())
+    names = [source] if isinstance(source, str) else list(source)
+    for key in ("resume_filename", "resume_filename_en", "report_filename"):   # 文件名里也不写渠道；年级统一写法
+        old = result.get(key) or ""
+        new = strip_channel(old, names)
+        if config.GRADE_LABEL:
+            new = re.sub(r"研[一二三]", config.GRADE_LABEL, new)
+        if new != old:
+            result[key] = new
+            fixes.append(f"文件名「{old}」改成「{new}」（去掉渠道 / 年级统一写法）")
+    no_chan = strip_channel(subject, names)
+    if config.GRADE_LABEL:
+        no_chan = re.sub(r"研[一二三]", config.GRADE_LABEL, no_chan)
+    if no_chan != subject:
+        fixes.append(f"标题改成「{no_chan}」（去掉渠道 / 年级统一写成「{config.GRADE_LABEL}」）")
+        subject = no_chan
     if SOURCE_SLOT.search(subject):
         no_src = SOURCE_SLOT.sub("", subject).strip(" -+_｜|/、")
         if no_src:
@@ -335,7 +423,7 @@ def _parse_date(s):
 
 
 def run(result, jd_text, *, related=(), resume_status=None, profile_text="",
-        rules_text="", source_label="", now=None):
+        rules_text="", source_label="", now=None, publish_date=""):
     """返回问题列表（不修改 result）。"""
     issues = []
     now = now or beijing_now()
@@ -399,12 +487,22 @@ def run(result, jd_text, *, related=(), resume_status=None, profile_text="",
                                  f"{'和'.join(where)}里写了招聘信息来源「{src}」：邮件里不写来源，删掉。"))
     if SOURCE_LEFTOVER.search(subject) or SOURCE_LEFTOVER.search(body):
         issues.append(_issue("error", "subject", "邮件里还留着「信息来源」这一项：来源不写，删掉。"))
-    fmt_cmp = SOURCE_FIELD.sub("", fmt)   # 「信息来源」那一项本来就不写，它两边的分隔符不算
+    names = [source_label, result.get("source_name") or ""]
+    fmt_cmp = fmt_clean(fmt, names)   # 「信息来源 / 渠道平台」那一项本来就不写，填写说明括号也不算
     if fmt_cmp:
         for sep in "【】-+_｜|/（）()":
             if sep in fmt_cmp and sep not in subject:
                 issues.append(_issue("warn", "subject", f"JD 格式里有「{sep}」，生成的标题里没有，请对照格式检查。"))
                 break
+    rfmt, rname = fmt_clean(rules.get("resume_filename_format") or "", names), result.get("resume_filename") or ""
+    if rfmt and rname and result.get("attach_resume", True):   # 简历文件名也要按 JD 的命名格式（文件名里不能有 /，全角／算对）
+        half = lambda s: s.replace("／", "/").replace("｜", "|")
+        for sep in "【】-+_|/（）()":
+            if sep in half(rfmt) and sep not in half(rname):
+                issues.append(_issue("warn", "resume_filename", f"简历文件名：JD 格式里有「{sep}」，文件名里没有，请对照格式检查。"))
+                break
+    if config.GRADE_LABEL and re.search(r"研[一二三]", subject + rname):
+        issues.append(_issue("warn", "subject", f"年级统一写「{config.GRADE_LABEL}」（简历上的入学时间算不出研几）。"))
 
     # 正文
     if len(body.strip()) < 40:
@@ -435,9 +533,21 @@ def run(result, jd_text, *, related=(), resume_status=None, profile_text="",
     if odd:
         issues.append(_issue("warn", "body", f"标题 / 正文里的数字 {'、'.join(sorted(set(odd)))} 在简历和 JD 里都找不到，确认没写错。"))
     sentences = len(re.findall(r"[。？?；]", body)) if not en else len(re.findall(r"[.?!](\s|$)", body))
-    longest = max((len(p) for p in re.split(r"\n\s*\n", body) if p.strip()), default=0)
-    if not en and longest > 170:
+    longest = max((len(_URL_IN_TEXT.sub("", BARE_LINK.sub("", p))) for p in re.split(r"\n\s*\n", body) if p.strip()), default=0)   # 链接不算字数
+    if not en and longest > 140:
         issues.append(_issue("warn", "body", f"有一段写了约 {longest} 字，经历段 120 字左右、1–2 个重点就够了。"))
+    for rule in config.ROLE_PHRASES:   # 例如写到「投资概览 / 研究框架」必须带「协助MD」
+        must = (rule.get("must") or "").replace(" ", "")
+        hit = next((k for s in re.split(r"[。！？；;\n]", body) for k in rule.get("keys", [])
+                    if k in s and must and must not in s.replace(" ", "")), None)
+        if hit:
+            issues.append(_issue("warn", "body", f"写到「{hit}」的那句要带上「{rule.get('must')}」（档案原话），别省掉。"))
+    if DUTY_UPGRADE.search(body):
+        issues.append(_issue("warn", "body", f"「{DUTY_UPGRADE.search(body).group(0)}」：档案写的是「完成 / 参与」，不是「负责」。"))
+    if PROMISE.search(body):
+        issues.append(_issue("warn", "body", "别写「毕业后转全职」这种替对方许诺的话：写「也希望争取留用机会」或「毕业后可全职入职」。"))
+    if "投递系统" in body and not AUTOMATION_JD.search(jd_text or ""):
+        issues.append(_issue("warn", "body", "JD 没提 vibe coding / Agent / 自动化，按规则正文不提自动化投递系统。"))
     if SPEEDUP.search(body):
         issues.append(_issue("warn", "body", "正文写了投递提速的数字，HR 会联想到这封信也是批量自动发的，建议删掉。"))
     m = ATTACH_OTHER.search(body)
@@ -480,19 +590,28 @@ def run(result, jd_text, *, related=(), resume_status=None, profile_text="",
     if any(k in company.lower() for k in config.CURRENT_EMPLOYER_KEYWORDS):
         issues.append(_issue("warn", "company", f"这是你现在实习的机构（{company}），确认要投吗？"))
     for r in related:
-        issues.append(_issue("warn", "duplicate",
-                             f"以前投过：{r.get('sent_at', '')[:10]} {r.get('company_name', '')}｜{r.get('job_title', '')}"
-                             f"｜{r.get('status', '')}（{r.get('match', '')}）"))
+        same = (r.get("match") == "同一邮箱" and r.get("campaign") == config.CURRENT_CAMPAIGN
+                and similar_job(result.get("job_title"), r.get("job_title")))
+        if same:   # 本轮已经给同一个邮箱投过同一个岗位（发了 / 存了草稿 / 定了时）：再发就是重复投递
+            issues.append(_issue("error", "duplicate", f"重复投递：{r.get('sent_at', '')[:10]} 已经给这个邮箱投过「{r.get('job_title', '')}」"
+                                                       f"（{r.get('status', '')}），这封别再发，删掉就行。"))
+        else:
+            issues.append(_issue("warn", "duplicate",
+                                 f"以前投过：{r.get('sent_at', '')[:10]} {r.get('company_name', '')}｜{r.get('job_title', '')}"
+                                 f"｜{r.get('status', '')}（{r.get('match', '')}）"))
     dl = _parse_date(result.get("deadline") or "")
     if dl and dl < now.date():
         issues.append(_issue("warn", "deadline", f"截止日期 {dl} 已经过了。"))
-    post = _parse_date(result.get("job_post_date") or "")
+    post = _parse_date(result.get("job_post_date") or "") or _parse_date(publish_date or "")   # JD 里没写就用文章的发布日期
     if post and (now.date() - post).days > 45:
-        issues.append(_issue("info", "post_date", f"岗位发布于 {post}，已经 {(now.date() - post).days} 天，可能已招满。"))
+        issues.append(_issue("warn", "post_date", f"岗位发布于 {post}，已经 {(now.date() - post).days} 天，可能已招满。"))
     if is_night(now) and to:
         issues.append(_issue("info", "time", f"现在是北京时间晚上：点「发送」时可以选「明早 {config.SEND_AT} 自动发」。"))
 
+    chan = _channel_keys(names)
     for w in result.get("fit_warnings") or []:
+        if FIT_NOISE.search(w) or any(k in re.sub(r"\s+", "", w).lower() for k in chan):
+            continue
         issues.append(_issue("warn", "fit", f"JD 要求：{w}"))
     for m in result.get("missing_info") or []:
         issues.append(_issue("info", "missing", f"档案里缺：{m}"))

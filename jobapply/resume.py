@@ -41,6 +41,7 @@ def resume_status(path=None):
         "ok": True, "path": str(path), "pages": len(pages), "zh_pages": zh, "en_pages": en,
         "grad_problems": problems, "sha": hashlib.sha1(raw).hexdigest()[:10],
         "size_kb": round(len(raw) / 1024), "text": "\n".join(p["text"] for p in pages),
+        "en_text": "\n".join(p["text"] for p in pages if p["lang"] == "英文"),
     }
 
 

@@ -312,5 +312,6 @@ def count_job_signals(text):
     """粗判是不是多岗位文章（决定要不要让 AI 列岗位）。"""
     multi = re.findall(r"岗位[一二三四五六七八九十\d]|职位[一二三四五六七八九十\d]|方向[一二三四五六七八九十\d]|"
                        r"^[一二三四五六七八九十]、.{0,20}(?:实习|岗位|招聘|方向|分析师|经理)", text, re.M)
+    multi += re.findall(r"(?:Position|Role|Opening)\s*[#:：]?\s*\d", text, re.I)   # 英文写法「Position 1 / 2 / 3」
     emails = set(re.findall(r"[\w.+\-]+@[\w\-]+(?:\.[\w\-]+)+", text))
     return len(multi), len(emails)

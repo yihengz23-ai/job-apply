@@ -278,17 +278,30 @@ def _call_api(*, system, content, schema, effort, max_tokens=16000, images=None)
 _system_cache = {"key": None, "text": None}
 
 
+def _english_resume():
+    """简历 PDF 里英文页的原文：英文邮件的说法和数字照它写，不让 AI 自己翻（翻过「拟投资 1 亿元」→「1 亿元的融资」）。"""
+    try:
+        from . import resume
+        st = resume.resume_status()
+    except Exception:
+        return ""
+    return (st.get("en_text") or "").strip() if st.get("ok") else ""
+
+
 def build_system_prompt():
-    """候选人档案 + 规则，按文件修改时间缓存（改了 md 文件自动生效，无需重启）。"""
-    key = (config.PROFILE_PATH.stat().st_mtime, config.RULES_PATH.stat().st_mtime)
+    """候选人档案 + 英文简历原文 + 规则，按文件修改时间缓存（改了 md / 简历自动生效，无需重启）。"""
+    resume_mtime = config.RESUME_PATH.stat().st_mtime if config.RESUME_PATH.exists() else 0
+    key = (config.PROFILE_PATH.stat().st_mtime, config.RULES_PATH.stat().st_mtime, resume_mtime)
     if _system_cache["key"] != key:
         profile = config.PROFILE_PATH.read_text(encoding="utf-8")
+        english = _english_resume()
         rules = config.RULES_PATH.read_text(encoding="utf-8")
         _system_cache["text"] = (
             f"你是{config.CANDIDATE_NAME}的求职投递助手。下面先给候选人档案（事实），再给投递规则。"
             "输出必须是符合 schema 的 JSON。\n\n"
             f"<候选人档案>\n{profile}\n</候选人档案>\n\n"
-            f"<投递规则>\n{rules}\n</投递规则>"
+            + (f"<英文简历原文>（写英文邮件时，经历的说法和数字照这里，不要自己从中文翻）\n{english}\n</英文简历原文>\n\n" if english else "")
+            +             f"<投递规则>\n{rules}\n</投递规则>"
         )
         _system_cache["key"] = key
     return _system_cache["text"]

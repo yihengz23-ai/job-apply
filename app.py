@@ -187,7 +187,7 @@ def api_analyze():
         out = pipeline.analyze(d.get("jd_text", ""), source_label=d.get("source_label", ""),
                                target_job=d.get("target_job", ""), position_hint=d.get("position_hint", ""),
                                resume_hint=d.get("resume_hint", ""), report_hint=d.get("report_hint", ""),
-                               extra=d.get("extra", ""))
+                               extra=d.get("extra", ""), publish_date=d.get("publish_date", ""))
     except (ValueError, llm.LLMError) as e:
         return _err(str(e))
     if not out.get("ok"):
@@ -200,7 +200,8 @@ def api_check():
     """用户在界面上改完后重新检查（不调 AI）。"""
     d = _body()
     result = pipeline._normalize_edits(dict(d.get("result") or {}))
-    return jsonify(pipeline.review(result, d.get("jd_text", ""), source_label=d.get("source_label", "")))
+    return jsonify(pipeline.review(result, d.get("jd_text", ""), source_label=d.get("source_label", ""),
+                                   publish_date=d.get("publish_date", "")))
 
 
 QUEUE_TAKEN = "这条在队列里已经在发送或已经处理过了（可能在另一个窗口 / 一键发送里），刷新看看。"
@@ -396,6 +397,12 @@ def api_queue_skip(item_id):
     return jsonify({"ok": jobqueue.skip(item_id)})
 
 
+@app.route("/api/queue/<item_id>/recheck", methods=["POST"])
+def api_queue_recheck(item_id):
+    """按现在的规则重查一封（AI 审稿 + 自动修正），notes 是要特别改的地方。"""
+    return jsonify({"ok": jobqueue.recheck(item_id, _body().get("notes", "")) is not None})
+
+
 @app.route("/api/queue/<item_id>/retry", methods=["POST"])
 def api_queue_retry(item_id):
     return jsonify({"ok": jobqueue.retry(item_id)})
@@ -503,6 +510,6 @@ if __name__ == "__main__":
     if resumed:
         print(f"批量队列：接着处理上次没做完的 {resumed} 条")
     jobqueue.start_scheduler()   # 定时发送：到点由面板自己发
-    threading.Thread(target=jobqueue.refresh_issues, daemon=True).start()   # 旧条目按现在的规则重新检查一遍
+    threading.Thread(target=jobqueue.startup_tasks, daemon=True).start()   # 定时草稿对齐 + 旧条目按新规则重查
     print(f"投递面板：http://localhost:5001   模型：{config.CLAUDE_MODEL}   代理：{config.PROXY or '无'}")
     app.run(host="127.0.0.1", port=5001, debug=False, threaded=True)

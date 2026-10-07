@@ -122,3 +122,22 @@ def test_refresh_switches_old_bilingual_resume(q, monkeypatch, ai, ctype, edited
     q.refresh_issues()
     it = q._get(iid)
     assert (it.get("edited") or it["analysis"]["result"])["resume_version"] == expect
+
+
+def test_fetch_retried_before_failing(q, monkeypatch):
+    from jobapply import fetch
+    calls = []
+
+    def flaky(url):
+        calls.append(url)
+        if len(calls) < 3:
+            raise fetch.FetchError("微信不让自动抓取这篇文章（页面结构异常）")
+        return {"title": "t", "content": "投资实习生招聘，每周实习5天，简历发送至 hr@abc-capital.com。" * 3, "source_label": "某号",
+                "url": url, "publish_date": "", "ocr_used": False, "qr_urls": []}
+    monkeypatch.setattr(fetch, "fetch_url", flaky)
+    monkeypatch.setattr(q.time, "sleep", lambda s: None)
+    monkeypatch.setattr(fetch, "count_job_signals", lambda t: (0, 1))
+    monkeypatch.setattr(pipeline, "analyze", lambda jd, **kw: {"ok": True, "result": result(), "issues": [], "fixes": [], "meta": {}})
+    it = q.enqueue("https://mp.weixin.qq.com/s/flaky")[0]
+    q._process(it["id"])
+    assert len(calls) == 3 and q._get(it["id"])["status"] == "待审核"

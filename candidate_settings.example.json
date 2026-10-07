@@ -31,5 +31,14 @@
   "spelling_fixes": {
     "某大學": "某大学"
   },
-  "llm_backend": "api"
+  "llm_backend": "api",
+  "grade_label": "2027届硕士",
+  "role_phrases": [
+    {
+      "keys": [
+        "行业研究报告"
+      ],
+      "must": "参与"
+    }
+  ]
 }

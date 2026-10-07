@@ -727,7 +727,8 @@ function scheduleCheck() {
     const result = collectResult();
     if (reviewingLive() && S.editsDirty) { S.editsDirty = false; saveQueueEdits({edited: result}); }  // 先把内容存上，不等检查结果
     try {
-      const d = await api('/api/check', {method: 'POST', body: {result, jd_text: $('#jdInput').value, source_label: pageSource()}});
+      const d = await api('/api/check', {method: 'POST', body: {result, jd_text: $('#jdInput').value, source_label: pageSource(),
+        publish_date: S.page ? (S.page.publish_date || '') : ''}});
       if (gen !== S.gen) return;
       renderIssues(d.issues);
       if (reviewingLive()) saveQueueEdits({issues: d.issues});
@@ -789,7 +790,8 @@ async function doDeliver(mode, gen) {
     if (ans !== true || stale()) return;
   }
   let rev;
-  try { rev = await api('/api/check', {method: 'POST', body: {result: r, jd_text: $('#jdInput').value, source_label: pageSource()}}); }
+  try { rev = await api('/api/check', {method: 'POST', body: {result: r, jd_text: $('#jdInput').value, source_label: pageSource(),
+    publish_date: S.page ? (S.page.publish_date || '') : ''}}); }
   catch (e) { return toast('检查失败：' + e.message); }
   if (stale()) return;
   renderIssues(rev.issues);
@@ -1207,6 +1209,28 @@ async function loadQueue(force = false) {
   } catch (e) { console.error('队列显示出错', e); }
 }
 
+// 同一个岗位（和后端 checks.similar_job 一样的算法）
+const TITLE_FILLER = /[（）()\[\]【】\-—–·|｜/、，,\s]|实习生|实习|岗位|岗|职位|招聘|方向|日常/g;
+function similarJob(a, b) {
+  a = (a || '').replace(TITLE_FILLER, ''); b = (b || '').replace(TITLE_FILLER, '');
+  if (!a || !b) return false;
+  if (a.includes(b) || b.includes(a)) return true;
+  const g = s => new Set(s.length < 2 ? [s] : [...Array(s.length - 1).keys()].map(i => s.slice(i, i + 2)));
+  const x = g(a), y = g(b), inter = [...x].filter(v => y.has(v)).length;
+  return inter / (x.size + y.size - inter) >= 0.5;
+}
+// 队列里同一个邮箱、同一个岗位已经有一封定了时 / 存了草稿 / 发了（还没进记录的定时信，后端查不到，这里补上）
+function duplicateOf(it) {
+  const r = resultOf(it); if (!r || !reviewable(it)) return null;
+  // 同一个邮箱，或同一家机构的邮箱域名（发给同一家的不同人也算；公共邮箱 gmail / 163 之类不算）
+  const PUBLIC = /^(gmail|163|126|qq|foxmail|sina|sohu|yeah|139|outlook|hotmail|live|icloud|me|yahoo|aliyun|88)\./;
+  const keys = es => es.flatMap(e => { e = e.toLowerCase(); const d = e.split('@')[1] || ''; return PUBLIC.test(d) ? [e] : [e, '@' + d]; });
+  const mine = new Set(keys(listArr(r.to_emails).concat(listArr(r.cc_emails))));
+  return S.queue.find(x => x.id !== it.id && ['已定时', '已存草稿', '已发送', '发送中'].includes(x.status) && resultOf(x)
+    && keys(listArr(resultOf(x).to_emails).concat(listArr(resultOf(x).cc_emails))).some(k => mine.has(k))
+    && similarJob(r.job_title, resultOf(x).job_title)) || null;
+}
+
 // 发出去的、记过的不在列表里待着（都在「投递看板」里）；「邮箱+网申」还要补记网申的留着
 const listed = it => !['已发送', '已记录'].includes(it.status) || canAddWs(it);
 function renderQueue(c) {
@@ -1232,7 +1256,7 @@ function renderQueue(c) {
     const counts = it.analysis && !wsOnly && !done ? `<span class="text-[11px] whitespace-nowrap ${errs ? 'text-red-600' : warns ? 'text-amber-700' : 'text-green-700'}">${errs ? errs + ' 必须处理 ' : ''}${warns ? warns + ' 注意' : (errs ? '' : '检查全过')}</span>` : '';
     return `<div class="bg-white rounded-xl border p-3 flex flex-wrap xl:flex-nowrap items-center gap-x-3 gap-y-2 ${done && !addWs ? 'opacity-50' : ''}">
       <span class="chip ${Q_CLS[it.status] || ''}">${['处理中', '发送中', '重写中'].includes(it.status) ? '<span class="material-symbols-outlined animate-spin text-xs">progress_activity</span>' : ''}${esc(it.status)}${it.status === '已定时' && it.send_at ? ' ' + esc(it.send_at.slice(5)) : ''}</span>
-      <div class="flex-1 min-w-[10rem]"><div class="text-sm font-semibold truncate">${esc(title)} ${r && r.position_type ? posBadge(r.position_type) : ''} ${wsChip} ${it.multi_job ? `<span class="chip bg-amber-100 text-amber-800">同一篇·共 ${it.multi_job} 个岗位</span>` : ''} ${optsChip(it)}</div>
+      <div class="flex-1 min-w-[10rem]"><div class="text-sm font-semibold truncate">${esc(title)} ${r && r.position_type ? posBadge(r.position_type) : ''} ${wsChip} ${it.multi_job ? `<span class="chip bg-amber-100 text-amber-800">同一篇·共 ${it.multi_job} 个岗位</span>` : ''} ${optsChip(it)}${duplicateOf(it) ? `<span class="chip bg-red-600 text-white" title="同一个邮箱、同一个岗位已经有一封${esc(duplicateOf(it).status)}">重复：已有一封${esc(duplicateOf(it).status)}</span>` : ''}</div>
         <div class="text-xs text-slate-500 truncate">${sub}</div></div>
       <div class="flex flex-wrap items-center justify-end gap-2 ml-auto">
         ${kitTip}${counts}
@@ -1433,6 +1457,7 @@ function updateReviewBanner() {
   const what = canAddWs(it) && !S.wsRecorded ? '补记网申' : '正在看';
   $('#reviewText').innerHTML = `${what}：<b>${esc(r.company_name || '')}｜${esc(r.job_title || '')}</b>（还有 ${left} 封待看）` +
     (it.multi_job && reviewable(it) ? `<br><span class="text-amber-800 text-xs">这篇文章拆出了 ${it.multi_job} 个岗位，每个一条：只发想投的，其余在队列里删掉</span>` : '') +
+    (duplicateOf(it) ? `<br><span class="text-red-600 text-xs font-bold">重复投递：同一个邮箱、同一个岗位已经有一封${esc(duplicateOf(it).status)}（${esc(resultOf(duplicateOf(it)).company_name || '')}），这封别再发，删掉就行</span>` : '') +
     (it.error && reviewable(it) ? `<br><span class="text-red-600 text-xs">${esc(it.error)}</span>` : '');
   $('#reviewBanner').classList.remove('hidden'); $('#reviewBanner').classList.add('flex');
 }

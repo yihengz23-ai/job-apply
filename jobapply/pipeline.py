@@ -29,14 +29,14 @@ def source_of(result, source_label=""):
     return (source_label or "").strip() or ((result or {}).get("source_name") or "").strip()
 
 
-def review(result, jd_text, *, source_label="", exclude_id=None):
+def review(result, jd_text, *, source_label="", exclude_id=None, publish_date=""):
     profile, rules = _texts()
     source_label = source_of(result, source_label)
     emails = (result.get("to_emails") or []) + (result.get("cc_emails") or [])
     related = records.find_related(result.get("company_name", ""), emails, exclude_id=exclude_id)
     rs = resume.resume_status()
     issues = checks.run(result, jd_text, related=related, resume_status=rs, profile_text=profile,
-                        rules_text=rules, source_label=source_label)
+                        rules_text=rules, source_label=source_label, publish_date=publish_date)
     return {"issues": issues, "related": related, "resume": _resume_public(rs)}
 
 
@@ -96,7 +96,8 @@ def self_check(result, jd_text, *, notes=""):
     return [f"AI 自查改了：{c.get('problem', '')}（「{c.get('before', '')}」→「{c.get('after', '')}」）" for c in changes]
 
 
-def analyze(jd_text, *, source_label="", target_job="", position_hint="", resume_hint="", report_hint="", extra=""):
+def analyze(jd_text, *, source_label="", target_job="", position_hint="", resume_hint="", report_hint="", extra="",
+            publish_date=""):
     if len((jd_text or "").strip()) < 50:
         raise ValueError("JD 内容太短（至少 50 字），请粘贴完整的招聘信息。")
     position_hint = position_hint if position_hint in llm.POSITION_TYPES else ""
@@ -116,11 +117,12 @@ def analyze(jd_text, *, source_label="", target_job="", position_hint="", resume
     if report_hint:
         result["attach_report"] = report_hint == "附上"
     result["attach_resume"] = True
-    fixes = checks.autofix(result, jd_text)
+    names = [source_label, result.get("source_name") or ""]
+    fixes = checks.autofix(result, jd_text, source=names)
     fixes += self_check(result, jd_text, notes=extra.strip() if isinstance(extra, str) else "")
-    fixes += checks.autofix(result, jd_text)   # 自查改过的稿子再规范一遍（称呼、占位、链接）
+    fixes += checks.autofix(result, jd_text, source=names)   # 自查改过的稿子再规范一遍（称呼、占位、链接）
     return {"ok": True, "result": result, "fixes": fixes, "meta": meta,
-            **review(result, jd_text, source_label=source_label)}
+            **review(result, jd_text, source_label=source_label, publish_date=publish_date)}
 
 
 def _normalize_edits(result):
@@ -170,7 +172,7 @@ def deliver(result, jd_text, *, mode="send", force=False, source_label="", sourc
     if mode not in ("send", "draft"):
         raise ValueError(f"不认识的发送方式：{mode!r}")
     result = _normalize_edits(dict(result))
-    rev = review(result, jd_text, source_label=source_label)
+    rev = review(result, jd_text, source_label=source_label, publish_date=publish_date)
     errors = [i for i in rev["issues"] if i["level"] == "error"]
     if errors and not force:
         raise Blocked(rev["issues"])

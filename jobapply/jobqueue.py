@@ -15,7 +15,9 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
-from . import checks, config, fetch, gmail_client, llm, pipeline
+import copy
+
+from . import checks, config, fetch, gmail_client, llm, pipeline, records
 
 QUEUE_PATH = config.BASE_DIR / "queue.json"
 WORKERS = int(os.environ.get("JOBAPPLY_QUEUE_WORKERS", "3"))
@@ -24,6 +26,7 @@ DONE = ("已发送", "已存草稿", "已记录")
 SENDING = "发送中"
 REVIEWABLE = ("待审核", "需处理")
 REGEN = "重写中"   # 按补充要求重写：在后台做，可以先去看下一封，写好存回这一条
+CHECK_VERSION = 2   # 写信规则 / 检查升级时加 1：面板启动后，旧版本写的待审核稿件会在后台按新规则自动重查一遍
 SCHEDULED = "已定时"   # 晚上点了发送：到第二天 config.SEND_AT 由面板自己发出
 OPT_KEYS = ("position_hint", "resume_hint", "report_hint", "extra")   # 「这批的设置」
 SEND_GAP_SECONDS = 3   # 批量发送时每封之间停一下，别像群发
@@ -244,7 +247,7 @@ def refresh_issues():
         result = edited or analysis["result"]
         try:
             rev = pipeline.review(pipeline._normalize_edits(dict(result)), it.get("jd_text", ""),
-                                  source_label=page.get("source_label", ""))
+                                  source_label=page.get("source_label", ""), publish_date=page.get("publish_date", ""))
         except Exception:
             continue
         with _lock:
@@ -353,7 +356,10 @@ def _regen(item_id):
     if not it or it["status"] != REGEN:
         return
     page = it.get("page") or {}
+    if it.get("regen_mode") == "check":   # 只按规则重查这一封（AI 审稿 + 自动修正），不整封重写
+        return _recheck(it)
     out = pipeline.analyze(it["jd_text"], source_label=page.get("source_label", ""), target_job=it.get("target_job", ""),
+                           publish_date=page.get("publish_date", ""),
                            **{k: v for k, v in (it.get("regen_req") or {}).items() if k in OPT_KEYS})
     if not out.get("ok"):
         _regen_fail(item_id, "重写失败：" + (out.get("error") or "AI 没写出来"))
@@ -372,7 +378,72 @@ def _regen(item_id):
         if not cur or cur["status"] != REGEN:   # 期间被删了：不管
             return
         _update(item_id, analysis=out, edited=None, live_issues=None, wangshen=kit, error="",
-                status="需处理" if has_error else "待审核", rev=uuid.uuid4().hex[:8])
+                status="需处理" if has_error else "待审核", rev=uuid.uuid4().hex[:8], check_v=CHECK_VERSION)
+
+
+def recheck(item_id, notes=""):
+    """按现在的规则重查一封（AI 审稿 + 自动修正），notes 是要特别改的地方。和重写一样在后台做、写好存回。"""
+    with _lock:
+        it = _get(item_id)
+        if not it or it["status"] not in REVIEWABLE or not it.get("analysis"):
+            return None
+        it = _update(item_id, status=REGEN, regen_prev=it["status"], regen_mode="check",
+                     regen_notes=(notes or "").strip()[:2000], error="")
+    _submit_regen(item_id)
+    return it
+
+
+def _recheck(it):
+    item_id, page = it["id"], it.get("page") or {}
+    result = copy.deepcopy(it.get("edited") or it["analysis"]["result"])
+    names = [page.get("source_label", ""), result.get("source_name") or ""]
+    fixes = checks.autofix(result, it["jd_text"], source=names)
+    fixes += pipeline.self_check(result, it["jd_text"], notes=it.get("regen_notes") or "")
+    fixes += checks.autofix(result, it["jd_text"], source=names)
+    rev = pipeline.review(pipeline._normalize_edits(dict(result)), it["jd_text"],
+                          source_label=page.get("source_label", ""), publish_date=page.get("publish_date", ""))
+    has_error = bool(checks.split_emails(result.get("to_emails"))) and any(i["level"] == "error" for i in rev["issues"])
+    analysis = dict(it["analysis"], fixes=list(it["analysis"].get("fixes") or []) + fixes)
+    with _lock:
+        cur = _get(item_id)
+        if not cur or cur["status"] != REGEN:
+            return
+        _update(item_id, edited=result, live_issues=rev["issues"], analysis=analysis, error="",
+                status="需处理" if has_error else (cur.get("regen_prev") or "待审核"),
+                rev=uuid.uuid4().hex[:8], check_v=CHECK_VERSION, regen_mode="", regen_notes="")
+
+
+def recheck_stale(delay=60):
+    """面板启动后（等一会儿，先让别的事做完）：旧版本规则写的待审核稿件，在后台按新规则重查一遍。"""
+    time.sleep(delay)
+    n = 0
+    for it in list_items():
+        if it["status"] in REVIEWABLE and it.get("analysis") and it.get("check_v") != CHECK_VERSION:
+            n += bool(recheck(it["id"]))
+    return n
+
+
+def sync_scheduled_drafts():
+    """定时发的草稿：列表上显示的标题 / 正文和 Gmail 里真正会发的那封（投递记录）对齐。"""
+    n = 0
+    for it in list_items():
+        if it["status"] != SCHEDULED or not it.get("send_draft") or not it.get("record_id"):
+            continue
+        rec = records.get(it["record_id"]) or {}
+        cur = it.get("edited") or (it.get("analysis") or {}).get("result") or {}
+        if rec and (cur.get("email_subject") != rec.get("subject") or cur.get("email_body") != rec.get("email_body")):
+            _update(it["id"], edited=dict(cur, email_subject=rec.get("subject", ""), email_body=rec.get("email_body", "")))
+            n += 1
+    return n
+
+
+def startup_tasks():
+    """面板启动后在后台跑：定时草稿显示对齐 → 按新规则重新检查 → 旧稿 AI 重查。"""
+    for job in (sync_scheduled_drafts, refresh_issues, recheck_stale):
+        try:
+            job()
+        except Exception as e:
+            print(f"启动任务 {job.__name__} 出错：{type(e).__name__}: {e}")
 
 
 # ── 后台处理 ───────────────────────────────────────────────
@@ -392,10 +463,16 @@ def _process(item_id):
         return  # 已被删除
     page, jd, target = it.get("page") or {}, it.get("jd_text") or "", it.get("target_job") or ""
     if it["kind"] == "url" and not jd:
-        try:
-            p = fetch.fetch_url(it["input"])
-        except fetch.FetchError as e:
-            _update(item_id, status="失败", error=str(e))
+        p = None
+        for wait in (0, 20, 60):   # 微信常临时拦一下（「页面结构异常」），隔一会儿再抓就好：自动重试两次再算失败
+            time.sleep(wait)
+            try:
+                p = fetch.fetch_url(it["input"])
+                break
+            except fetch.FetchError as e:
+                err = e
+        if p is None:
+            _update(item_id, status="失败", error=str(err))
             return
         page = {k: p.get(k, "") for k in ("title", "source_label", "publish_date", "url", "ocr_used", "qr_urls")}
         jd = p["content"]
@@ -421,7 +498,8 @@ def _process(item_id):
                     _submit(s["id"])
         _update(item_id, page=page, jd_text=jd, target_job=target)
     opts = {k: v for k, v in (it.get("opts") or {}).items() if k in OPT_KEYS}
-    out = pipeline.analyze(jd, source_label=page.get("source_label", ""), target_job=target, **opts)
+    out = pipeline.analyze(jd, source_label=page.get("source_label", ""), target_job=target,
+                           publish_date=page.get("publish_date", ""), **opts)
     if not out.get("ok"):
         _update(item_id, status="失败", error=out.get("error", "不是招聘信息"))
         return
@@ -435,7 +513,8 @@ def _process(item_id):
     # 只网申（没有收件邮箱）的岗位不发邮件：邮件那边的问题不算「需处理」
     ws_only = not checks.split_emails(out["result"].get("to_emails"))
     has_error = not ws_only and any(i["level"] == "error" for i in out["issues"])
-    _update(item_id, analysis=out, wangshen=kit, status="需处理" if has_error else "待审核", rev=uuid.uuid4().hex[:8])
+    _update(item_id, analysis=out, wangshen=kit, status="需处理" if has_error else "待审核", rev=uuid.uuid4().hex[:8],
+            check_v=CHECK_VERSION)
 
 
 def _notify(title, text):
@@ -627,7 +706,7 @@ def _process_ready(mode, gap):
             continue
         result, page = it.get("edited") or it["analysis"]["result"], it.get("page") or {}
         rev = pipeline.review(pipeline._normalize_edits(dict(result)), it["jd_text"],
-                              source_label=page.get("source_label", ""))
+                              source_label=page.get("source_label", ""), publish_date=page.get("publish_date", ""))
         blocking = [i["msg"] for i in rev["issues"] if i["level"] in ("error", "warn")]
         if blocking:
             release(it["id"])

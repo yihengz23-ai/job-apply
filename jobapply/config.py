@@ -33,6 +33,8 @@ NOT_ON_RESUME = SETTINGS.get("not_on_resume", [])
 WRONG_GRADUATION = SETTINGS.get("wrong_graduation", [])
 # 统一写法（如学校译名），发信前自动替换
 SPELLING_FIXES = SETTINGS.get("spelling_fixes", {})
+GRADE_LABEL = SETTINGS.get("grade_label", "")          # 标题 / 文件名里「年级」统一写这个（例如「2027届硕士」）
+ROLE_PHRASES = SETTINGS.get("role_phrases", [])       # 写到这些经历时必须带上的角色说法（例如「协助MD」）
 
 # ── 程序数据 ────────────────────────────────────────────────
 PROFILE_PATH = BASE_DIR / "candidate_profile.md"

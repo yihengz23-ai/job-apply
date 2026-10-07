@@ -110,3 +110,17 @@ def test_attachment_mime_type_follows_file():
                                   attachments=[("图.png", b"\x89PNG"), ("简历.pdf", b"%PDF")])
     types = [p.get_content_type() for p in msg.get_payload()[1:]]
     assert types == ["image/png", "application/pdf"]
+
+
+# ── 重复投递：本轮同一个邮箱、同一个岗位 → 拦下 ─────────────────
+
+@pytest.mark.parametrize("old_title,campaign,level", [
+    ("战投海外组实习生", config.CURRENT_CAMPAIGN, "error"),   # 本轮已经投过 / 存了草稿：重复
+    ("战投海外组实习生", "2026春·实习", "warn"),             # 上一轮投过：提醒就行
+    ("投后实习生", config.CURRENT_CAMPAIGN, "warn"),          # 同一个邮箱、别的岗位：提醒
+])
+def test_same_mailbox_same_job_is_blocked(old_title, campaign, level):
+    related = [{"match": "同一邮箱", "campaign": campaign, "job_title": old_title, "sent_at": "2026-10-08 01:00", "status": "草稿", "company_name": "美团"}]
+    r = result(job_title="美团战投实习生（海外）")
+    lv = [i["level"] for i in checks.run(r, JD, related=related) if i["field"] == "duplicate"]
+    assert lv == [level]
