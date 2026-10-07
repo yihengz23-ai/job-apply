@@ -11,7 +11,7 @@
  * 写值、点下拉选项、分级地区、单选按文字匹配的做法参考了 OpenJobAutofill（MIT License, Br1an67）。
  */
 (() => {
-  const VERSION = '1.0';
+  const VERSION = '1.1';
   if (window.__wsfill && window.__wsfill.version === VERSION) return;
 
   const ID = 'data-wsf-id';
@@ -20,8 +20,10 @@
     'textarea', 'select', '[contenteditable="true"]', '[role="combobox"]', '[role="radio"]', '[role="checkbox"]',
   ].join(',');
   const SELECT_WRAP = '.ant-select,.ant-cascader,.el-select,.el-cascader,.ivu-select,.ivu-cascader,.arco-select,.t-select,.n-select,.semi-select,[class*="Select"],[class*="select"],[class*="picker"],[class*="Picker"]';
-  const DATE_WRAP = '.ant-picker,.el-date-editor,.ivu-date-picker,.arco-picker,.t-date-picker,[class*="date-picker"],[class*="DatePicker"]';
-  const ITEM_WRAP = '.ant-form-item,.el-form-item,.ivu-form-item,.arco-form-item,.t-form__item,.form-item,[class*="form-item"],[class*="formItem"],[class*="FormItem"],[class*="field-row"],[class*="field-wrapper"]';
+  const DATE_WRAP = '.ant-picker,.ant-calendar-picker,.el-date-editor,.ivu-date-picker,.arco-picker,.t-date-picker,[class*="date-picker"],[class*="DatePicker"]';
+  // 一个栏目（标题 + 输入框）的外框：先认各组件库的准确类名，最后才用模糊匹配（模糊的要求里面真有标题）
+  const ITEM_EXACT = ['.ant-form-item', '.el-form-item', '.ivu-form-item', '.arco-form-item', '.t-form__item', '.form-item'];
+  const ITEM_FUZZY = '[class*="form-item"],[class*="formItem"],[class*="FormItem"],[class*="field-row"],[class*="field-wrapper"]';
   const LABEL_IN_ITEM = '.ant-form-item-label,.el-form-item__label,.ivu-form-item-label,.arco-form-item-label,.t-form__label,label,[class*="label"],[class*="Label"]';
   const OPTION = [
     '.ant-select-item-option', '.ant-cascader-menu-item', '.el-select-dropdown__item', '.el-cascader-node',
@@ -71,7 +73,44 @@
   }
 
   function itemOf(el) {
-    return el.closest(ITEM_WRAP);
+    for (const sel of ITEM_EXACT) {
+      const it = el.closest(sel);
+      if (it) return it;
+    }
+    let cur = el.closest(ITEM_FUZZY);
+    for (let d = 0; cur && d < 4; d++, cur = cur.parentElement && cur.parentElement.closest(ITEM_FUZZY)) {
+      if (cur.querySelector(LABEL_IN_ITEM)) return cur;
+    }
+    return null;
+  }
+
+  // 分区标题：字号大（≥18px）或加粗的短文字（h1–h4 也算）；表单栏目标题、按钮、链接、下拉选项不算
+  function headingText(el) {
+    if (!(el instanceof HTMLElement) || el.children.length > 3) return '';
+    const own = norm(Array.from(el.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join(''));
+    const t = own || (el.children.length === 0 ? norm(el.textContent) : '');
+    if (!t || t.length < 2 || t.length > 24 || /[:：]$/.test(t)) return '';
+    if (el.closest('label,button,a,option,[role=option],[role=button],' + LABEL_IN_ITEM.replace(',label,[class*="label"],[class*="Label"]', ''))) return '';
+    if (el.closest(OPTION)) return '';
+    const st = getComputedStyle(el), fs = parseFloat(st.fontSize) || 0, fw = parseInt(st.fontWeight, 10) || 400;
+    if (/^H[1-4]$/.test(el.tagName) || fs >= 18 || (fs >= 14 && fw >= 600)) return visible(el) ? t : '';
+    return '';
+  }
+
+  // 按页面先后顺序走一遍：每个栏目归到它前面最近的标题下（「教育经历 > 教育经历2」这种保留两级）
+  function sectionMap(roots) {
+    const map = new Map(), want = new Set(roots);
+    let major = '', minor = '', majorSize = 0;
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+    for (let n = walker.currentNode; n; n = walker.nextNode()) {
+      if (want.has(n)) { map.set(n, minor && minor !== major ? major + ' > ' + minor : major); continue; }
+      const h = headingText(n);
+      if (!h) continue;
+      const fs = parseFloat(getComputedStyle(n).fontSize) || 0;
+      if (!major || fs >= majorSize - 1) { major = h; majorSize = fs; minor = ''; }
+      else minor = h;
+    }
+    return map;
   }
 
   function labelOf(el) {
@@ -103,24 +142,6 @@
       }
     }
     return norm(el.getAttribute('placeholder') || el.name || '');
-  }
-
-  // 所属分区：控件之前最近的标题（「教育经历」「家庭信息2」……）
-  function sectionOf(el) {
-    const heads = 'h1,h2,h3,h4,h5,.ant-card-head-title,.ant-collapse-header,[class*="section-title"],[class*="sectionTitle"],[class*="module-title"],[class*="block-title"],[class*="part-title"],[class*="group-title"],legend';
-    let cur = controlRoot(el);
-    const names = [];
-    for (let d = 0; cur && d < 14 && names.length < 2; d++, cur = cur.parentElement) {
-      let sib = cur.previousElementSibling;
-      for (let k = 0; sib && k < 6; k++, sib = sib.previousElementSibling) {
-        const h = sib.matches(heads) ? sib : sib.querySelector && Array.from(sib.querySelectorAll(heads)).pop();
-        if (h) {
-          const t = textOf(h);
-          if (t && t.length <= 40 && !names.includes(t)) { names.unshift(t); break; }
-        }
-      }
-    }
-    return names.join(' > ');
   }
 
   function required(el) {
@@ -188,8 +209,8 @@
       } else if (kind === 'select') {
         options = Array.from(el.options).map(o => norm(o.text)).filter(Boolean).slice(0, 60);
       }
-      const f = {id: fieldId(root === el ? el : root), label: labelOf(el), section: sectionOf(el), kind,
-                 value: currentValue(el, kind), required: required(el)};
+      const f = {id: fieldId(root === el ? el : root), label: labelOf(el), section: '', kind,
+                 value: currentValue(el, kind), required: required(el), _root: root};
       if (root !== el) el.setAttribute(ID + '-inner', f.id);
       if (options) f.options = options;
       const ph = el.getAttribute('placeholder');
@@ -197,9 +218,11 @@
       if (el.disabled || el.readOnly && kind === 'text' || el.getAttribute('aria-disabled') === 'true' || root.className.toString().includes('disabled')) f.disabled = true;
       fields.push(f);
     }
-    const buttons = Array.from(document.querySelectorAll('button,a,[role=button],span[class*="add"],div[class*="add"]'))
-      .filter(b => visible(b) && ADD_WORDS.test(textOf(b)) && textOf(b).length <= 20)
-      .map(b => ({id: fieldId(b), text: textOf(b), section: sectionOf(b)}));
+    const btnEls = Array.from(document.querySelectorAll('button,a,[role=button],span[class*="add"],div[class*="add"]'))
+      .filter(b => visible(b) && ADD_WORDS.test(textOf(b)) && textOf(b).length <= 20);
+    const secs = sectionMap(fields.map(f => f._root).concat(btnEls));
+    fields.forEach(f => { f.section = secs.get(f._root) || ''; delete f._root; });
+    const buttons = btnEls.map(b => ({id: fieldId(b), text: textOf(b), section: secs.get(b) || ''}));
     return {version: VERSION, url: location.href, count: fields.length, fields, addButtons: buttons};
   }
 
