@@ -11,7 +11,7 @@
  * 写值、点下拉选项、分级地区、单选按文字匹配的做法参考了 OpenJobAutofill（MIT License, Br1an67）。
  */
 (() => {
-  const VERSION = '1.2';
+  const VERSION = '1.3';
   if (window.__wsfill && window.__wsfill.version === VERSION) return;
 
   const ID = 'data-wsf-id';
@@ -191,7 +191,8 @@
   function scan() {
     const seenGroups = new Set(), seenRoots = new Set(), fields = [];
     for (const el of document.querySelectorAll(CONTROL)) {
-      if (!visible(el) && !visible(controlRoot(el))) continue;
+      // 单选 / 多选的小圆圈本身常是隐藏的，看外面包着的 label 显不显示
+      if (!visible(el) && !visible(controlRoot(el)) && !visible(el.closest('label,[class*="radio"],[class*="checkbox"]'))) continue;
       if (el.closest('[data-wsf-ignore]')) continue;
       const kind = kindOf(el);
       if (kind === 'file') continue;
