@@ -27,7 +27,16 @@ body{font-family:'Inter','PingFang SC',sans-serif}
 .kv{display:flex;align-items:flex-start;gap:.75rem;padding:.5rem 0;border-bottom:1px solid #f1f5f9;font-size:.875rem}
 .kv .k{width:7rem;flex:none;color:#94a3b8;font-size:12px;font-weight:600;padding-top:.125rem}
 .kv .v{flex:1;min-width:0;white-space:pre-wrap;word-break:break-word}
+#agentFab{position:fixed;right:1.25rem;bottom:1.25rem;z-index:55}
+#agentDrawer{position:fixed;top:0;right:0;bottom:0;width:460px;max-width:100vw;z-index:58;transform:translateX(105%);transition:transform .2s ease}
+#agentDrawer.open{transform:none}
+.ag-user{margin-left:3rem;background:#005bbf;color:#fff;border-radius:1rem 1rem .25rem 1rem;padding:.5rem .75rem;white-space:pre-wrap;word-break:break-word}
+.ag-bot{margin-right:2rem;background:#f1f5f9;border-radius:1rem 1rem 1rem .25rem;padding:.5rem .75rem;word-break:break-word;line-height:1.6}
+.ag-tool{font-size:11px;color:#94a3b8;display:flex;gap:.25rem;align-items:flex-start;padding-left:.25rem}
+.ag-sys{font-size:12px;color:#b45309;background:#fffbeb;border-radius:.75rem;padding:.375rem .625rem}
+.wsf.empty{box-shadow:0 0 0 2px #fcd34d}
 @media(max-width:767px){
+  #agentFab{bottom:4.75rem}
   #sidebar{display:none!important}
   #topbar{left:0!important;width:100%!important}
   #mainContent{margin-left:0!important;padding-bottom:5rem!important}
@@ -151,7 +160,8 @@ tailwind.config={theme:{extend:{colors:{primary:'#005bbf'},fontFamily:{sans:['In
             <button id="wsResumeDl" class="copy-btn !py-1.5"><span class="material-symbols-outlined text-sm">download</span>下载这份简历</button>
           </div></div></div>
         <div class="ws-step"><div class="ws-n">3</div><div class="flex-1 min-w-0"><p class="text-sm font-bold mb-1">填姓名、学校、经历等固定栏目</p>
-          <p class="text-xs text-slate-600">在网申页面点浏览器右上角的「牛客网申助手」→「一键填充」，填完逐项核对。插件没填上的栏目，到<a class="text-teal-700 underline cursor-pointer" data-tab="kit">「我的资料」</a>页一键复制。</p></div></div>
+          <p class="text-xs text-slate-600 mb-2">先在 Chrome 里登录这家网申。牛客支持的网站先点工具栏的牛客图标「一键填写」，再让助手校对补全；不支持的直接让助手填。它按<a class="text-teal-700 underline cursor-pointer" data-tab="kit">网申底稿</a>和简历填好、暂存，<b>提交由你自己点</b>。</p>
+          <button id="wsAgentBtn" class="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-bold flex items-center gap-1"><span class="material-symbols-outlined text-sm">smart_toy</span>让助手代填这家网申</button></div></div>
         <div class="ws-step"><div class="ws-n">4</div><div class="flex-1 min-w-0"><p class="text-sm font-bold mb-1">开放问题（AI 按这个岗位写的，可以先改再复制）</p><div id="wsAnswers" class="space-y-3"></div></div></div>
         <div id="wsExtra" class="hidden ws-step"><div class="ws-n"><span class="material-symbols-outlined text-sm">info</span></div><div id="wsExtraBody" class="flex-1 min-w-0 text-xs space-y-2"></div></div>
         <button id="wsRecordBtn" class="mt-2 w-full py-3 bg-teal-600 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-40"><span class="material-symbols-outlined">task_alt</span>我已网申，记一笔</button>
@@ -255,16 +265,34 @@ tailwind.config={theme:{extend:{colors:{primary:'#005bbf'},fontFamily:{sans:['In
 
 <!-- ─── Tab: 我的资料（网申） ─── -->
 <div id="tab-kit" class="tab-content">
-  <section class="bg-white rounded-2xl p-5 border shadow-sm mb-4">
-    <h2 class="text-sm font-bold flex items-center gap-2 mb-2"><span class="material-symbols-outlined text-teal-600">extension</span>网申填表：牛客网申助手（只需设置一次）</h2>
-    <ol class="text-sm text-slate-700 space-y-2 list-decimal pl-5">
+  <section class="bg-white rounded-2xl p-5 border-2 border-teal-200 shadow-sm mb-4">
+    <h2 class="text-sm font-bold flex items-center gap-2 mb-2"><span class="material-symbols-outlined text-teal-600">smart_toy</span>网申让助手填</h2>
+    <ol class="text-sm text-slate-700 space-y-1 list-decimal pl-5 mb-3">
+      <li>先在 Chrome 里登录那家网申网站（扫码 / 手机号都由你来）。</li>
+      <li>牛客支持的网站（北森、Moka、飞书等）：先点浏览器工具栏里绿色的牛客图标「一键填写」，再让助手校对补全；牛客提示「暂不支持」的网站，直接让助手填。</li>
+      <li>助手按下面的底稿和你的简历填好、暂存，列出留空项（身份证号这类由你填）。你检查一遍，<b>自己点提交</b>，回面板记一笔。</li>
+    </ol>
+    <div class="flex gap-2"><input id="agentUrl" class="field flex-1" placeholder="粘贴网申页面链接，比如 https://careers.xxx.com/…"/>
+      <button id="agentUrlBtn" class="px-4 py-2 bg-teal-600 text-white rounded-xl text-sm font-bold flex items-center gap-1 whitespace-nowrap"><span class="material-symbols-outlined text-sm">smart_toy</span>让助手代填</button></div>
+  </section>
+  <section id="wsProfileAlert" class="hidden bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-4 text-sm"></section>
+  <div class="flex items-center gap-2 mb-2">
+    <h2 class="text-base font-bold">网申底稿 <span class="text-xs font-normal text-slate-400">简历以外、网申会问的个人信息；直接改，自动保存。助手代填时照这里填。</span></h2>
+    <span id="wsProfileSaved" class="ml-auto text-xs text-slate-400"></span>
+  </div>
+  <div id="wsProfileBody" class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6"></div>
+  <h2 class="text-base font-bold mb-2">简历内容 <span class="text-xs font-normal text-slate-400">和简历逐字一致（只读），一键复制</span></h2>
+  <div id="kitBody" class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6"></div>
+  <details class="bg-white rounded-2xl p-5 border shadow-sm text-sm">
+    <summary class="font-bold cursor-pointer flex items-center gap-2"><span class="material-symbols-outlined text-teal-600">extension</span>牛客网申助手怎么装（只需设置一次）</summary>
+    <div class="mt-3"><ol class="text-sm text-slate-700 space-y-2 list-decimal pl-5">
       <li>装插件：<a class="text-primary underline" target="_blank" rel="noopener" href="https://chromewebstore.google.com/detail/jmejcdhpfajaoooiimlhlfojljblkeni">Chrome 应用商店「牛客网申助手」</a>（要开代理）→「添加至 Chrome」。打不开的话用牛客官网的<a class="text-primary underline" target="_blank" rel="noopener" href="https://www.nowcoder.com/my/resume-plugin-intro">安装包</a>。装好后点浏览器右上角拼图图标，把它「固定」到工具栏。</li>
       <li>点插件图标，登录牛客账号；打开<a class="text-primary underline" target="_blank" rel="noopener" href="https://www.nowcoder.com/my/resume-plugin">牛客「网申信息预填写」</a>，把下面的资料逐项复制进去（和简历逐字一致，经历描述就是简历原文）。</li>
       <li>以后网申：在网申页面点插件 →「一键填充」→ 逐项核对 → 自己点提交。插件没填上的栏目回这里复制；开放问题用「投递」页里 AI 写好的回答。</li>
     </ol>
     <p class="text-[11px] text-slate-400 mt-2">提醒：插件会读取你当前打开的网申页面并发给牛客做识别（商店隐私声明里写了会处理个人信息和网页内容），只在网申页面点它就好。</p>
-  </section>
-  <div id="kitBody" class="grid grid-cols-1 lg:grid-cols-2 gap-4"></div>
+  </div>
+  </details>
 </div>
 
 <!-- ─── Tab 3: 分析 ─── -->
@@ -296,6 +324,27 @@ tailwind.config={theme:{extend:{colors:{primary:'#005bbf'},fontFamily:{sans:['In
 
 </div>
 </main>
+
+<!-- 助手：在面板里聊天，能操作你的 Chrome 代填网申 -->
+<button id="agentFab" class="px-4 py-3 rounded-full bg-slate-900 text-white shadow-2xl flex items-center gap-2 text-sm font-bold"><span class="material-symbols-outlined">smart_toy</span><span id="agentFabLabel">助手</span></button>
+<aside id="agentDrawer" class="bg-white shadow-2xl border-l flex flex-col">
+  <div class="flex items-center gap-2 px-4 py-3 border-b">
+    <span class="material-symbols-outlined text-teal-600">smart_toy</span>
+    <select id="agentChats" class="text-sm bg-slate-100 border-none rounded-lg py-1 pl-2 pr-7 min-w-0 flex-1"></select>
+    <button id="agentNew" class="copy-btn !py-1.5 shrink-0">+ 新对话</button>
+    <button id="agentClose" class="text-slate-400 hover:text-slate-700 shrink-0" title="收起（它会接着做）"><span class="material-symbols-outlined">close</span></button>
+  </div>
+  <p class="px-4 py-2 text-[11px] text-slate-500 bg-slate-50 border-b">它能操作你的 Chrome 代填网申、回答投递的问题；不会点提交、不发邮件、不碰身份证号。登录和最后提交由你来。收起这个框它也会接着做。</p>
+  <div id="agentMsgs" class="flex-1 overflow-y-auto px-4 py-3 space-y-2.5 text-sm"></div>
+  <div class="border-t p-3">
+    <div id="agentStatus" class="hidden text-xs text-teal-700 mb-2 flex items-center gap-1"><span class="material-symbols-outlined animate-spin text-sm">progress_activity</span><span>正在做，可以先去干别的，做完会弹通知</span>
+      <button id="agentStop" class="ml-auto px-2 py-1 rounded-lg bg-red-50 text-red-600 font-bold">停止</button></div>
+    <div class="flex gap-2 items-end">
+      <textarea id="agentInput" rows="2" class="field flex-1 resize-none" placeholder="比如：帮我填这个网申 https://…（⌘+回车 发送）"></textarea>
+      <button id="agentSend" class="px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-bold">发送</button>
+    </div>
+  </div>
+</aside>
 
 <!-- Toast / Modal -->
 <div id="toast" class="fixed top-20 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl text-sm font-medium transition-all -translate-y-24 opacity-0 z-[70] max-w-[90vw] text-center"></div>
@@ -1656,6 +1705,7 @@ window.addEventListener('focus', () => setTimeout(askWsDone, 400));
 
 // ━━━ 我的资料（网申常用栏目，一键复制）━━━
 async function loadKitPage() {
+  loadWsProfile();
   if (!S.kitData) {
     try { S.kitData = await api('/api/kit'); } catch (e) { $('#kitBody').innerHTML = `<p class="text-red-600 text-sm">${esc(e.message)}</p>`; return; }
   }
@@ -1670,6 +1720,174 @@ async function loadKitPage() {
     objs('教育经历', K['教育经历'], 'school') + pairs('技能与其他', K['技能与其他'], 'construction') + objs('实习经历', K['实习经历'], 'work') +
     `<p class="lg:col-span-2 text-[11px] text-slate-400">${esc(K['_说明'] || '')}</p>`;
 }
+
+// ━━━ 网申底稿（简历以外、网申会问的个人信息；直接改，自动保存）━━━
+const WS_SECTIONS = [['基本信息', 'person'], ['联系方式', 'call'], ['高中', 'school'], ['家庭成员', 'family_restroom'],
+  ['经历精确日期', 'event'], ['资格与考试', 'workspace_premium'], ['求职偏好与声明', 'tune'], ['其他', 'notes']];
+let wsSaveTimer = null;
+async function loadWsProfile() {
+  if (wsSaveTimer) return;   // 正在等自动保存：别用服务器上的旧内容冲掉刚打的字
+  let d;
+  try { d = await api('/api/wangshen-profile'); } catch (e) { $('#wsProfileBody').innerHTML = `<p class="text-red-600 text-sm">${esc(e.message)}</p>`; return; }
+  S.wsProfile = d.profile;
+  renderWsAlert(d.missing, d.notes, d.example);
+  const input = (sec, i, k, v, sub) => {
+    const attrs = `class="wsf field !py-1.5 ${v.trim() ? '' : 'empty'}" data-sec="${esc(sec)}" data-i="${i}" data-k="${esc(k)}"${sub ? ' data-sub="1"' : ''}`;
+    return v.length > 36 || /自我评价|兴趣|作品|地址|证明人/.test(k) ? `<textarea rows="1" ${attrs} style="resize:none">${esc(v)}</textarea>` : `<input ${attrs} value="${esc(v)}"/>`;
+  };
+  const row = (sec, i, k, v, sub) => `<div class="kv items-center"><span class="k">${esc(k)}</span><div class="flex-1 min-w-0">${input(sec, i, k, v, sub)}</div><button class="copy-btn wsf-copy">复制</button></div>`;
+  $('#wsProfileBody').innerHTML = WS_SECTIONS.map(([sec, icon]) => {
+    const items = d.profile[sec] || [];
+    const body = items.map((it, i) => Array.isArray(it) ? row(sec, i, it[0], it[1] || '', false)
+      : `<div class="mb-3 p-3 rounded-xl bg-slate-50/70">${Object.entries(it).map(([k, v]) => row(sec, i, k, v || '', true)).join('')}</div>`).join('');
+    const idNote = sec === '基本信息' ? '<div class="kv"><span class="k">证件号码</span><span class="v text-slate-400">不存，每次网申你自己填</span></div>' : '';
+    return `<section class="bg-white rounded-2xl p-5 border shadow-sm ${['家庭成员', '其他'].includes(sec) ? 'lg:col-span-2' : ''}"><h3 class="text-sm font-bold mb-2 flex items-center gap-2"><span class="material-symbols-outlined text-teal-600">${icon}</span>${esc(sec)}</h3>${body}${idNote}</section>`;
+  }).join('');
+  $('#wsProfileBody').querySelectorAll('textarea').forEach(autoGrow);
+}
+function renderWsAlert(missing, notes, example) {
+  const parts = [];
+  if (example) parts.push('<p class="font-bold text-amber-800 mb-1">现在显示的是示例底稿，改完会存成你自己的。</p>');
+  if (missing.length) parts.push(`<p class="font-bold text-amber-800 mb-1">还缺 ${missing.length} 项（下面标黄的框；网申要填时助手会留空等你）：</p><p class="text-xs text-amber-900">${missing.map(esc).join('、')}</p>`);
+  if (notes.length) parts.push(`<p class="font-bold text-amber-800 mt-2 mb-1">牛客在线简历要核对的地方（插件按牛客里的资料填，那边错了每家都会错）：</p><ul class="list-disc pl-5 text-xs text-amber-900 space-y-1">${notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>`);
+  $('#wsProfileAlert').innerHTML = parts.join('');
+  $('#wsProfileAlert').classList.toggle('hidden', !parts.length);
+}
+function collectWsProfile() {
+  const p = JSON.parse(JSON.stringify(S.wsProfile || {}));
+  $('#wsProfileBody').querySelectorAll('.wsf').forEach(el => {
+    const items = p[el.dataset.sec], i = +el.dataset.i;
+    if (!items || !items[i]) return;
+    if (el.dataset.sub) items[i][el.dataset.k] = el.value; else items[i][1] = el.value;
+  });
+  return p;
+}
+$('#wsProfileBody').addEventListener('input', e => {
+  const el = e.target.closest('.wsf'); if (!el) return;
+  if (el.tagName === 'TEXTAREA') autoGrow(el);
+  el.classList.toggle('empty', !el.value.trim());
+  $('#wsProfileSaved').textContent = '有改动，正在保存…';
+  clearTimeout(wsSaveTimer);
+  wsSaveTimer = setTimeout(saveWsProfile, 900);
+});
+$('#wsProfileBody').addEventListener('click', e => {
+  const b = e.target.closest('.wsf-copy'); if (!b) return;
+  const el = b.closest('.kv').querySelector('.wsf');
+  if (el && el.value.trim()) copyText(el.value, b.closest('.kv').querySelector('.k').textContent); else toast('这一项还空着');
+});
+async function saveWsProfile() {
+  try {
+    const d = await api('/api/wangshen-profile', {method: 'PUT', body: {profile: collectWsProfile()}});
+    S.wsProfile = d.profile;
+    renderWsAlert(d.missing, d.profile['_核对提示'] || [], false);
+    $('#wsProfileSaved').textContent = '已保存 ' + new Date().toTimeString().slice(0, 5);
+  } catch (e) {
+    $('#wsProfileSaved').textContent = '没保存：' + e.message;
+    toast('底稿没保存：' + e.message, 6000);
+  } finally { wsSaveTimer = null; }
+}
+
+// ━━━ 助手（面板里聊天；它能操作你的 Chrome 代填网申，不点提交、不发邮件）━━━
+const AG = {id: null, n: 0, running: false, open: false, busy: false};
+const agMd = s => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+  .replace(/(https?:\/\/[^\s<&]+)/g, '<a class="text-primary underline break-all" target="_blank" rel="noopener" href="$1">$1</a>').replace(/\n/g, '<br>');
+function agAppend(msgs) {
+  const box = $('#agentMsgs'), atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
+  box.querySelector('.ag-empty')?.remove();
+  for (const m of msgs) {
+    const el = document.createElement('div');
+    if (m.role === 'user') { el.className = 'ag-user'; el.textContent = m.text; }
+    else if (m.role === 'assistant') { el.className = 'ag-bot'; el.innerHTML = agMd(m.text); }
+    else if (m.role === 'tool') { el.className = 'ag-tool' + (m.error ? ' !text-red-500' : ''); el.innerHTML = `<span class="material-symbols-outlined !text-[13px]">${m.error ? 'error' : 'chevron_right'}</span><span>${esc(m.text)}</span>`; }
+    else { el.className = 'ag-sys' + (m.error ? ' !text-red-700 !bg-red-50' : ''); el.textContent = m.text; }
+    box.appendChild(el);
+  }
+  if (atBottom || msgs.some(m => m.role === 'user')) box.scrollTop = box.scrollHeight;
+}
+function agEmptyHint() {
+  $('#agentMsgs').innerHTML = '<div class="ag-empty text-xs text-slate-400 space-y-1.5"><p>可以这样说：</p><p>· 帮我填这个网申：https://…</p><p>· 我这周投了哪些？美团投过没有？</p><p>· 刚才那张表接着填，身份证号我已经填好了。</p></div>';
+}
+function agSetRunning(on) {
+  AG.running = on;
+  $('#agentStatus').classList.toggle('hidden', !on);
+  $('#agentSend').disabled = on;
+  $('#agentFabLabel').textContent = on ? '助手 · 正在做' : '助手';
+  $('#agentFab').classList.toggle('!bg-teal-600', on);
+}
+async function agLoadList() {
+  const d = await api('/api/agent');
+  $('#agentChats').innerHTML = '<option value="">新对话</option>' + d.chats.map(c => `<option value="${esc(c.id)}">${esc((c.running ? '● ' : '') + c.title)}</option>`).join('');
+  $('#agentChats').value = AG.id || '';
+  return d;
+}
+async function agOpenChat(id) {
+  AG.id = id || null; AG.n = 0;
+  if (!AG.id) { agEmptyHint(); agSetRunning(false); return; }
+  $('#agentMsgs').innerHTML = '';
+  await agPoll();
+}
+async function agPoll() {
+  if (!AG.id || AG.busy) return;
+  AG.busy = true;
+  const id = AG.id;
+  try {
+    const d = await api(`/api/agent/${id}?since=${AG.n}`);
+    if (id !== AG.id) return;   // 期间换了对话
+    agAppend(d.messages); AG.n = d.total;
+    if (AG.running && !d.running) agLoadList().catch(() => {});
+    agSetRunning(d.running);
+  } catch (e) { if (e.status === 404) { AG.id = null; agEmptyHint(); agLoadList().catch(() => {}); } }
+  finally { AG.busy = false; }
+}
+async function agShow(open) {
+  AG.open = open;
+  $('#agentDrawer').classList.toggle('open', open);
+  if (!open) return;
+  const d = await agLoadList();
+  if (!AG.id && d.running) await agOpenChat(d.running);
+  else if (!AG.id) agEmptyHint();
+  else if (!$('#agentMsgs').children.length) await agOpenChat(AG.id);
+  setTimeout(() => $('#agentInput').focus(), 250);
+}
+async function agSend(text, fresh = false) {
+  text = (text || '').trim();
+  if (!text) return;
+  try {
+    if (fresh || !AG.id) { const c = await api('/api/agent/new', {method: 'POST'}); AG.id = c.id; AG.n = 0; $('#agentMsgs').innerHTML = ''; }
+    const d = await api(`/api/agent/${AG.id}/send`, {method: 'POST', body: {text}});
+    agAppend(d.messages); AG.n = d.total; agSetRunning(true);
+    $('#agentInput').value = '';
+    agLoadList().catch(() => {});
+  } catch (e) { toast(e.message, 5000); }
+}
+async function agStart(text) { await agShow(true); await agSend(text, true); }   // 「让助手代填」：开一个新对话
+$('#agentFab').onclick = () => agShow(!AG.open);
+$('#agentClose').onclick = () => agShow(false);
+$('#agentNew').onclick = () => { agOpenChat(null); $('#agentChats').value = ''; $('#agentInput').focus(); };
+$('#agentChats').onchange = e => agOpenChat(e.target.value);
+$('#agentSend').onclick = () => agSend($('#agentInput').value);
+$('#agentInput').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); agSend($('#agentInput').value); } });
+$('#agentStop').onclick = async () => { if (AG.id) { try { await api(`/api/agent/${AG.id}/stop`, {method: 'POST'}); } catch (e) { toast(e.message); } } };
+setInterval(() => { if (AG.id && (AG.open || AG.running) && !document.hidden) agPoll(); }, 1500);
+api('/api/agent').then(d => { if (d.running) { AG.id = d.running; agSetRunning(true); } }).catch(() => {});   // 打开面板时它还在做：右下角标出来
+
+$('#agentUrlBtn').onclick = () => {
+  const u = safeUrl($('#agentUrl').value);
+  if (!u) return toast('先粘贴网申页面的链接（https:// 开头）');
+  agStart(`帮我填这个网申：${u}\n按网申底稿和简历填，填完暂存，列出留空的和要我决定的。`);
+};
+$('#wsAgentBtn').onclick = () => {
+  const r = S.result;
+  if (!r) return;
+  const links = wsLinks(), k = collectKit() || {};
+  const qa = [['self_intro_short', '自我介绍（短版）'], ['self_intro', '自我介绍（长版）'], ['why_this_role', '为什么申请这个岗位'], ['fit_points', '我和岗位的匹配点']]
+    .filter(([key]) => k[key]).map(([key, label]) => `【${label}】${k[key]}`)
+    .concat((k.custom_answers || []).map(a => `【${a.question}】${a.answer}`));
+  agStart(`帮我填这家网申：${r.company_name || ''}｜${r.job_title || ''}\n` +
+    (links.length ? `网申链接：${links[0].u}\n` : '网申链接：JD 里没找到，先问我要。\n') +
+    (qa.length ? `开放问题用面板写好的这些回答（有字数上限就删减，不改意思）：\n${qa.join('\n')}\n` : '') +
+    '按网申底稿和简历填，填完暂存，列出留空的和要我决定的。');
+};
 
 setInterval(() => { if (!document.hidden) loadQueue(); }, 4000);
 setInterval(updateSendLabel, 60000);

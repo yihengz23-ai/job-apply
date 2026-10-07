@@ -7,6 +7,9 @@ candidate_settings.json
 records.json
 .records.lock
 application_kit.json
+wangshen_profile.json
+wangshen_sites.json
+agent_chats/
 queue.json
 queue.bad-*.json
 gmail_state.json

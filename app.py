@@ -11,7 +11,7 @@ import traceback
 
 from flask import Flask, abort, jsonify, render_template, request, send_file
 
-from jobapply import checks, config, fetch, gmail_client, jobqueue, llm, pipeline, records, resume
+from jobapply import agent, checks, config, fetch, gmail_client, jobqueue, llm, pipeline, records, resume, wsprofile
 
 app = Flask(__name__)
 app.config["JSON_AS_ASCII"] = False
@@ -316,6 +316,74 @@ def api_kit():
     return jsonify(json.loads(path.read_text(encoding="utf-8")))
 
 
+@app.route("/api/wangshen-profile")
+def api_wsprofile():
+    """网申底稿（简历以外的个人信息）+ 还缺哪些 + 核对提示。"""
+    profile, example = wsprofile.load()
+    return jsonify({"profile": profile, "example": example, "missing": wsprofile.missing(profile),
+                    "notes": profile.get("_核对提示") or []})
+
+
+@app.route("/api/wangshen-profile", methods=["PUT"])
+def api_wsprofile_save():
+    try:
+        profile = wsprofile.save(_body().get("profile"))
+    except wsprofile.Invalid as e:
+        return _err(str(e))
+    return jsonify({"ok": True, "profile": profile, "missing": wsprofile.missing(profile)})
+
+
+# ── 面板里的助手（聊天 + 操作 Chrome 代填网申）──────────────────
+
+@app.route("/api/agent")
+def api_agent_list():
+    return jsonify({"chats": agent.list_chats(), "running": agent.running_chat()})
+
+
+@app.route("/api/agent/new", methods=["POST"])
+def api_agent_new():
+    return jsonify(agent.new_chat())
+
+
+@app.route("/api/agent/<chat_id>")
+def api_agent_get(chat_id):
+    try:
+        return jsonify(agent.get(chat_id, since=request.args.get("since", 0, type=int)))
+    except KeyError:
+        return _err("这个对话不存在了", 404)
+
+
+@app.route("/api/agent/<chat_id>/send", methods=["POST"])
+def api_agent_send(chat_id):
+    try:
+        return jsonify(agent.send(chat_id, _body().get("text", "")))
+    except KeyError:
+        return _err("这个对话不存在了", 404)
+    except agent.Busy as e:
+        return _err(str(e), 409)
+    except ValueError as e:
+        return _err(str(e))
+
+
+@app.route("/api/agent/<chat_id>/stop", methods=["POST"])
+def api_agent_stop(chat_id):
+    try:
+        return jsonify({"ok": agent.stop(chat_id)})
+    except KeyError:
+        return _err("这个对话不存在了", 404)
+
+
+@app.route("/api/agent/<chat_id>", methods=["DELETE"])
+def api_agent_delete(chat_id):
+    try:
+        agent.delete(chat_id)
+    except KeyError:
+        return _err("这个对话不存在了", 404)
+    except agent.Busy as e:
+        return _err(str(e), 409)
+    return jsonify({"ok": True})
+
+
 @app.route("/api/wangshen", methods=["POST"])
 def api_wangshen():
     """给这个岗位生成网申问答（自我介绍 / 为什么申请 / JD 里列出的问题）和投递步骤。"""
@@ -510,6 +578,7 @@ if __name__ == "__main__":
     if resumed:
         print(f"批量队列：接着处理上次没做完的 {resumed} 条")
     jobqueue.start_scheduler()   # 定时发送：到点由面板自己发
+    agent.recover()              # 上次没做完就关了面板的助手对话：标成已停止
     threading.Thread(target=jobqueue.startup_tasks, daemon=True).start()   # 定时草稿对齐 + 旧条目按新规则重查
     print(f"投递面板：http://localhost:5001   模型：{config.CLAUDE_MODEL}   代理：{config.PROXY or '无'}")
     app.run(host="127.0.0.1", port=5001, debug=False, threaded=True)
