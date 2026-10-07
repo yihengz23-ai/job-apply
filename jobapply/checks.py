@@ -15,6 +15,13 @@ from . import config
 BEIJING = ZoneInfo("Asia/Shanghai")
 
 
+def is_night(now=None):
+    """北京时间晚上（默认 21 点到第二天 7 点）：发出去的邮件 HR 早上会被压在一堆新邮件下面。"""
+    start, end = config.NIGHT_HOURS
+    h = (now or beijing_now()).hour
+    return h >= start or h < end
+
+
 def beijing_now():
     """HR 在国内：凌晨提醒、截止日期都按北京时间算（人在美国时也对）。"""
     return datetime.now(BEIJING).replace(tzinfo=None)
@@ -29,6 +36,35 @@ FIELD_NAME = re.compile(r"(?:您的|你的|your\s*)?(?:姓名|名字|学校|院�
                         r"方向|研究方向|来源|渠道|招聘信息来源|信息来源|身份证号|排名|"
                         r"(?:full\s*)?name|school|university|major|degree|position|role|job\s*title|start\s*date|"
                         r"date|salary|city|phone|email|wechat)", re.I)
+# 「信息来源 / 渠道」这一项：本人决定邮件里一律不写（来源只进自己的投递记录）
+_SOURCE_WORD = r"(?:招聘|获取|信息|岗位)*(?:来源|渠道|途径)+(?:平台)?|\b(?:source|channel)\b"
+_OPEN, _CLOSE, _INNER = r"[\[【（(<《]", r"[\]】）)>》]", r"[^\[\]【】（）()<>《》\n]"
+# JD 格式里的这一项（整组括号「（注明信息来源）」或「-信息来源」）：标题格式检查时不算它
+SOURCE_FIELD = re.compile(r"\s*[-+_｜|/、]?\s*(?:" + _OPEN + _INNER + r"{0,12}?(?:" + _SOURCE_WORD + r")" + _INNER + r"{0,8}" + _CLOSE
+                          + r"|(?:注明|填写|写明)?(?:" + _SOURCE_WORD + r"))", re.I)
+# 生成内容里没填的占位：只认方括号「[招聘信息来源]」（「募资经理（渠道）」这种岗位名不能动）
+SOURCE_SLOT = re.compile(r"\s*[-+_｜|/、]?\s*\[\s*(?:" + _SOURCE_WORD + r")\s*\]", re.I)
+SOURCE_LINE = re.compile(r"^[ \t]*(?:招聘|获取)?(?:信息)?(?:来源|渠道)[ \t]*[:：].*\n?", re.M)
+# 照抄进邮件的「（信息来源）」这一项（单独的「（渠道）」不算，可能是岗位名）
+SOURCE_LEFTOVER = re.compile(_OPEN + r"\s*(?:注明|填写)?\s*(?:(?:招聘|获取)?信息来源|(?:获取|信息|招聘)渠道|获取途径|来源渠道)\s*" + _CLOSE)
+# 正文说附了研究样本（「另附一份……研究样本」「……报告见附件」「attached a writing sample」）；
+# 「如需研究样本可随时提供」「available upon request」这种不算
+REPORT_MENTION = re.compile(
+    r"研究样本|writing sample|research sample"
+    r"|(?:另附|附上|随附|一并附|附件[里中]?还?有|附件(?:是|为|包括))[^，,。！？!?\n]{0,24}"
+    r"(?:研究(?:样本|报告|材料|成果)|(?:行业|公司)研究(?![员岗方生所院助])|报告|样本|概览|memo|deck)"
+    r"|(?:研究(?:样本|报告|材料|成果)|(?:行业|公司)研究(?![员岗方生所院助])|报告|样本|概览)[^，,。！？!?\n]{0,8}(?:见附件|在附件|附后|已附)"
+    r"|(?:attach|enclos)\w*[^.!?;\n]{0,40}\b(?:sample|report|memo|deck|overview|excerpt)s?\b"
+    r"|\b(?:sample|report|memo|deck|overview|excerpt)s?\b[^.!?;\n]{0,60}\b(?:is|are) (?:attached|enclosed)", re.I)
+REPORT_COND = re.compile(r"如需|如有需要|如果需要|需要的话|可随时提供|可以提供|可提供|可另行提供|upon request|on request|if needed|"
+                         r"if helpful|happy to (?:share|provide)|can (?:share|provide)|available", re.I)
+
+
+def mentions_report(body):
+    sentences = [s for s in re.split(r"(?<=[。！？!?；;\n])|(?<=\.)\s", body or "") if s.strip()]
+    return any(REPORT_MENTION.search(s) for s in sentences if not REPORT_COND.search(s))
+
+
 PUBLIC_DOMAINS = {
     "gmail.com", "163.com", "126.com", "qq.com", "foxmail.com", "sina.com", "sina.cn",
     "sohu.com", "yeah.net", "139.com", "outlook.com", "hotmail.com", "live.com",
@@ -48,7 +84,10 @@ ENTITIES = ["哈佛", "斯坦福", "清华", "北大", "复旦", "高盛", "摩�
 HONORIFICS_ZH = ["总", "老师", "女士", "先生", "经理", "博士", "同学"]
 FILENAME_BAD = re.compile(r'[\\/:*?"<>|\r\n\t]')
 # fetch 抓公众号时，图片里识别出来的文字放在这个标记后面
-OCR_MARKER = "【以下是文章图片里的文字（系统自动识别，可能有错字）】"
+OCR_MARKER = "【以下是文章图片里的文字（系统自动识别）】"
+# 图片里认出来的邮箱，抓取时已经自动双重核对过（Claude 和 macOS Vision 各认一遍，对不上再盯着图认一次）
+OCR_VERIFIED = "【图片里的邮箱已自动核对（两种识别方法一致）】"
+OCR_UNSURE = "【图片里的邮箱没能自动核对上】"
 
 
 def split_emails(value):
@@ -83,6 +122,12 @@ def jd_emails(jd_text):
     for pat, rep in _OBFUSCATIONS:
         t = pat.sub(rep, t)
     return exact, set(split_emails(t))
+
+
+def _ocr_checked(jd_text, marker):
+    """JD 里「图片邮箱核对结果」那一行列出的邮箱。"""
+    line = next((l for l in (jd_text or "").splitlines() if l.startswith(marker)), "")
+    return set(split_emails(line))
 
 
 def _issue(level, field, msg):
@@ -207,6 +252,11 @@ def autofix(result, jd_text):
         body = "\n".join(lines)
         result["contact_in_jd"] = ""
         fixes.append(f"称呼「{greet}」在 JD 原文里找不到依据（可能是从邮箱地址猜的），已改成「{generic}」")
+    # 「信息来源」不写进邮件：AI 万一留了占位 / 单独一行「信息来源：…」，去掉
+    new_body = SOURCE_SLOT.sub("", SOURCE_LINE.sub("", body))
+    if new_body != body:
+        body = new_body
+        fixes.append("正文里的「信息来源」已去掉（来源只记在你自己的投递记录里，不写进邮件）")
     # 统一成简历上的写法（candidate_settings.json 的 spelling_fixes）
     for wrong, right in config.SPELLING_FIXES.items():
         if wrong in body:
@@ -215,6 +265,11 @@ def autofix(result, jd_text):
     result["email_body"] = body.strip() + "\n"
 
     subject = re.sub(r"\s+", " ", (result.get("email_subject") or "").strip())
+    if SOURCE_SLOT.search(subject):
+        no_src = SOURCE_SLOT.sub("", subject).strip(" -+_｜|/、")
+        if no_src:
+            fixes.append(f"标题里的「信息来源」已去掉（来源只记在你自己的投递记录里）：{no_src}")
+            subject = no_src
     result["email_subject"] = subject
     result["apply_url"] = safe_url(result.get("apply_url"))
 
@@ -285,16 +340,15 @@ def run(result, jd_text, *, related=(), resume_status=None, profile_text="",
     jd_text = jd_text or ""
     exact, deob = jd_emails(jd_text)
     known = exact | deob
-    typed = set().union(*jd_emails(jd_text.split(OCR_MARKER, 1)[0])) if OCR_MARKER in jd_text else known
+    unsure = _ocr_checked(jd_text, OCR_UNSURE)   # 图片里的邮箱抓取时已自动双重核对，只有始终对不上的才拦
     for e in to + cc:
         if e not in known:
             issues.append(_issue("error", "to", f"邮箱 {e} 在 JD 原文里找不到，可能是 AI 编的或抄错了，请核对。"))
             continue
         if e not in exact:
             issues.append(_issue("warn", "to", f"邮箱 {e} 在 JD 里是变形写法（如 [at]、#），请核对拼写。"))
-        if e not in typed:
-            issues.append(_issue("warn", "to", f"邮箱 {e} 是从文章图片里识别出来的，可能认错字母（rn/m、l/1、0/o），"
-                                               "请对照原文图片核对一遍。"))
+        if e in unsure:   # 极少：几种认法始终对不上。为免把简历发给陌生人，不放行
+            issues.append(_issue("error", "to", f"图片里的邮箱 {e} 几种认法对不上，没法确定，为免把简历发错人，这封没放行。"))
     if config.SENDER_EMAIL.lower() in to + cc:
         issues.append(_issue("error", "to", "收件人里有你自己的邮箱。"))
     others = sorted(exact - set(to) - set(cc))  # 只列原文写明的邮箱（「look at abc.com」还原出来的假邮箱不算）
@@ -321,9 +375,19 @@ def run(result, jd_text, *, related=(), resume_status=None, profile_text="",
             issues.append(_issue("warn", "subject", "标题里没有你的名字。"))
         elif re.search(r"姓名|名字|name", fmt, re.I):
             issues.append(_issue("error", "subject", "JD 要求标题里写姓名，但标题里没有。"))
-    if fmt:
+    # 招聘信息来源：本人决定邮件里一律不写（只进自己的投递记录）
+    src = re.sub(r"[（(]?公众号[)）]?$", "", (source_label or result.get("source_name") or "").strip()).strip()
+    if len(src) >= 2 and src not in ("微信", "微信公众号") and src.lower() not in (result.get("company_name") or "").lower():
+        where = [n for n, txt in (("标题", subject), ("正文", body)) if src.lower() in txt.lower()]
+        if where:
+            issues.append(_issue("error", "subject" if where[0] == "标题" else "body",
+                                 f"{'和'.join(where)}里写了招聘信息来源「{src}」：邮件里不写来源，删掉。"))
+    if SOURCE_LEFTOVER.search(subject) or SOURCE_LEFTOVER.search(body):
+        issues.append(_issue("error", "subject", "邮件里还留着「信息来源」这一项：来源不写，删掉。"))
+    fmt_cmp = SOURCE_FIELD.sub("", fmt)   # 「信息来源」那一项本来就不写，它两边的分隔符不算
+    if fmt_cmp:
         for sep in "【】-+_｜|/（）()":
-            if sep in fmt and sep not in subject:
+            if sep in fmt_cmp and sep not in subject:
                 issues.append(_issue("warn", "subject", f"JD 格式里有「{sep}」，生成的标题里没有，请对照格式检查。"))
                 break
 
@@ -372,7 +436,16 @@ def run(result, jd_text, *, related=(), resume_status=None, profile_text="",
                                  + "；".join(resume_status["grad_problems"])))
     if result.get("attach_report") and not config.REPORT_PATH.exists():
         issues.append(_issue("error", "report", f"找不到研究样本文件：{config.REPORT_PATH}"))
+    mentions = mentions_report(body)
+    if mentions and not result.get("attach_report"):
+        issues.append(_issue("error", "report", "正文说附了研究样本，但附件里没勾「研究样本」：要么勾上，要么删掉正文那句。"))
+    elif result.get("attach_report") and not mentions:
+        issues.append(_issue("warn", "report", "附了研究样本，正文没提一句：可以加一句「另附一份过往行业研究样本，供参考。」，"
+                                               "或者点「按补充要求重写」。"))
     materials = " ".join(rules.get("requested_materials") or [])
+    if not result.get("attach_report") and re.search(r"研究报告|研究样本|研究成果|writing sample|research sample|\bdeck\b|\bmemo\b",
+                                                     materials, re.I):
+        issues.append(_issue("warn", "report", "JD 提到要研究报告 / writing sample，这封没附研究样本：确认是故意不附。"))
     if re.search(r"成绩单|transcript", materials, re.I):
         issues.append(_issue("warn", "attach", "JD 要求成绩单，系统里没有，需要自己另附。"))
     if re.search(r"英文.{0,6}(报告|样本|writing|memo|研究)|english.{0,10}(sample|report|memo)", materials, re.I):
@@ -392,8 +465,8 @@ def run(result, jd_text, *, related=(), resume_status=None, profile_text="",
     post = _parse_date(result.get("job_post_date") or "")
     if post and (now.date() - post).days > 45:
         issues.append(_issue("info", "post_date", f"岗位发布于 {post}，已经 {(now.date() - post).days} 天，可能已招满。"))
-    if now.hour < 7 and to:
-        issues.append(_issue("info", "time", "现在是凌晨，可以先「存草稿」，早上在 Gmail 里发出或定时发送。"))
+    if is_night(now) and to:
+        issues.append(_issue("info", "time", f"现在是北京时间晚上：点「发送」时可以选「明早 {config.SEND_AT} 自动发」。"))
 
     for w in result.get("fit_warnings") or []:
         issues.append(_issue("warn", "fit", f"JD 要求：{w}"))

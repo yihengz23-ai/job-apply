@@ -54,6 +54,9 @@ CURRENT_EMPLOYER_KEYWORDS = [k.lower() for k in SETTINGS.get("current_employer_k
 
 # 本轮投递批次（看板、统计默认只看本轮）；早于 OLD_CAMPAIGN_BEFORE 的旧记录归到 OLD_CAMPAIGN
 CURRENT_CAMPAIGN = SETTINGS["current_campaign"]
+# 晚上点「发送」：排到第二天这个时间自动发（北京时间，HR 在国内）；night_hours = [几点起算晚上, 几点结束]
+SEND_AT = SETTINGS.get("scheduled_send_time", "10:00")
+NIGHT_HOURS = SETTINGS.get("night_hours", [21, 7])
 OLD_CAMPAIGN = SETTINGS.get("old_campaign", "旧记录")
 OLD_CAMPAIGN_BEFORE = SETTINGS.get("old_campaign_before", "1900-01-01")
 

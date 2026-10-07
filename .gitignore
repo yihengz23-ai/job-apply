@@ -22,6 +22,7 @@ __pycache__/
 
 # 其他
 tools/qrdecode
+tools/ocr
 .DS_Store
 .claude/
 cloudflared

@@ -12,6 +12,7 @@ from bs4 import BeautifulSoup
 from . import checks, config, llm
 
 QR_TOOL = config.BASE_DIR / "tools" / "qrdecode"
+OCR_TOOL = config.BASE_DIR / "tools" / "ocr"
 QR_HINTS = ("二维码", "扫码", "长按", "识别", "小程序", "网申", "投递链接", "报名")
 
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -113,7 +114,12 @@ def _wechat(url, resp):
         if big:
             ocr = llm.ocr_images(big)
             if ocr:
+                ocr, verified, unsure = verify_ocr_emails(big, ocr)
                 block = checks.OCR_MARKER + "\n" + ocr
+                if verified:
+                    block += "\n" + checks.OCR_VERIFIED + "：" + "、".join(verified)
+                if unsure:
+                    block += "\n" + checks.OCR_UNSURE + "：" + "、".join(unsure)
                 text = (text + "\n\n" + block).strip() if text else block
                 ocr_used = True
     # 文章里有二维码投递 / 没写邮箱时，扫一遍图片里的二维码，找网申链接
@@ -168,9 +174,83 @@ def _download_images(html, limit=20, min_size=2000):
     return out
 
 
+def _lev(a, b):
+    """两个字符串差几个字符（编辑距离）。"""
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def _emails(text):
+    exact, deob = checks.jd_emails(_join_split_emails(text or ""))
+    return exact | deob
+
+
+def vision_ocr(images):
+    """用 macOS Vision（tools/ocr）独立再认一遍图片里的字，返回 [每张图认出的文字]。"""
+    if not images or not _ensure_tool(OCR_TOOL):
+        return []
+    with tempfile.TemporaryDirectory(prefix="jobapply-ocr-") as tmp:
+        paths = []
+        for i, (data, mt) in enumerate(images):
+            p = Path(tmp) / f"img{i}.{mt.split('/')[-1]}"
+            p.write_bytes(data)
+            paths.append(str(p))
+        try:
+            out = subprocess.run([str(OCR_TOOL), *paths], capture_output=True, text=True, timeout=120).stdout
+        except (subprocess.TimeoutExpired, OSError):
+            return []
+    per = {p: [] for p in paths}
+    for line in out.splitlines():
+        path, _, txt = line.partition("\t")
+        if path in per:
+            per[path].append(re.sub(r"\s*[@＠]\s*", "@", txt))   # Vision 常在 @ 两边多认出空格
+    return ["\n".join(per[p]) for p in paths]
+
+
+def verify_ocr_emails(images, ocr_text):
+    """图片里认出来的投递邮箱，自动双重核对，不用人去看图：
+    Claude 和 macOS Vision 各自独立认一遍，一样就算数；不一样就让 Claude 盯着图片逐字再认一次，
+    三次里有两次一致就用它（用的是 Vision 那个就把文字改过来）；还是对不上的才标「没核对上」。
+    返回 (改正后的文字, 核对过的邮箱, 没核对上的邮箱)。"""
+    found = sorted(_emails(ocr_text))
+    if not found:
+        return ocr_text, [], []
+    pages = vision_ocr(images)
+    vision = set().union(*[_emails(p) for p in pages]) if pages else set()
+    verified, unsure = [], []
+    for e in found:
+        if e in vision:
+            verified.append(e)
+            continue
+        near = sorted(v for v in vision if _lev(v, e) <= 3)
+        # 只把认出了这个邮箱（或很像的那个）的图片给它看；Vision 一个都没认出来就全给
+        hits = [img for img, p in zip(images, pages) if any(_lev(v, e) <= 3 for v in _emails(p))] or images
+        try:
+            pick = llm.read_email_from_images(hits, [e] + near)
+            if not pick.get("sure") and hits is not images:   # 没看清：把文章所有图片都给它，再认一次
+                pick = llm.read_email_from_images(images, [e] + near)
+        except llm.LLMError:
+            unsure.append(e)
+            continue
+        p = (pick.get("email") or "").strip().lower()
+        if not pick.get("sure") or p not in [e] + near:
+            unsure.append(e)
+        elif p == e:
+            verified.append(e)              # 两次 Claude 一致（一次通读、一次盯着这个邮箱逐字认）
+        else:
+            ocr_text = ocr_text.replace(e, p)   # Vision 和第二次 Claude 一致：第一次认错了，改过来
+            verified.append(p)
+    return ocr_text, verified, unsure
+
+
 def decode_qr(images):
     """用 macOS Vision（tools/qrdecode）识别图片里的二维码，返回网申 / 报名链接（去掉公众号关注码）。"""
-    if not images or not _ensure_qr_tool():
+    if not images or not _ensure_tool(QR_TOOL):
         return []
     with tempfile.TemporaryDirectory(prefix="jobapply-qr-") as tmp:
         paths = []
@@ -190,17 +270,18 @@ def decode_qr(images):
     return urls
 
 
-def _ensure_qr_tool():
-    if QR_TOOL.exists():
+def _ensure_tool(tool):
+    """tools/ 下的 swift 小工具：第一次用时编译。"""
+    if tool.exists():
         return True
-    src = QR_TOOL.with_suffix(".swift")
+    src = tool.with_suffix(".swift")
     if not src.exists():
         return False
     try:
-        subprocess.run(["swiftc", "-O", str(src), "-o", str(QR_TOOL)], capture_output=True, timeout=300, check=True)
+        subprocess.run(["swiftc", "-O", str(src), "-o", str(tool)], capture_output=True, timeout=300, check=True)
     except (subprocess.SubprocessError, OSError):
         return False
-    return QR_TOOL.exists()
+    return tool.exists()
 
 
 def _generic(url, resp):

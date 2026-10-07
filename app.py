@@ -98,7 +98,8 @@ def api_config():
         "model": config.CLAUDE_MODEL, "effort": config.CLAUDE_EFFORT, "backend": config.LLM_BACKEND,
         "sender": config.SENDER_EMAIL,
         "campaign": config.CURRENT_CAMPAIGN, "campaigns": sorted(c for c in camps | {config.CURRENT_CAMPAIGN} if c),
-        "statuses": records.STATUSES, "position_types": llm.POSITION_TYPES, "resume_versions": llm.RESUME_VERSIONS,
+        "statuses": records.STATUSES, "position_types": llm.POSITION_TYPES, "resume_versions": llm.RESUME_VERSIONS, "report_hints": llm.REPORT_HINTS,
+        "send_at": config.SEND_AT, "night_hours": config.NIGHT_HOURS,
         "resume": {k: rs.get(k) for k in ("ok", "error", "pages", "zh_pages", "en_pages", "grad_problems", "sha", "size_kb")},
         "report_exists": config.REPORT_PATH.exists(), "report_default_name": config.REPORT_DEFAULT_NAME,
         "report_label": config.REPORT_LABEL, "resume_default_zh": config.RESUME_DEFAULT_ZH,
@@ -136,7 +137,7 @@ def api_gmail_auth():
 
 @app.route("/api/resume-preview")
 def api_resume_preview():
-    version = request.args.get("version", "双语")
+    version = request.args.get("version", "中文")
     files = resume.build_resume_files(version, "简历预览.pdf", "Resume-Preview.pdf")
     idx = min(int(request.args.get("i", 0)), len(files) - 1)
     name, data = files[idx]
@@ -147,7 +148,7 @@ def api_resume_preview():
 def api_resume_download():
     """网申用：按 JD 要求的文件名下载对应版本的简历。"""
     data = _body()
-    files = resume.build_resume_files(data.get("version", "双语"),
+    files = resume.build_resume_files(data.get("version", "中文"),
                                       checks.sanitize_filename(data.get("filename"), config.RESUME_DEFAULT_ZH),
                                       data.get("filename_en", ""))
     idx = min(int(data.get("i", 0)), len(files) - 1)
@@ -185,7 +186,8 @@ def api_analyze():
     try:
         out = pipeline.analyze(d.get("jd_text", ""), source_label=d.get("source_label", ""),
                                target_job=d.get("target_job", ""), position_hint=d.get("position_hint", ""),
-                               resume_hint=d.get("resume_hint", ""), extra=d.get("extra", ""))
+                               resume_hint=d.get("resume_hint", ""), report_hint=d.get("report_hint", ""),
+                               extra=d.get("extra", ""))
     except (ValueError, llm.LLMError) as e:
         return _err(str(e))
     if not out.get("ok"):
@@ -236,6 +238,44 @@ def api_send():
     if qid:
         jobqueue.mark_done(qid, "已存草稿" if out["mode"] == "草稿" else "已发送", out.get("record_id", ""))
     return jsonify(out)
+
+
+@app.route("/api/schedule", methods=["POST"])
+def api_schedule():
+    """晚上点了发送：这封原样存好，明早 config.SEND_AT 由面板自己发（只用于队列里的条目）。"""
+    d = _body()
+    qid = d.get("queue_id")
+    if not qid:
+        return _err("只有队列里的邮件能定时发送")
+    result = pipeline._normalize_edits(dict(d.get("result") or {}))
+    rev = pipeline.review(result, d.get("jd_text", ""), source_label=d.get("source_label", ""))
+    errors = [i for i in rev["issues"] if i["level"] == "error"]
+    if errors and d.get("force") is not True:
+        return _err("还有必须处理的问题，没有定时", 409, issues=rev["issues"])
+    auth = gmail_client.auth_status()  # 现在就确认 Gmail 能用，免得明早到点才发现发不出去
+    if not auth.get("ok"):
+        return _err(auth.get("error") or "Gmail 用不了", 401, need_auth=True)
+    it = jobqueue.schedule(qid, result, force=d.get("force") is True)
+    if not it:
+        return _err(QUEUE_TAKEN, 409, queue_taken=True)
+    return jsonify({"ok": True, "send_at": it["send_at"]})
+
+
+@app.route("/api/queue/schedule-drafts", methods=["POST"])
+def api_queue_schedule_drafts():
+    """队列里「已存草稿」的：明早 config.SEND_AT 从 Gmail 原样发出。ids 不传 = 全部。"""
+    auth = gmail_client.auth_status()
+    if not auth.get("ok"):
+        return _err(auth.get("error") or "Gmail 用不了", 401, need_auth=True)
+    ids = _body().get("ids")
+    targets = [it["id"] for it in jobqueue.list_items() if it["status"] == "已存草稿" and (ids is None or it["id"] in ids)]
+    done = [i for i in targets if jobqueue.schedule_draft(i)]
+    return jsonify({"ok": True, "scheduled": len(done), "send_at": jobqueue.next_send_time()})
+
+
+@app.route("/api/queue/<item_id>/unschedule", methods=["POST"])
+def api_queue_unschedule(item_id):
+    return jsonify({"ok": jobqueue.unschedule(item_id)})
 
 
 @app.route("/api/record", methods=["POST"])
@@ -303,7 +343,8 @@ def api_queue():
 @app.route("/api/queue", methods=["POST"])
 def api_queue_add():
     try:
-        new = jobqueue.enqueue(_body().get("text", ""))
+        d = _body()
+        new = jobqueue.enqueue(d.get("text", ""), opts=d.get("opts"))
     except ValueError as e:
         return _err(str(e))
     return jsonify({"ok": True, "added": len(new)})
@@ -322,6 +363,19 @@ def api_queue_delete(item_id):
     return jsonify({"ok": jobqueue.delete(item_id)})
 
 
+@app.route("/api/queue/<item_id>/regen", methods=["POST"])
+def api_queue_regen(item_id):
+    """按补充要求重写（后台做，写好存回这一条）。"""
+    d = _body()
+    opts = {k: d.get(k) for k in jobqueue.OPT_KEYS}
+    return jsonify({"ok": jobqueue.regen(item_id, jd_text=d.get("jd_text", ""), target_job=d.get("target_job"), opts=opts) is not None})
+
+
+@app.route("/api/queue/<item_id>/skip", methods=["POST"])
+def api_queue_skip(item_id):
+    return jsonify({"ok": jobqueue.skip(item_id)})
+
+
 @app.route("/api/queue/<item_id>/retry", methods=["POST"])
 def api_queue_retry(item_id):
     return jsonify({"ok": jobqueue.retry(item_id)})
@@ -335,8 +389,8 @@ def api_queue_clear():
 @app.route("/api/queue/process-ready", methods=["POST"])
 def api_queue_process_ready():
     mode = _body().get("mode")
-    if mode not in ("send", "draft"):
-        return _err("发送方式不对（只能是 send 或 draft）")
+    if mode not in ("send", "draft", "schedule"):
+        return _err("发送方式不对（只能是 send、draft 或 schedule）")
     try:
         out = jobqueue.process_ready(mode=mode)
     except jobqueue.Busy as e:
@@ -428,5 +482,7 @@ if __name__ == "__main__":
     resumed = jobqueue.resume_pending()
     if resumed:
         print(f"批量队列：接着处理上次没做完的 {resumed} 条")
+    jobqueue.start_scheduler()   # 定时发送：到点由面板自己发
+    threading.Thread(target=jobqueue.refresh_issues, daemon=True).start()   # 旧条目按现在的规则重新检查一遍
     print(f"投递面板：http://localhost:5001   模型：{config.CLAUDE_MODEL}   代理：{config.PROXY or '无'}")
     app.run(host="127.0.0.1", port=5001, debug=False, threaded=True)

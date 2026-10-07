@@ -26,6 +26,7 @@ COMPANY_TYPES = [
 ]
 POSITION_TYPES = ["全职", "留用实习", "实习", "不明确"]
 RESUME_VERSIONS = ["双语", "中文", "英文", "中英两份"]
+REPORT_HINTS = ["附上", "不附"]   # 本人指定附不附研究样本（不指定 = 按 JD 判断）
 
 
 def _obj(props, order=None):
@@ -49,6 +50,7 @@ ANALYSIS_SCHEMA = _obj({
     "focus_industry": _STR,
     "job_post_date": _STR,
     "deadline": _STR,
+    "source_name": _STR,
     "jd_language": {"type": "string", "enum": ["中文", "英文"]},
     "apply_channel": {"type": "string", "enum": ["邮箱", "网申/链接", "邮箱+网申", "不明确"]},
     "to_emails": _STRS,
@@ -297,18 +299,20 @@ def today_line(now=None):
     return f"今天是 {now:%Y-%m-%d}（星期{WEEKDAYS[now.weekday()]}）。"
 
 
-def analyze_jd(jd_text, *, source_label="", target_job="", position_hint="",
-               resume_hint="", extra="", now=None):
-    """分析 JD 并生成投递邮件。返回 (result_dict, meta)。"""
+def analyze_jd(jd_text, *, target_job="", position_hint="", resume_hint="", report_hint="", extra="", now=None):
+    """分析 JD 并生成投递邮件。返回 (result_dict, meta)。
+    招聘信息来源不告诉 AI：邮件里一律不写来源，来源只进本人的投递记录。"""
     head = [today_line(now)]
-    if source_label:
-        head.append(f"招聘信息来源：{source_label}")
     if target_job:
         head.append(f"目标岗位：{target_job}（文章里有多个岗位，只针对这个岗位）")
     if position_hint:
         head.append(f"本人指定：岗位类型按「{position_hint}」处理。")
     if resume_hint:
         head.append(f"本人指定：简历版本用「{resume_hint}」。")
+    if report_hint == "附上":
+        head.append("本人指定：这次附上研究样本（attach_report 填 true，正文按「研究样本」的规则提一句）。")
+    elif report_hint == "不附":
+        head.append("本人指定：这次不附研究样本（attach_report 填 false，正文不要提研究样本）。")
     if extra:
         head.append(f"本人补充要求（优先满足，但不能违反候选人档案里的事实）：{extra}")
     content = "\n".join(head) + "\n\n【JD 原文】\n" + jd_text.strip()
@@ -358,6 +362,19 @@ def ocr_images(images):
     data, _ = _call(system="你是精确的中文 OCR 转写助手，只输出 JSON。", content=prompt, images=images,
                     schema=schema, effort=config.CLAUDE_EFFORT_LIGHT, max_tokens=12000)
     return data.get("text", "").strip()
+
+
+EMAIL_PICK_SCHEMA = _obj({"email": _STR, "sure": {"type": "boolean"}})
+
+
+def read_email_from_images(images, candidates):
+    """两种识别方法对图片里的投递邮箱认得不一样：盯着图片逐个字符再认一次。返回 {"email", "sure"}。"""
+    prompt = ("这些图片来自一篇招聘文章。两种文字识别对图片里的投递邮箱认得不一样，候选：" + "、".join(candidates) +
+              "。请只看图片，逐个字符核对（特别注意 rn 和 m、l 和 1 和 I、0 和 o、- 和 _ 和 .），"
+              "写出图片里实际印着的那个邮箱地址。候选都不对就写你看到的；看不清就 sure 填 false。")
+    data, _ = _call(system="你是逐字核对邮箱地址的助手，只输出 JSON。", content=prompt, images=images,
+                    schema=EMAIL_PICK_SCHEMA, effort=config.CLAUDE_EFFORT_LIGHT, max_tokens=600)
+    return data
 
 
 # ── Gmail 已发送邮件分类（同步历史投递用）──────────────────────

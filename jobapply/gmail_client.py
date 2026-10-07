@@ -27,6 +27,8 @@ from urllib3.exceptions import ProxyError as Urllib3ProxyError
 from . import config
 
 API = "https://gmail.googleapis.com/gmail/v1/users/me"
+# 发信 / 存草稿走上传接口（整封邮件原样上传，上限 35MB）：普通接口整封超过约 5MB 会 413，带 4MB 研究样本的信发不出去
+UPLOAD = "https://gmail.googleapis.com/upload/gmail/v1/users/me"
 
 
 class GmailAuthError(Exception):
@@ -146,21 +148,22 @@ def build_mime(*, to, cc, subject, body, attachments):
     return msg
 
 
-def _raw(msg):
-    return base64.urlsafe_b64encode(msg.as_bytes()).decode()
-
-
 def _never_connected(e):
     """requests 的连接错误里，哪些说明请求根本没到 Gmail（DNS / 连不上 / 代理 / 连接超时）。"""
     reason = getattr(e.args[0], "reason", None) if e.args else None
     return isinstance(reason, (NewConnectionError, ConnectTimeoutError, Urllib3ProxyError, NameResolutionError))
 
 
-def _post_once(path, payload):
-    """发信 / 建草稿：只发一次，绝不重试（googleapiclient 底下的 httplib2 遇到断线会悄悄重发 POST，所以不用它）。
+def _post_once(path, mime):
+    """发信 / 建草稿：整封邮件（bytes）走上传接口。"""
+    return _request_once(UPLOAD + path, params={"uploadType": "media"}, data=mime, headers={"Content-Type": "message/rfc822"})
+
+
+def _request_once(url, **kw):
+    """发信类请求只发一次，绝不重试（googleapiclient 底下的 httplib2 遇到断线会悄悄重发 POST，所以不用它）。
     连不上 / 4xx → SendFailed（肯定没发出）；读超时 / 中途断线 / 5xx → SendUncertain（可能已经发出）。"""
     try:
-        resp = _session().post(API + path, json=payload, timeout=(20, 120))
+        resp = _session().post(url, timeout=(20, 180), **kw)
     except RefreshError as e:
         raise GmailAuthError(AUTH_HINT) from e
     except (requests.exceptions.ConnectTimeout, requests.exceptions.ProxyError, requests.exceptions.SSLError) as e:
@@ -185,12 +188,18 @@ def _post_once(path, payload):
 
 
 def send(**kw):
-    sent = _post_once("/messages/send", {"raw": _raw(build_mime(**kw))})
+    sent = _post_once("/messages/send", build_mime(**kw).as_bytes())
+    return {"message_id": sent["id"], "thread_id": sent.get("threadId", "")}
+
+
+def send_draft(draft_id):
+    """把 Gmail 里已经存着的草稿发出去（草稿在 Gmail 里改过的话，发的是改过的）。"""
+    sent = _request_once(API + "/drafts/send", json={"id": draft_id})
     return {"message_id": sent["id"], "thread_id": sent.get("threadId", "")}
 
 
 def create_draft(**kw):
-    d = _post_once("/drafts", {"message": {"raw": _raw(build_mime(**kw))}})
+    d = _post_once("/drafts", build_mime(**kw).as_bytes())
     return {"draft_id": d["id"], "message_id": d["message"]["id"], "thread_id": d["message"].get("threadId", "")}
 
 

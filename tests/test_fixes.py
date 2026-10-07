@@ -46,10 +46,10 @@ def test_exact_email_passes_and_obfuscated_warns():
         assert lv == ["warn"], (jd, lv)
 
 
-def test_email_read_from_image_warns():
+def test_email_read_from_image_no_warning():
+    """图片里的邮箱抓取时已自动双重核对：不再提示你去看图。"""
     jd = "某资本招聘，详见下图。\n\n" + checks.OCR_MARKER + "\n投递邮箱：hr@abc-capital.com"
-    issues = to_issues(jd)
-    assert len(issues) == 1 and issues[0]["level"] == "warn" and "图片" in issues[0]["msg"]
+    assert to_issues(jd) == []
     # 正文里本来就打出来的邮箱，不算图片识别的
     jd2 = "投递邮箱：hr@abc-capital.com\n\n" + checks.OCR_MARKER + "\n投递邮箱：hr@abc-capital.com"
     assert to_issues(jd2) == []

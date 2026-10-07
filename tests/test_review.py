@@ -215,10 +215,11 @@ class FakeResp:
 
 class FakeSession:
     def __init__(self, outcome):
-        self.outcome, self.posts = outcome, 0
+        self.outcome, self.posts, self.calls = outcome, 0, []
 
-    def post(self, url, json=None, timeout=None):
+    def post(self, url, **kw):
         self.posts += 1
+        self.calls.append((url, kw))
         if isinstance(self.outcome, Exception):
             raise self.outcome
         return self.outcome
@@ -243,7 +244,7 @@ def test_post_once_classifies_and_never_retries(monkeypatch, outcome, expect):
     sess = FakeSession(outcome)
     monkeypatch.setattr(gmail_client, "_session", lambda: sess)
     with pytest.raises(expect):
-        gmail_client._post_once("/messages/send", {"raw": "x"})
+        gmail_client._post_once("/messages/send", b"x")
     assert sess.posts == 1
 
 

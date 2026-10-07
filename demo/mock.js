@@ -10,8 +10,8 @@
   };
   const CUR = '2026秋·全职+留用实习', OLD = '2026春·实习';
   const body = (greet, job, line) => `${greet}\n\n我是张三，某大学硕士在读，2027年6月毕业，人在上海，两周内可到岗，每周5天，可实习6个月以上，申请贵司${job}岗位。\n\n${line}\n\n简历见附件，期待有机会进一步交流。\n\n张三\n`;
-  const L1 = '我目前在A资本做半导体与AI基础设施方向的股权投资实习，从16个维度对比过四类新型存储并完成20页行业研究；此前在B资本有两段股权投资实习，覆盖航空航天和先进制造。';
-  const L2 = '我目前在A资本实习，参与了某半导体材料项目（拟投5000万元）的立项和某设备项目（拟投4000万元）的投决；此前在B资本参与一家航空航天头部企业的成长期融资，做了商业尽调和可比公司估值。';
+  const L1 = '我目前在A资本做半导体方向的投资实习，参与了行业研究和两个项目的立项、投决材料准备；此前在B资本参与过一个先进制造方向的成长期项目。';
+  const L2 = '我目前在A资本实习，参与了两个项目的立项和投决材料准备；此前在B资本参与一个成长期项目，做了专家访谈、商业尽调和可比公司估值。';
   let id = 0;
   const rec = (o) => Object.assign({
     id: 'demo' + (++id), campaign: CUR, status: '已投递', send_mode: '发送', source_type: '网页面板',
@@ -22,7 +22,7 @@
   const RECORDS = [
     rec({company_name: '某硬科技PE C', company_type: '人民币VC', job_title: '投资分析师（半导体方向）', position_type: '全职', job_location: '上海', focus_industry: '半导体', sent_at: ts(0, 9, 12), to_email: 'campus@example-c.com', subject: '2027校招-投资分析师-张三-某大学-硕士', email_body: body('您好，', '投资分析师', L2)}),
     rec({company_name: '某美元VC A', company_type: '美元VC', job_title: '投资实习生（可留用）', position_type: '留用实习', job_location: '上海', focus_industry: 'AI/硬科技', sent_at: ts(1, 21, 5), to_email: 'talent@example-a.com', subject: '【投资实习生+张三+某大学+2027届+每周5天共6月】', status: '已电联', reply_status: '有回复', reply_at: ts(0, 11, 20), reply_from: 'talent@example-a.com', reply_snippet: '同学你好，简历已收到，方便明天下午电话聊一下吗？', attach_report: true, email_body: body('您好，', '投资实习生', L1)}),
-    rec({company_name: '某产业资本 D', company_type: '产业资本/CVC/战投', job_title: '投资部实习生（可转正）', position_type: '留用实习', job_location: '北京', focus_industry: '新能源/储能', sent_at: ts(2, 10, 40), to_email: 'invest_hr@example-d.com', subject: '实习生-张三-某大学-6个月', status: '面试中', reply_status: '有回复', reply_at: ts(1, 15, 2), reply_from: 'hr@example-d.com', reply_snippet: '【面试邀请】请于周四下午参加线上面试…', notes: '周四 14:00 线上一面', email_body: body('李女士您好，', '投资部实习生', '我在家族企业C集团担任董事长助理期间，协助比较SCR脱硝、余热回收、光伏等技改的CAPEX与回收期；目前在A资本做股权投资实习，参与项目立项与投决。')}),
+    rec({company_name: '某产业资本 D', company_type: '产业资本/CVC/战投', job_title: '投资部实习生（可转正）', position_type: '留用实习', job_location: '北京', focus_industry: '新能源/储能', sent_at: ts(2, 10, 40), to_email: 'invest_hr@example-d.com', subject: '实习生-张三-某大学-6个月', status: '面试中', reply_status: '有回复', reply_at: ts(1, 15, 2), reply_from: 'hr@example-d.com', reply_snippet: '【面试邀请】请于周四下午参加线上面试…', notes: '周四 14:00 线上一面', email_body: body('李女士您好，', '投资部实习生', '我目前在A资本做投资实习，参与了两个项目的立项和投决材料准备，做过技术、市场和客户研究，也关注储能和新能源方向的产业链。')}),
     rec({company_name: '某券商直投 E', company_type: '券商/投行/FA', job_title: '股权投资分析师', position_type: '全职', job_location: '深圳', focus_industry: '先进制造', sent_at: ts(3, 14, 18), to_email: 'zhaopin@example-e.com', subject: '股权投资分析师申请 - 张三｜某大学（2027届）', email_body: body('您好，', '股权投资分析师', L2)}),
     rec({company_name: '某双币基金 G', company_type: '双币VC/PE', job_title: 'Investment Analyst Intern', position_type: '实习', job_location: '香港/上海', focus_industry: '半导体/AI', sent_at: ts(3, 16, 30), to_email: 'recruiting@example-g.com', subject: 'Intern Application – San Zhang – Example University', resume_version: '英文', attachments: [{kind: '简历', filename: 'San Zhang-ExampleU-Resume.pdf', version: '英文'}], email_body: 'Dear Ms. Chen,\n\nI\'m San Zhang, a master\'s student at Example University (graduating June 2027). I\'m based in Shanghai and can start within two weeks, five days a week.\n\nI\'m currently a private equity intern at A Capital covering semiconductors and AI infrastructure.\n\nMy resume is attached. I\'d welcome the chance to discuss the role.\n\nBest regards,\nSan Zhang\n'}),
     rec({company_name: '某国资基金 F', company_type: '国资/政府引导基金', job_title: '投资经理助理', position_type: '全职', job_location: '苏州', focus_industry: '硬科技', sent_at: ts(4, 11, 0), to_email: 'hr@example-f.com', subject: '投资经理助理申请 - 张三｜某大学（2027届）', reply_status: '退信', reply_at: ts(4, 11, 2), reply_from: 'mailer-daemon@googlemail.com', reply_snippet: '找不到地址：系统找不到电子邮件地址 hr@example-f.com…', email_body: body('您好，', '投资经理助理', L2)}),
@@ -31,7 +31,7 @@
       platform: '飞书', reply_status: '自动回复', reply_at: ts(6, 13, 30), reply_from: 'noreply@example.com', reply_snippet: '【某大厂战投 I】感谢您的投递，我们已收到您的申请…',
       wangshen: {platform: '飞书', self_intro_short: '我是张三，某大学硕士在读，2027年6月毕业，两周内可到岗，每周5天，可实习6个月以上。目前在A资本做半导体与AI基础设施方向的股权投资实习。',
         why_this_role: '贵司战投部重点看 AI 产业链，这和我在A资本覆盖的半导体与AI基础设施方向一致……',
-        custom_answers: [{question: '请介绍一个你研究过的项目', answer: '我参与过某设备项目（拟投4000万元）的投决，负责技术、市场、竞争与客户研究……'}]}}),
+        custom_answers: [{question: '请介绍一个你研究过的项目', answer: '我参与过一个设备项目的投决材料准备，负责技术、市场、竞争与客户研究……'}]}}),
     rec({company_name: '某人民币VC B', company_type: '人民币VC', job_title: '投资实习生', position_type: '实习', job_location: '上海', focus_industry: '半导体', sent_at: ts(9, 10, 10), to_email: 'hr@example-b.com', subject: '投资实习生申请 - 张三｜某大学', status: 'offer', reply_status: '有回复', reply_at: ts(6, 18, 0), reply_from: 'hr@example-b.com', reply_snippet: '恭喜你通过面试，offer 详见附件…', notes: '已收 offer，考虑中', email_body: body('您好，', '投资实习生', L1)}),
     rec({company_name: '某美元VC J', company_type: '美元VC', job_title: 'Growth 投资分析师', position_type: '全职', job_location: '北京', focus_industry: 'TMT', sent_at: ts(11, 9, 50), to_email: 'careers@example-j.com', subject: 'Growth 投资分析师申请 - 张三｜某大学（2027届）', status: '拒绝', email_body: body('您好，', 'Growth 投资分析师', L2)}),
     rec({company_name: '某医疗基金 K', company_type: 'PE/并购基金', job_title: '投资实习生', position_type: '实习', job_location: '上海', focus_industry: '医疗健康', sent_at: ts(12, 15, 0), to_email: 'intern@example-k.com', subject: '投资实习生申请 - 张三｜某大学', reply_status: '自动回复', reply_at: ts(12, 15, 1), reply_from: 'intern@example-k.com', reply_snippet: '您好，邮件已收到，我们会尽快处理。', email_body: body('您好，', '投资实习生', L2)}),
@@ -63,15 +63,15 @@
     resume_version: '双语', resume_filename: '2027校招-投资分析师-张三-某大学-硕士.pdf', resume_filename_en: '',
     attach_report: true, report_filename: '张三-公司研究报告.pdf', attach_resume: true,
     email_subject: '2027校招-投资分析师-张三-某大学-硕士',
-    email_body: '您好，\n\n我是张三，某大学硕士，2027年6月毕业，应聘贵司投资分析师（半导体方向）岗位。\n\n我目前在A资本做半导体与AI基础设施方向的股权投资实习，从16个维度对比四类新型存储并完成20页行业研究，也参与了某半导体材料项目（拟投5000万元）的立项和某设备项目（拟投4000万元）的投决；此前在B资本有两段股权投资实习，覆盖航空航天和先进制造。\n\n简历见附件，另附一份我做过的公司研究样本，供参考。\n\n张三\n',
+    email_body: '您好，\n\n我是张三，某大学硕士，2027年6月毕业，应聘贵司投资分析师（半导体方向）岗位。\n\n我目前在A资本做半导体方向的投资实习，参与了行业研究和两个项目的立项、投决材料准备；此前在B资本参与过一个先进制造方向的成长期项目，做了专家访谈和可比公司估值。\n\n简历见附件，另附一份我做过的公司研究样本，供参考。\n\n张三\n',
   };
   // 网申（演示）：「我的资料」页的固定栏目 + AI 写的网申问答
-  const KIT = {"_说明": "网申表格常用字段示例（虚构人物「张三」）。复制为 application_kit.json 后换成你自己的信息：经历描述直接贴简历原文，tests/test_kit.py 会核对这些内容都能在简历 PDF 里找到。", "基本信息": [["姓名", "张三"], ["英文名", "San Zhang"], ["手机", "138xxxxxxxx"], ["微信", "138xxxxxxxx"], ["邮箱", "your.email@gmail.com"], ["现居城市", "上海"]], "教育经历": [{"学校": "某大学（Example University）", "学院": "某学院", "专业": "某专业（硕士）", "学历": "硕士", "起止时间": "2024.09 - 2027.06", "补充": ""}, {"学校": "某大学", "学院": "工程学院", "专业": "某专业（学士）", "学历": "本科", "起止时间": "2019.08 - 2024.05", "补充": "GPA：3.7/4.0"}], "实习经历": [{"公司": "A资本", "职位": "股权投资实习生", "部门/方向": "半导体与AI基础设施", "地点": "上海", "起止时间": "2026.04 - 至今", "精简描述": "协助MD搭建AI基础设施研究框架，完成30页《AI基础设施投资概览》及多份募资材料；从16个维度对比四类新型存储，完成20页行业研究；参与某半导体材料项目立项和某设备项目投决；累计自主Source十余个项目。", "完整描述": ["AIDC投资主题研究与募资支持：协助MD搭建研究框架，完成30页《AI基础设施投资概览》及多份募资材料，支持MD向LP汇报", "计算与存储：从16个维度对比四类新型存储与传统存储，完成20页行业研究", "项目立项与投决：参与某半导体材料项目（拟投5000万元）立项；参与某设备项目（拟投4000万元）投决，完成技术、市场、竞争与客户研究", "项目拓展：通过FA、产业链人脉、投资机构及展会等方式累计自主Source十余个项目"]}, {"公司": "B资本", "职位": "股权投资实习生", "部门/方向": "航空航天", "地点": "上海", "起止时间": "2024.06 - 2024.08", "精简描述": "参与某航空航天头部企业成长期融资项目（拟投资1亿元）：Mapping及10+位专家访谈、市场空间测算、商业尽调和可比公司估值。", "完整描述": ["参与某航空航天头部企业成长期融资项目（拟投资1亿元）：Mapping及10+位专家访谈、市场空间测算、商业尽调（订单结构、客户集中度、交付节奏）、可比公司估值"]}], "求职意向": [["毕业时间", "2027年6月（2027届）"], ["实习到岗时间", "两周内可到岗"], ["每周实习天数", "5天"], ["实习时长", "6个月以上"], ["全职入职时间", "2027年7月（毕业前可先以实习形式到岗）"], ["期望城市", "上海"], ["期望薪资", "[待填]"]], "技能与其他": [["语言", "英语（可作为工作语言）"], ["工具", "Office、Wind、Capital IQ、Python"], ["AI 工具", "熟练使用Claude Code等工具，独立搭建AI会议纪要与PPT生成Skill"]]};
+  const KIT = {"_说明": "网申表格常用字段示例（虚构人物「张三」，经历也是虚构的）。复制为 application_kit.json 后换成你自己的信息：经历描述直接贴简历原文，tests/test_kit.py 会核对这些内容都能在简历 PDF 里找到。", "基本信息": [["姓名", "张三"], ["英文名", "San Zhang"], ["手机", "138xxxxxxxx"], ["微信", "138xxxxxxxx"], ["邮箱", "your.email@gmail.com"], ["现居城市", "上海"]], "教育经历": [{"学校": "某大学（Example University）", "学院": "某学院", "专业": "某专业（硕士）", "学历": "硕士", "起止时间": "2025.09 - 2027.06", "补充": ""}, {"学校": "某大学", "学院": "某学院", "专业": "某专业（学士）", "学历": "本科", "起止时间": "2021.09 - 2025.06", "补充": ""}], "实习经历": [{"公司": "A资本", "职位": "投资实习生", "部门/方向": "半导体与硬科技", "地点": "上海", "起止时间": "2026 - 至今", "精简描述": "参与半导体方向的行业研究，完成一份行业研究报告；参与两个项目的立项和投决材料准备；参与项目初筛。", "完整描述": ["行业研究：参与半导体方向的行业研究，整理产业链和竞争格局，完成一份行业研究报告", "项目工作：参与两个项目的立项和投决材料准备，负责技术、市场、竞争与客户研究", "项目筛选：参与项目初筛，整理专家访谈纪要"]}, {"公司": "B资本", "职位": "投资实习生", "部门/方向": "先进制造", "地点": "上海", "起止时间": "2025 年暑期", "精简描述": "参与一个成长期项目：专家访谈、市场空间测算、商业尽调和可比公司估值。", "完整描述": ["参与一个成长期项目：专家访谈、市场空间测算、商业尽调和可比公司估值"]}], "求职意向": [["毕业时间", "2027年6月（2027届）"], ["实习到岗时间", "两周内可到岗"], ["每周实习天数", "5天"], ["实习时长", "6个月以上"], ["全职入职时间", "2027年7月（毕业前可先以实习形式到岗）"], ["期望城市", "上海"], ["期望薪资", "[待填]"]], "技能与其他": [["语言", "英语（可作为工作语言）"], ["工具", "Office、Wind、Python"], ["AI 工具", "会用常见 AI 工具做数据整理与自动化"]]};
   const WS_KIT = {platform: '飞书', apply_steps: ['打开飞书招聘链接，选择「投资实习生」岗位', '登录 / 注册飞书招聘账号', '上传中文简历（单页），核对自动解析出的教育和实习经历', '在问答题里粘贴下方答案，核对后提交'],
     self_intro_short: '我是张三，某大学硕士在读，2027年6月毕业。人在上海，两周内可到岗，每周5天，可实习6个月以上。目前在A资本做半导体与AI基础设施方向的股权投资实习，此前在B资本做过两段股权投资实习。',
-    self_intro: '我是张三，某大学硕士在读，2027年6月毕业。人在上海，两周内可到岗，每周5天，可以连续实习6个月以上。目前在A资本做半导体与AI基础设施方向的股权投资实习：从16个维度对比了四类新型存储，完成20页行业研究；参与了某半导体材料项目（拟投5000万元）的立项和某设备项目（拟投4000万元）的投决；累计自主Source十余个项目。此前在B资本做过两段股权投资实习，方向是航空航天和先进制造。',
+    self_intro: '我是张三，某大学硕士在读，2027年6月毕业。人在上海，两周内可到岗，每周5天，可以连续实习6个月以上。目前在A资本做半导体方向的投资实习：参与行业研究并完成一份行业研究报告，参与两个项目的立项和投决材料准备。此前在B资本参与过一个先进制造方向的成长期项目。',
     why_this_role: '贵司专注硬科技早期投资，重点看半导体和先进制造，正好是我实习做过的方向。岗位要做的行业研究、项目筛选和尽调，也是我现在日常在做的事。我可以每周到岗5天、连续实习6个月以上，也希望有机会留用。',
-    fit_points: '1. 赛道对口：在A资本覆盖存储、先进封装等方向，完成过30页《AI基础设施投资概览》。\n2. 项目流程：参与过项目立项和投决，做过专家访谈、商业尽调和可比公司估值。\n3. 时间：两周内到岗，每周5天，6个月以上。',
+    fit_points: '1. 赛道对口：在A资本覆盖半导体方向，完成过一份行业研究报告。\n2. 项目流程：参与过项目立项和投决，做过专家访谈、商业尽调和可比公司估值。\n3. 时间：两周内到岗，每周5天，6个月以上。',
     custom_answers: [{question: '你最看好的一个硬科技细分赛道是什么？为什么？（300字以内）', answer: '我最看好新型存储。AI 推理对内存带宽和容量的需求增长很快……（演示：真实版本由 AI 按你的简历和这个岗位写）'}],
     notes: ['截止时间：2026-10-31，建议尽早提交', '飞书网申需要先注册账号；上传简历后要核对自动解析的结果', '表单如果问期望薪资，需要你自己填写 [待填]']};
   const RELATED = [{id: 'demo0', sent_at: '2026-04-15 15:00', company_name: '某硬科技PE M', job_title: '投资实习生', status: 'offer', campaign: OLD, position_type: '实习', match: '机构名相近'}];
@@ -186,6 +186,22 @@
     if (path === '/api/queue/clear-done') { for (let k = QUEUE.length - 1; k >= 0; k--) if (['已发送', '已存草稿', '已记录'].includes(QUEUE[k].status)) QUEUE.splice(k, 1); return json({ok: true}); }
     if (path === '/api/queue/process-ready') return json({done: [], skipped: QUEUE.filter(x => x.status === '待审核').map(x => x.analysis.result.company_name + '：演示版不会真的发送')});
     if (path.startsWith('/api/queue/') && method === 'DELETE') { const k = QUEUE.findIndex(x => path.endsWith(x.id)); if (k >= 0) QUEUE.splice(k, 1); return json({ok: true}); }
+    if (path === '/api/schedule') {   // 演示：定时发送（不会真的发）
+      const it = QUEUE.find(x => x.id === body.queue_id);
+      if (it) Object.assign(it, {status: '已定时', send_at: '明天 10:00', updated_at: 's' + Date.now()});
+      return json({ok: !!it, send_at: '2099-01-01 10:00'});
+    }
+    if (path === '/api/queue/schedule-drafts') {
+      const ds = QUEUE.filter(x => x.status === '已存草稿');
+      ds.forEach(x => Object.assign(x, {status: '已定时', send_at: '明天 10:00', updated_at: 'd' + Date.now()}));
+      return json({ok: true, scheduled: ds.length, send_at: '2099-01-01 10:00'});
+    }
+    if (path.endsWith('/regen')) {   // 演示：重写 4 秒后「写好」
+      const it = QUEUE.find(x => path.includes(x.id));
+      if (it) { Object.assign(it, {status: '重写中', updated_at: 'g' + Date.now()});
+        setTimeout(() => Object.assign(it, {status: '待审核', rev: 'r' + Date.now(), updated_at: 'h' + Date.now()}), 4000); }
+      return json({ok: !!it});
+    }
     if (path.startsWith('/api/queue/')) return json({ok: true});
     if (path === '/api/check-replies') { await sleep(900); return json({ok: true, logs: ['（演示）检查 12 条记录的回复…', '完成：3 条有回复 / 来信，1 条退信']}); }
     if (path === '/api/gmail-sync') { await sleep(900); return json({ok: true, logs: ['（演示）Gmail 已发送里没有遗漏的投递']}); }
@@ -197,8 +213,6 @@
     bar.className = 'fixed bottom-0 md:bottom-auto md:top-0 left-0 right-0 z-[80] bg-amber-400 text-amber-950 text-xs text-center py-1 font-bold';
     bar.textContent = '演示版：所有机构、邮箱、人物均为虚构，不连接 AI、不会发送任何邮件';
     document.body.appendChild(bar);
-    document.getElementById('jdInput').value = DEMO_JD;
-    document.getElementById('sourceInput').value = '某招聘公众号（公众号）';
     ['previewResume', 'downloadResume', 'exportBtn', 'wsResumeDl'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.addEventListener('click', e => { e.preventDefault(); e.stopImmediatePropagation(); if (window.toast) toast('演示版不提供文件下载'); }, true);

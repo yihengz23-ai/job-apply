@@ -1,5 +1,6 @@
 """流程编排（网页面板和剪贴板模式共用）：分析 → 自动修正 → 检查 → 发送/存草稿 → 记录。"""
 
+import re
 import time
 from datetime import datetime
 
@@ -23,8 +24,14 @@ def _resume_public(rs):
     return {k: rs.get(k) for k in ("ok", "error", "pages", "zh_pages", "en_pages", "grad_problems", "sha", "size_kb")}
 
 
+def source_of(result, source_label=""):
+    """招聘信息来源（只进自己的投递记录，不写进邮件）：抓链接时的公众号名 / 网站，没有就用 AI 从 JD 文字里认出来的。"""
+    return (source_label or "").strip() or ((result or {}).get("source_name") or "").strip()
+
+
 def review(result, jd_text, *, source_label="", exclude_id=None):
     profile, rules = _texts()
+    source_label = source_of(result, source_label)
     emails = (result.get("to_emails") or []) + (result.get("cc_emails") or [])
     related = records.find_related(result.get("company_name", ""), emails, exclude_id=exclude_id)
     rs = resume.resume_status()
@@ -33,17 +40,26 @@ def review(result, jd_text, *, source_label="", exclude_id=None):
     return {"issues": issues, "related": related, "resume": _resume_public(rs)}
 
 
-def analyze(jd_text, *, source_label="", target_job="", position_hint="", resume_hint="", extra=""):
+def analyze(jd_text, *, source_label="", target_job="", position_hint="", resume_hint="", report_hint="", extra=""):
     if len((jd_text or "").strip()) < 50:
         raise ValueError("JD 内容太短（至少 50 字），请粘贴完整的招聘信息。")
-    result, meta = llm.analyze_jd(jd_text, source_label=source_label, target_job=target_job,
-                                  position_hint=position_hint, resume_hint=resume_hint, extra=extra)
+    position_hint = position_hint if position_hint in llm.POSITION_TYPES else ""
+    resume_hint = resume_hint if resume_hint in llm.RESUME_VERSIONS else ""
+    report_hint = report_hint if report_hint in llm.REPORT_HINTS else ""
+    result, meta = llm.analyze_jd(jd_text, target_job=target_job, position_hint=position_hint,
+                                  resume_hint=resume_hint, report_hint=report_hint,
+                                  extra=extra.strip() if isinstance(extra, str) else "")
     if not result.get("is_jd", True):
         return {"ok": False, "error": "这段内容看起来不是招聘信息：" + (result.get("not_jd_reason") or ""), "meta": meta}
     if position_hint:
         result["position_type"] = position_hint
     if resume_hint:
         result["resume_version"] = resume_hint
+    elif (result.get("resume_version") == "双语" and result.get("company_type") != "双币VC/PE"
+          and not re.search(r"中英|英文简历|双语|english", jd_text, re.I)):
+        result["resume_version"] = "中文"   # 默认只发中文页：双币基金、JD 要中英文时才发双语
+    if report_hint:
+        result["attach_report"] = report_hint == "附上"
     result["attach_resume"] = True
     fixes = checks.autofix(result, jd_text)
     return {"ok": True, "result": result, "fixes": fixes, "meta": meta,
@@ -80,7 +96,7 @@ def _record_fields(result, jd_text, *, source_label, source_url, target_job, pub
         apply_url=result.get("apply_url", ""), apply_channel=result.get("apply_channel", ""),
         to_email="; ".join(result.get("to_emails") or []), cc_email="; ".join(result.get("cc_emails") or []),
         subject=result.get("email_subject", ""), email_body=result.get("email_body", ""),
-        jd_text=jd_text, job_source=source_label, source_url=source_url, target_job=target_job,
+        jd_text=jd_text, job_source=source_of(result, source_label), source_url=source_url, target_job=target_job,
         language=result.get("jd_language", ""), source_type=source_type, model=config.CLAUDE_MODEL,
     )
 
@@ -103,7 +119,7 @@ def deliver(result, jd_text, *, mode="send", force=False, source_label="", sourc
         raise Blocked(rev["issues"])
 
     attachments, att_meta = [], []
-    version = result.get("resume_version") or "双语"
+    version = result.get("resume_version") or "中文"
     if result.get("attach_resume", True):
         for name, data in resume.build_resume_files(version, result["resume_filename"],
                                                     result.get("resume_filename_en", "")):
@@ -156,9 +172,22 @@ def is_wangshen(result):
     return result.get("apply_channel") in ("网申/链接", "邮箱+网申") or not checks.split_emails(result.get("to_emails"))
 
 
+def send_saved_draft(record_id):
+    """定时：把之前存的 Gmail 草稿发出去，记录改成「已发送」（发送时间按真正发出的时间）。"""
+    rec = records.get(record_id) or {}
+    if rec.get("send_mode") != "草稿" or not rec.get("gmail_draft_id"):
+        raise gmail_client.SendFailed("找不到这封草稿的记录（可能已经在 Gmail 里发出或删掉了）")
+    ids = gmail_client.send_draft(rec["gmail_draft_id"])
+    records.update(record_id, {
+        "send_mode": "发送", "sent_at": records.now_str(), "sent_ts": time.time(), "gmail_draft_id": "",
+        "gmail_message_id": ids["message_id"], "gmail_thread_id": ids["thread_id"] or rec.get("gmail_thread_id", ""),
+        "status": "已投递" if rec.get("status") in ("草稿", "", None) else rec["status"]})
+    return {"ok": True, "record_id": record_id, **ids}
+
+
 def wangshen(jd_text, *, result=None, source_label="", target_job=""):
     """生成网申资料包（AI 部分）。返回 (kit, meta)。"""
-    return llm.wangshen_kit(jd_text, result=result, source_label=source_label, target_job=target_job)
+    return llm.wangshen_kit(jd_text, result=result, source_label=source_of(result, source_label), target_job=target_job)
 
 
 KIT_KEYS = ("platform", "apply_steps", "self_intro_short", "self_intro", "why_this_role", "fit_points",

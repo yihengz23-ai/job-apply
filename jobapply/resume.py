@@ -72,7 +72,7 @@ def build_resume_files(version, filename, filename_en=""):
         return [(filename, _finish(_subset(doc, en)))]
     if version == "中英两份" and zh and en:
         return [(filename, _finish(_subset(doc, zh))), (en_name, _finish(_subset(doc, en)))]
-    return [(filename, _finish(doc))]  # 双语（默认）：原件
+    return [(filename, _finish(doc))]  # 双语：原件
 
 
 def resume_version_label(version):
