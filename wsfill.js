@@ -2,7 +2,7 @@
  * wsfill.js —— 网申表单批量填写引擎（给求职投递面板里的助手用）
  *
  * 用法（在网申页面上执行）：
- *   await (0, eval)(await (await fetch('https://yihengz23-ai.github.io/job-apply/wsfill.js')).text());
+ *   await (0, eval)(await (await fetch('<本仓库 GitHub Pages 地址>/wsfill.js')).text());
  *   JSON.stringify(__wsfill.scan())            // 一次扫出整页能填的栏目（id、标题、分区、类型、选项、当前值）和「添加」按钮
  *   JSON.stringify(await __wsfill.fill([{id: 'w3', value: '汉族'}, ...]))   // 按计划批量填写，返回每项成功与否
  *   await __wsfill.clickAdd('a1')              // 点某个「添加教育经历」之类的按钮，再重新 scan
