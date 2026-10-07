@@ -109,9 +109,9 @@ tailwind.config={theme:{extend:{colors:{primary:'#005bbf'},fontFamily:{sans:['In
     <span id="queueSummary" class="text-xs text-slate-500"></span>
     <button id="queueToggle" class="text-xs text-primary font-bold">收起列表</button>
     <div class="ml-auto flex gap-2">
-      <button id="queueDraftsBtn" class="hidden px-3 py-2 bg-purple-600 text-white rounded-xl text-xs font-bold">草稿明早发出</button>
-      <button id="queueClearDone" class="px-3 py-2 bg-white border rounded-xl text-xs">清除已完成</button>
-      <button id="queueReadyBtn" class="px-3 py-2 bg-green-600 text-white rounded-xl text-xs font-bold disabled:opacity-40" disabled>一键处理就绪的</button>
+      <button id="queueClearDone" class="px-3 py-2 bg-white border rounded-xl text-xs" title="已发出 / 已记录的从这个列表里拿掉（看板里的记录不受影响）">把已发完的从列表拿掉</button>
+      <button id="queueDraftsBtn" class="hidden px-3 py-2 bg-purple-600 text-white rounded-xl text-xs font-bold" title="你存进 Gmail 草稿箱、还没发的信：明早到点由面板从 Gmail 原样发出（面板别关、电脑别合盖）">草稿定时发</button>
+      <button id="queueReadyBtn" class="px-3 py-2 bg-green-600 text-white rounded-xl text-xs font-bold disabled:opacity-40" disabled title="没有任何红色、黄色提示的邮件，一次全部发出（晚上会让你选明早自动发）；有提示的、网申的、同一篇拆出来的留给你一封封看">一键发出检查全过的</button>
     </div>
   </div>
   <section id="queueList" class="space-y-2 mb-4 max-h-[42vh] overflow-y-auto"></section>
@@ -1177,12 +1177,12 @@ function renderQueue(c) {
   const items = sortedQueue();
   const ready = S.queue.filter(isReady).length;
   if (!S.readyRunning) {  // 一键处理进行中：按钮保持「发送中…」，不被轮询刷回去
-    $('#queueReadyBtn').textContent = `一键处理就绪的（${ready}）`;
+    $('#queueReadyBtn').textContent = ready ? `检查全过的 ${ready} 封：一键发出` : '检查全过的：暂时没有';
     $('#queueReadyBtn').disabled = !ready;
   }
   $('#queueSummary').textContent = Object.entries(c).map(([k, v]) => `${k} ${v}`).join(' ｜ ') || '队列是空的';
   const drafts = S.queue.filter(x => x.status === '已存草稿' && x.record_id).length;   // 存了草稿还没发的：可以排到明早自动发
-  $('#queueDraftsBtn').textContent = `草稿全部明早 ${sendAt()} 发出（${drafts}）`;
+  $('#queueDraftsBtn').textContent = `存好的 ${drafts} 封草稿：明早 ${sendAt()} 自动发`;
   $('#queueDraftsBtn').classList.toggle('hidden', !drafts);
   $('#queueList').innerHTML = items.map(it => {
     const r = resultOf(it);
@@ -1205,7 +1205,7 @@ function renderQueue(c) {
         ${kitTip}${counts}
         ${reviewable(it) ? `<button class="q-open px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold" data-id="${esc(it.id)}">审核</button>` : ''}
         ${addWs ? `<button class="q-open px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-bold" data-id="${esc(it.id)}">补记网申</button>` : ''}
-        ${it.status === '已存草稿' && it.record_id ? `<button class="q-draft px-2 py-1.5 border border-purple-300 text-purple-700 rounded-lg text-xs" data-id="${esc(it.id)}">明早 ${sendAt()} 发出</button>` : ''}
+        ${it.status === '已存草稿' && it.record_id ? `<button class="q-draft px-2 py-1.5 border border-purple-300 text-purple-700 rounded-lg text-xs" data-id="${esc(it.id)}" title="这封草稿明早到点由面板从 Gmail 原样发出">这封草稿明早 ${sendAt()} 发</button>` : ''}
         ${it.status === '已定时' ? `<button class="q-unsched px-2 py-1.5 border rounded-lg text-xs" data-id="${esc(it.id)}">取消定时</button>` : ''}
         ${['失败', '需处理'].includes(it.status) ? `<button class="q-retry px-2 py-1.5 border rounded-lg text-xs" data-id="${esc(it.id)}">重做</button>` : ''}
         ${!done && it.status !== '发送中' ? `<button class="q-del px-2 py-1.5 text-slate-400 hover:text-red-600 text-xs" data-id="${esc(it.id)}" title="删除"><span class="material-symbols-outlined text-base">close</span></button>` : ''}

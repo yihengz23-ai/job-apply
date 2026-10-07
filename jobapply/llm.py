@@ -25,7 +25,7 @@ COMPANY_TYPES = [
     "咨询/研究", "企业/大厂", "其他",
 ]
 POSITION_TYPES = ["全职", "留用实习", "实习", "不明确"]
-RESUME_VERSIONS = ["双语", "中文", "英文", "中英两份"]
+RESUME_VERSIONS = ["中文", "双语", "英文", "中英两份"]
 REPORT_HINTS = ["附上", "不附"]   # 本人指定附不附研究样本（不指定 = 按 JD 判断）
 
 

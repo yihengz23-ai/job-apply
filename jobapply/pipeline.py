@@ -40,6 +40,15 @@ def review(result, jd_text, *, source_label="", exclude_id=None):
     return {"issues": issues, "related": related, "resume": _resume_public(rs)}
 
 
+def chinese_resume_by_default(result, jd_text):
+    """简历默认只发中文页：双币基金、JD 要中英文时才发双语。改了返回 True。"""
+    if (result.get("resume_version") == "双语" and result.get("company_type") != "双币VC/PE"
+            and not re.search(r"中英|英文简历|双语|english", jd_text or "", re.I)):
+        result["resume_version"] = "中文"
+        return True
+    return False
+
+
 def analyze(jd_text, *, source_label="", target_job="", position_hint="", resume_hint="", report_hint="", extra=""):
     if len((jd_text or "").strip()) < 50:
         raise ValueError("JD 内容太短（至少 50 字），请粘贴完整的招聘信息。")
@@ -55,9 +64,8 @@ def analyze(jd_text, *, source_label="", target_job="", position_hint="", resume
         result["position_type"] = position_hint
     if resume_hint:
         result["resume_version"] = resume_hint
-    elif (result.get("resume_version") == "双语" and result.get("company_type") != "双币VC/PE"
-          and not re.search(r"中英|英文简历|双语|english", jd_text, re.I)):
-        result["resume_version"] = "中文"   # 默认只发中文页：双币基金、JD 要中英文时才发双语
+    else:
+        chinese_resume_by_default(result, jd_text)
     if report_hint:
         result["attach_report"] = report_hint == "附上"
     result["attach_resume"] = True

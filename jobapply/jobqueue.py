@@ -235,7 +235,13 @@ def refresh_issues():
     for it in list_items():
         if it["status"] not in REVIEWABLE or not it.get("analysis"):
             continue
-        result, page = it.get("edited") or it["analysis"]["result"], it.get("page") or {}
+        analysis, edited, page = it["analysis"], it.get("edited"), it.get("page") or {}
+        # 改版前写的：简历按现在的规则默认中文（审核时你自己改过版本的不动）
+        ai_version = analysis["result"].get("resume_version")
+        if pipeline.chinese_resume_by_default(analysis["result"], it.get("jd_text", "")) and edited \
+                and edited.get("resume_version") == ai_version:
+            edited["resume_version"] = "中文"
+        result = edited or analysis["result"]
         try:
             rev = pipeline.review(pipeline._normalize_edits(dict(result)), it.get("jd_text", ""),
                                   source_label=page.get("source_label", ""))
@@ -244,7 +250,7 @@ def refresh_issues():
         with _lock:
             cur = _get(it["id"])
             if cur and cur["status"] in REVIEWABLE and cur.get("rev") == it.get("rev"):
-                _update(it["id"], live_issues=rev["issues"])
+                _update(it["id"], analysis=analysis, edited=edited, live_issues=rev["issues"])
                 n += 1
     return n
 

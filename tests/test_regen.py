@@ -106,3 +106,19 @@ def test_ocr_retry_with_all_images_when_unsure(monkeypatch):
     monkeypatch.setattr(llm, "read_email_from_images", pick)
     text, ok, bad = fetch.verify_ocr_emails([(b"a", "image/png"), (b"b", "image/png")], "投递邮箱：hr@abc-capital.com")
     assert calls == [1, 2] and ok == ["hr@abc-capital.com"] and bad == []
+
+
+@pytest.mark.parametrize("ai,ctype,edited,expect", [
+    ("双语", "企业/大厂", None, "中文"),          # 改版前 AI 写的双语：按现在的规则改成中文
+    ("双语", "企业/大厂", "双语", "中文"),        # 审核时没动过版本（和 AI 一样）：也改
+    ("双语", "双币VC/PE", None, "双语"),          # 双币基金本来就该双语
+    ("中文", "企业/大厂", "双语", "双语"),        # 你自己改成双语的：不动
+])
+def test_refresh_switches_old_bilingual_resume(q, monkeypatch, ai, ctype, edited, expect):
+    iid = add_item(q, resume_version=ai, company_type=ctype)
+    if edited:
+        q.save_edits(iid, result(resume_version=edited, company_type=ctype))
+    monkeypatch.setattr(pipeline, "review", lambda *a, **k: {"issues": [], "related": [], "resume": {}})
+    q.refresh_issues()
+    it = q._get(iid)
+    assert (it.get("edited") or it["analysis"]["result"])["resume_version"] == expect
