@@ -76,6 +76,8 @@ def get_service(interactive=False):
 
 
 def _creds(interactive=False):
+    if config.IS_TEST_ENV:
+        raise GmailAuthError("测试环境不连 Gmail")
     with _token_lock:  # 面板多个请求同时刷新令牌时别把 token.json 写坏
         return _load_creds(interactive)
 
@@ -114,6 +116,8 @@ def _session():
 
 def auth_status():
     """检查 Gmail 能不能用：走的是和发信同一条路，所以「已连接」= 真能发。"""
+    if config.IS_TEST_ENV:
+        return {"ok": False, "error": "测试环境不连 Gmail"}
     try:
         resp = _session().get(API + "/profile", timeout=(15, 30))
         if resp.status_code == 401:

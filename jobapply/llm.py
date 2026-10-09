@@ -168,7 +168,7 @@ class BackendUnavailable(Exception):
 
 
 def _claude_bin():
-    return shutil.which("claude") or str(Path.home() / ".local" / "bin" / "claude")
+    return config.CLAUDE_BIN or shutil.which("claude") or str(Path.home() / ".local" / "bin" / "claude")
 
 
 def _image_blocks(images):
@@ -182,7 +182,10 @@ def _call_cc(*, system, content, schema, effort, images=None, **_):
     一律禁用全部工具：--tools "" 关掉内置工具，--strict-mcp-config 不加载任何 MCP（包括 claude.ai 账号里的
     Gmail / Drive 等连接器）。图片直接放进消息里（stream-json 输入），模型碰不到本机文件、命令和你的账号。"""
     t0 = time.time()
-    env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
+    # 不带 API Key（只用会员额度）；不带 Claude Code 的会话变量；关掉自动记忆（不然本人全局记忆会进写信的上下文）
+    env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
+           and not k.startswith(("CLAUDECODE", "CLAUDE_CODE_", "CLAUDE_PID", "CLAUDE_JOB_DIR", "CLAUDE_EFFORT", "AI_AGENT"))}
+    env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
     msg = {"type": "user", "message": {"role": "user",
                                        "content": _image_blocks(images) + [{"type": "text", "text": content}]}}
     with tempfile.TemporaryDirectory(prefix="jobapply-cc-") as tmp:

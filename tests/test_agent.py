@@ -5,7 +5,7 @@ import json
 import pytest
 
 import app as panel
-from jobapply import agent, config, wsprofile
+from jobapply import agent, config, wsprofile, wstasks
 
 LOCAL = {"Host": "localhost:5001"}
 XRW = {"X-Requested-With": "jobapply"}
@@ -56,11 +56,12 @@ def test_profile_api(prof):
     c = panel.app.test_client()
     d = c.get("/api/wangshen-profile", headers=LOCAL).get_json()
     assert d["example"] and d["profile"]["基本信息"]                        # 还没建：给示例
-    r = c.put("/api/wangshen-profile", json={"profile": SAMPLE}, headers={**LOCAL, **XRW}).get_json()
+    assert c.put("/api/wangshen-profile", json={"profile": SAMPLE}, headers={**LOCAL, **XRW}).status_code == 409   # 旧页面：要刷新
+    r = c.put("/api/wangshen-profile", json={"profile": SAMPLE, "base": {}}, headers={**LOCAL, **XRW}).get_json()
     assert r["ok"] and r["missing"] == ["基本信息：出生日期", "家庭成员：父亲的出生年月"]
     d = c.get("/api/wangshen-profile", headers=LOCAL).get_json()
     assert not d["example"] and d["notes"] == ["牛客里有一处要改"]
-    bad = c.put("/api/wangshen-profile", json={"profile": {"基本信息": [["x", "123456199901011234"]]}}, headers={**LOCAL, **XRW})
+    bad = c.put("/api/wangshen-profile", json={"profile": {"基本信息": [["x", "123456199901011234"]]}, "base": {}}, headers={**LOCAL, **XRW})
     assert bad.status_code == 400
 
 
@@ -80,24 +81,65 @@ def ag(tmp_path, monkeypatch, prof):
         def start(self):
             pass
     monkeypatch.setattr(agent.threading, "Thread", FakeThread)
-    agent._procs.clear()
+    monkeypatch.setattr(config, "RECORDS_PATH", tmp_path / "records.json")
+    for s in (agent._runners, agent._starting, agent._pending, agent._waiting, agent._after_turn):
+        s.clear()
     agent.started = started
     yield agent
-    agent._procs.clear()
+    for s in (agent._runners, agent._starting, agent._pending, agent._waiting, agent._after_turn):
+        s.clear()
 
 
-def test_send_queues_one_turn_at_a_time(ag):
+def test_send_runs_in_parallel_then_queues(ag, monkeypatch):
+    monkeypatch.setattr(config, "AGENT_MAX_PARALLEL", 2)
     c = ag.new_chat()
     out = ag.send(c["id"], "帮我填这个网申：https://careers.example.com/apply")
     assert out["running"] and out["messages"][0]["role"] == "user" and ag.started == [(c["id"], out["messages"][0]["text"])]
     assert ag.get(c["id"])["title"].startswith("帮我填这个网申")
-    with pytest.raises(ag.Busy):
-        ag.send(c["id"], "再来一句")                                 # 上一句还没做完
-    other = ag.new_chat()
-    with pytest.raises(ag.Busy, match="另一个对话"):
-        ag.send(other["id"], "你好")                                 # 浏览器只有一个：同时只跑一个对话
+    out = ag.send(c["id"], "实习描述用精简版")                      # 它正在做时也能说：先记着，进程起来后递进去
+    assert out["messages"][-1]["midturn"] and ag._pending[c["id"]] == ["实习描述用精简版"] and len(ag.started) == 1
+    b = ag.new_chat()
+    out = ag.send(b["id"], "帮我填另一家")                            # 第二个助手同时干活
+    assert out["running"] and not out.get("queued") and len(ag.started) == 2
+    d = ag.new_chat()
+    out = ag.send(d["id"], "再填一家")                                # 满了：排队，不报错
+    assert "最多 2 个" in out["queued"] and len(ag.started) == 2 and out["messages"][-1]["queued"]
+    assert ag.waiting_chats() == {d["id"]: out["queued"]} and ag.get(d["id"])["waiting"]
+    assert "前面还有" in ag.send(d["id"], "学校填示例大学")["queued"]   # 排着队还能补充
+    ag._starting.discard(c["id"])                                     # 空出一个
+    ag._drain()
+    assert ag.started[-1] == (d["id"], "再填一家\n\n学校填示例大学") and not ag.waiting_chats()
+    chat = ag.get(d["id"])
+    assert chat["running"] and not chat.get("waiting") and not any(m.get("queued") for m in chat["messages"])
     with pytest.raises(ValueError):
-        ag.send(other["id"], "   ")
+        ag.send(b["id"], "   ")
+
+
+def test_same_site_waits_other_sites_run(ag, monkeypatch):
+    monkeypatch.setattr(config, "AGENT_MAX_PARALLEL", 3)
+    ts = [wstasks.add(u, n, "实习生") for u, n in (("https://app.mokahr.com/campus/a#/job/1", "A"),
+                                                   ("https://app.mokahr.com/campus/b#/job/2", "B"), ("https://jobs.other.com/3", "C"))]
+    c1, c2, c3 = (ag.new_chat(task_id=t["id"]) for t in ts)
+    assert not ag.send(c1["id"], "填A").get("queued")
+    q = ag.send(c2["id"], "填B")["queued"]
+    assert "同一个网站" in q and "app.mokahr.com" in q                   # 同一个网站（同一个账号）不同时改
+    assert not ag.send(c3["id"], "填C").get("queued")                    # 别的网站照样同时做
+    ag._starting.discard(c1["id"])
+    ag._drain()
+    assert ag.started[-1][0] == c2["id"] and not ag.waiting_chats()
+
+
+def test_stop_cancels_queue(ag, monkeypatch):
+    monkeypatch.setattr(config, "AGENT_MAX_PARALLEL", 1)
+    a, b = ag.new_chat(), ag.new_chat()
+    ag.send(a["id"], "填一下")
+    assert ag.send(b["id"], "填另一家")["queued"]
+    assert ag.stop(b["id"]) is True and not ag.waiting_chats()
+    msgs = ag.get(b["id"])["messages"]
+    assert msgs[0]["cancelled"] and "排队取消了" in msgs[-1]["text"] and not ag.get(b["id"]).get("waiting")
+    ag._starting.discard(a["id"])
+    ag._drain()
+    assert len(ag.started) == 1                                         # 取消了的不会再开始
 
 
 def test_stream_events_become_messages(ag):
@@ -125,10 +167,11 @@ def test_batch_summary_and_args(ag, monkeypatch):
     s = ag.tool_summary("mcp__claude-in-chrome__browser_batch", {"actions": [
         {"name": "form_input", "input": {"action_summary": "填手机"}}, {"name": "computer", "input": {"action": "screenshot"}}]})
     assert s == "连续 2 步：填写：填手机；截图看一眼"
-    monkeypatch.setattr(ag, "system_prompt", lambda: "SYS")
+    monkeypatch.setattr(ag, "system_prompt", lambda *a: "SYS")
     args = ag._args({"session_id": ""})
-    assert args[args.index("--tools") + 1] == "" and args[args.index("--allowedTools") + 1] == "mcp__claude-in-chrome"
+    assert args[args.index("--tools") + 1] == "Read" and args[args.index("--allowedTools") + 1] == "mcp__claude-in-chrome"   # 读文件只许读网申上传文件夹（见 test_uploads）
     assert "--chrome" in args and "--strict-mcp-config" in args and "--resume" not in args
+    assert args[args.index("--disallowedTools") + 1] == "mcp__claude-in-chrome__tabs_close_mcp"   # 关不了标签页，标签组不会丢
     assert ag._args({"session_id": "s1"})[-2:] == ["--resume", "s1"]          # 第二句起接着同一个对话
 
 
@@ -137,7 +180,7 @@ def test_stop_and_recover(ag):
     assert ag.stop(c["id"]) is False                                 # 没在做
     ag.send(c["id"], "填一下")
     assert ag.stop(c["id"]) is True and ag.get(c["id"])["stopped"]
-    ag._procs.clear()                                                 # 面板重启：进程都没了
+    ag._runners.clear(); ag._starting.clear()                         # 面板重启：进程都没了
     ag.recover()
     chat = ag.get(c["id"])
     assert not chat["running"] and "面板重启过" in chat["messages"][-1]["text"]
@@ -159,9 +202,50 @@ def test_agent_api(ag):
     chat = c.post("/api/agent/new", headers={**LOCAL, **XRW}).get_json()
     d = c.post(f"/api/agent/{chat['id']}/send", json={"text": "你好"}, headers={**LOCAL, **XRW}).get_json()
     assert d["running"] and d["total"] == 1
-    assert c.post(f"/api/agent/{chat['id']}/send", json={"text": "再说"}, headers={**LOCAL, **XRW}).status_code == 409
+    assert c.post(f"/api/agent/{chat['id']}/send", json={"text": "再说"}, headers={**LOCAL, **XRW}).status_code == 200   # 做事时也能说
+    other = c.post("/api/agent/new", headers={**LOCAL, **XRW}).get_json()
+    d2 = c.post(f"/api/agent/{other['id']}/send", json={"text": "你好"}, headers={**LOCAL, **XRW}).get_json()
+    assert d2["running"] and not d2.get("queued")                      # 第二个对话同时做
     lst = c.get("/api/agent", headers=LOCAL).get_json()
-    assert lst["running"] == chat["id"] and lst["chats"][0]["title"] == "你好"
-    assert c.get(f"/api/agent/{chat['id']}?since=1", headers=LOCAL).get_json()["messages"] == []
+    assert set(lst["active"]) == {chat["id"], other["id"]} and lst["waiting"] == {} and lst["max_parallel"] >= 2
+    assert any(x["title"] == "你好" and x["id"] == chat["id"] for x in lst["chats"])
+    assert c.get(f"/api/agent/{chat['id']}?since=2", headers=LOCAL).get_json()["messages"] == []
     assert c.delete(f"/api/agent/{chat['id']}", headers={**LOCAL, **XRW}).status_code == 409   # 还在做：不能删
     assert c.get("/api/agent/nonexistent", headers=LOCAL).status_code == 404
+
+
+def test_site_notes_only_for_sites_in_chat(ag):
+    ag.save_site_notes("【网站笔记】careers.example.com：籍贯下拉要滚动找\n【网站笔记】a.zhiye.com：北森暂存会重排\n【网站笔记】jobs.other.cn：要先选城市")
+    chat = {"messages": [{"role": "user", "text": "帮我填 https://b.zhiye.com/campus/123 这个"}]}
+    s = ag.system_prompt(chat)
+    assert "a.zhiye.com：北森暂存会重排" in s                          # 同一平台的另一家公司也附上
+    assert "籍贯下拉要滚动找" not in s and "careers.example.com（1 条）" in s   # 没提到的只列目录
+    assert "careers.example.com：籍贯下拉要滚动找" in ag.system_prompt()        # 不给对话就全附上
+
+
+def test_profile_save_merges_concurrent_edits(prof):
+    """页面开着的时候别处改了底稿：页面保存只写它改过的格子，不把别处的改动冲掉。"""
+    panel.app.config["TESTING"] = True
+    c = panel.app.test_client()
+    page_copy = {"基本信息": [["姓名", "张三"], ["出生日期", ""]], "家庭成员": [{"关系": "父亲", "出生年月": ""}],
+                 "_核对提示": ["旧提示"]}
+    wsprofile.save(page_copy)
+    # 页面打开后，助手 / 另一个窗口改了两处、删了提示
+    wsprofile.save({"基本信息": [["姓名", "张三"], ["出生日期", "2000-01-01"]], "家庭成员": [{"关系": "父亲", "出生年月": "1970-01"}],
+                    "_核对提示": []})
+    mine = {"基本信息": [["姓名", "张小三"], ["出生日期", ""]], "家庭成员": [{"关系": "父亲", "出生年月": ""}], "_核对提示": ["旧提示"]}
+    r = c.put("/api/wangshen-profile", json={"profile": mine, "base": page_copy}, headers={**LOCAL, **XRW}).get_json()
+    assert r["profile"]["基本信息"] == [["姓名", "张小三"], ["出生日期", "2000-01-01"]]      # 我改的姓名写进去，别处的生日留着
+    assert r["profile"]["家庭成员"][0]["出生年月"] == "1970-01" and r["notes"] == []
+
+
+def test_one_chat_per_wangshen_and_archived_hidden(ag):
+    t = wstasks.add("https://jobs.example.com/one", "Z资本", "实习生")
+    old1, old2, keep = ag.new_chat(task_id=t["id"]), ag.new_chat(task_id=t["id"]), ag.new_chat(task_id=t["id"])
+    free = ag.new_chat()
+    wstasks.update(t["id"], chat_id=keep["id"])
+    assert ag.tidy_chats() == 2                                          # 同一家多出来的两个收起来
+    ids = {c["id"] for c in ag.list_chats()}
+    assert ids == {keep["id"], free["id"]}
+    assert {c["id"] for c in ag.list_chats(include_archived=True)} >= {old1["id"], old2["id"]}   # 记录还在
+    assert ag.get(old1["id"])["archived"] and ag.tidy_chats() == 0

@@ -120,7 +120,7 @@ def test_attachment_mime_type_follows_file():
     ("投后实习生", config.CURRENT_CAMPAIGN, "warn"),          # 同一个邮箱、别的岗位：提醒
 ])
 def test_same_mailbox_same_job_is_blocked(old_title, campaign, level):
-    related = [{"match": "同一邮箱", "campaign": campaign, "job_title": old_title, "sent_at": "2026-10-08 01:00", "status": "草稿", "company_name": "美团"}]
-    r = result(job_title="美团战投实习生（海外）")
+    related = [{"match": "同一邮箱", "campaign": campaign, "job_title": old_title, "sent_at": "2026-10-08 01:00", "status": "草稿", "company_name": "某司"}]
+    r = result(job_title="某司战投实习生（海外）")
     lv = [i["level"] for i in checks.run(r, JD, related=related) if i["field"] == "duplicate"]
     assert lv == [level]

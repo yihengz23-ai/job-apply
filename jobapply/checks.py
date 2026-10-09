@@ -196,7 +196,7 @@ _TITLE_FILLER = re.compile(r"[（）()\[\]【】\-—–·|｜/、，,\s]|实习
 
 
 def similar_job(a, b):
-    """两个岗位名是不是同一个岗位（「美团战投实习生（海外）」≈「战投海外组实习生」；「投资实习生」≠「投后实习生」）。"""
+    """两个岗位名是不是同一个岗位（「某司战投实习生（海外）」≈「战投海外组实习生」；「投资实习生」≠「投后实习生」）。"""
     a, b = _TITLE_FILLER.sub("", a or ""), _TITLE_FILLER.sub("", b or "")
     if not a or not b:
         return False
@@ -620,3 +620,18 @@ def run(result, jd_text, *, related=(), resume_status=None, profile_text="",
 
 def has_errors(issues):
     return any(i["level"] == "error" for i in issues)
+
+
+# 点「仍然发送 / 仍然定时」也跳不过的问题：发出去就是事故（占位没填、写错事实、附件对不上、发给自己……）。按提示文字认。
+UNSKIPPABLE = ("还有没填的占位", "邮件标题是空的", "正文太短或为空", "收件人里有你自己的邮箱", "现行简历上没有的内容",
+               "毕业时间写错了", "招聘信息来源", "还留着「信息来源」", "附件里没有", "附件里没勾", "找不到研究样本文件",
+               "几种认法对不上", "JD 要求标题里写姓名", "简历 PDF 和档案对不上")
+
+
+def unskippable(issue):
+    """这条问题能不能被「强制发送」跳过：不能就返回 True。"""
+    if issue.get("level") != "error":
+        return False
+    if issue.get("field") == "resume":   # 简历文件有问题（打不开、和档案对不上）
+        return True
+    return any(k in (issue.get("msg") or "") for k in UNSKIPPABLE)

@@ -119,7 +119,7 @@ def main():
     if not result["to_emails"]:
         url = checks.safe_url(result.get("apply_url"))
         print(f"\n{YELLOW}这个岗位要网申。网申资料（填表字段、自我介绍、本岗位问答）在面板里："
-              f"http://localhost:5001 → 把同一份 JD 贴进「新投递」。{END}")
+              f"{config.PANEL_BASE} → 把同一份 JD 贴进「新投递」。{END}")
         if url:
             print(f"网申链接：{url}")
             subprocess.run(["open", url])
@@ -169,7 +169,7 @@ def main():
     if both:
         url = checks.safe_url(result.get("apply_url"))
         print(f"\n{YELLOW}别忘了还要网申{('：' + url) if url else '（JD 里没找到链接，可能要扫码）'}。"
-              f"网申资料（自我介绍、本岗位问答）在面板里：http://localhost:5001{END}")
+              f"网申资料（自我介绍、本岗位问答）在面板里：{config.PANEL_BASE}{END}")
         if url:
             subprocess.run(["open", url])
         if ask("网申投完后输入 y，补记在刚才这条投递记录上（回车跳过）：") == "y":

@@ -17,12 +17,13 @@ from datetime import datetime, timedelta
 
 import copy
 
-from . import checks, config, fetch, gmail_client, llm, pipeline, records
+from . import checks, config, fetch, gmail_client, llm, pipeline, records, wstasks
 
-QUEUE_PATH = config.BASE_DIR / "queue.json"
+QUEUE_PATH = config.DATA_DIR / "queue.json"
 WORKERS = int(os.environ.get("JOBAPPLY_QUEUE_WORKERS", "3"))
 ACTIVE = ("排队中", "处理中")
-DONE = ("已发送", "已存草稿", "已记录")
+TO_WS = "转网申"   # 没有邮箱、只能网申的岗位：不在投递页待着，转到「网申」页的待办里
+DONE = ("已发送", "已存草稿", "已记录", TO_WS)
 SENDING = "发送中"
 REVIEWABLE = ("待审核", "需处理")
 REGEN = "重写中"   # 按补充要求重写：在后台做，可以先去看下一封，写好存回这一条
@@ -295,7 +296,10 @@ def clear_done():
 
 
 def mark_done(item_id, status, record_id=""):
-    return _update(item_id, status=status, record_id=record_id) is not None
+    it = _update(item_id, status=status, record_id=record_id)
+    if it and it.get("ws_task") and record_id:   # 「邮箱+网申」：网申那条记下邮件记录，提交后补记在同一条上
+        wstasks.link_email_record(item_id, record_id)
+    return it is not None
 
 
 def resume_pending():
@@ -503,21 +507,24 @@ def _process(item_id):
     if not out.get("ok"):
         _update(item_id, status="失败", error=out.get("error", "不是招聘信息"))
         return
-    kit = None
-    if pipeline.is_wangshen(out["result"]):
-        try:
-            kit, _ = pipeline.wangshen(jd, result=out["result"], source_label=page.get("source_label", ""),
-                                       target_job=target)
-        except llm.LLMError as e:
-            kit = {"error": str(e)}
-    # 只网申（没有收件邮箱）的岗位不发邮件：邮件那边的问题不算「需处理」
-    ws_only = not checks.split_emails(out["result"].get("to_emails"))
-    has_error = not ws_only and any(i["level"] == "error" for i in out["issues"])
-    _update(item_id, analysis=out, wangshen=kit, status="需处理" if has_error else "待审核", rev=uuid.uuid4().hex[:8],
+    result = out["result"]
+    # 投递页只管邮件：没有收件邮箱、只能网申的岗位转到「网申」页（那边让助手填、记看板）；
+    # 「邮箱+网申」的邮件照常在这里写、发，网申那边同时加一条待办
+    if not checks.split_emails(result.get("to_emails")):
+        task = wstasks.from_analysis(result, page=page, jd_text=jd, queue_id=item_id)
+        _update(item_id, analysis=out, status=TO_WS, ws_task=task["id"], rev=uuid.uuid4().hex[:8], check_v=CHECK_VERSION)
+        return
+    ws_task = ""
+    if result.get("apply_channel") == "邮箱+网申":
+        ws_task = wstasks.from_analysis(result, page=page, jd_text=jd, queue_id=item_id, email_too=True)["id"]
+    has_error = any(i["level"] == "error" for i in out["issues"])
+    _update(item_id, analysis=out, ws_task=ws_task, status="需处理" if has_error else "待审核", rev=uuid.uuid4().hex[:8],
             check_v=CHECK_VERSION)
 
 
 def _notify(title, text):
+    if config.IS_TEST_ENV:
+        return
     subprocess.run(["osascript", "-e", f'display notification "{text}" with title "{title}" sound name "Glass"'],
                    capture_output=True)
 
@@ -752,9 +759,6 @@ def _send_ok(it, skipped):
     result = it.get("edited") or it["analysis"]["result"]
     if not checks.split_emails(result.get("to_emails")):
         skipped.append(f"{_label(it)}：网申岗位，需要手动投")
-        return False
-    if result.get("apply_channel") == "邮箱+网申":
-        skipped.append(f"{_label(it)}：除了发邮件还要网申，需要手动处理")
         return False
     if it.get("multi_job"):
         skipped.append(f"{_label(it)}：同一篇文章拆出了 {it['multi_job']} 个岗位，挑想投的在审核里发，其余删掉")

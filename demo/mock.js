@@ -2,6 +2,7 @@
 // 由 scripts/build_demo.py 注入到 demo/index.html。
 (function () {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const realFetch = window.fetch.bind(window);
   const now = new Date();
   const ts = (daysAgo, h = 10, m = 0) => {
     const d = new Date(now); d.setDate(d.getDate() - daysAgo); d.setHours(h, m, 0, 0);
@@ -29,9 +30,8 @@
     rec({company_name: '某并购基金 H', company_type: 'PE/并购基金', job_title: '投资研究实习生', position_type: '留用实习', job_location: '上海', focus_industry: '工业/消费', sent_at: ts(5, 20, 45), to_email: 'jobs@example-h.com', subject: '投研实习生申请 - 张三｜某大学', status: '草稿', send_mode: '草稿', email_body: body('您好，', '投资研究实习生', L1)}),
     rec({company_name: '某大厂战投 I', company_type: '企业/大厂', job_title: '战略投资实习生', position_type: '实习', job_location: '北京', focus_industry: 'AI', sent_at: ts(6, 13, 25), to_email: '', send_mode: '未发邮件', resume_version: '网申上传（中文）', apply_url: 'https://example.com/jobs/123', subject: '', email_body: '',
       platform: '飞书', reply_status: '自动回复', reply_at: ts(6, 13, 30), reply_from: 'noreply@example.com', reply_snippet: '【某大厂战投 I】感谢您的投递，我们已收到您的申请…',
-      wangshen: {platform: '飞书', self_intro_short: '我是张三，某大学硕士在读，2027年6月毕业，两周内可到岗，每周5天，可实习6个月以上。目前在A资本做半导体与AI基础设施方向的股权投资实习。',
-        why_this_role: '贵司战投部重点看 AI 产业链，这和我在A资本覆盖的半导体与AI基础设施方向一致……',
-        custom_answers: [{question: '请介绍一个你研究过的项目', answer: '我参与过一个设备项目的投决材料准备，负责技术、市场、竞争与客户研究……'}]}}),
+      apply_account: '138****0000', site_status: '简历筛选中', site_status_at: ts(5, 9, 0),
+      ws_submitted: '【投递记录（从网站读回）】\n某大厂战投 I｜战略投资实习生｜北京｜简历筛选中\n\n【实际提交的简历（从网站读回，证件号已隐去）】\n姓名：张三　手机：138****0000\n教育：某大学　硕士　2025.09 - 2027.06\n实习：A资本　投资实习生　2026 - 至今\n　参与半导体方向的行业研究，完成一份行业研究报告；参与两个项目的立项和投决材料准备\n自我评价：（本人提交前改过的那一版，看板里记的就是网站上真交上去的这一版）'}),
     rec({company_name: '某人民币VC B', company_type: '人民币VC', job_title: '投资实习生', position_type: '实习', job_location: '上海', focus_industry: '半导体', sent_at: ts(9, 10, 10), to_email: 'hr@example-b.com', subject: '投资实习生申请 - 张三｜某大学', status: 'offer', reply_status: '有回复', reply_at: ts(6, 18, 0), reply_from: 'hr@example-b.com', reply_snippet: '恭喜你通过面试，offer 详见附件…', notes: '已收 offer，考虑中', email_body: body('您好，', '投资实习生', L1)}),
     rec({company_name: '某美元VC J', company_type: '美元VC', job_title: 'Growth 投资分析师', position_type: '全职', job_location: '北京', focus_industry: 'TMT', sent_at: ts(11, 9, 50), to_email: 'careers@example-j.com', subject: 'Growth 投资分析师申请 - 张三｜某大学（2027届）', status: '拒绝', email_body: body('您好，', 'Growth 投资分析师', L2)}),
     rec({company_name: '某医疗基金 K', company_type: 'PE/并购基金', job_title: '投资实习生', position_type: '实习', job_location: '上海', focus_industry: '医疗健康', sent_at: ts(12, 15, 0), to_email: 'intern@example-k.com', subject: '投资实习生申请 - 张三｜某大学', reply_status: '自动回复', reply_at: ts(12, 15, 1), reply_from: 'intern@example-k.com', reply_snippet: '您好，邮件已收到，我们会尽快处理。', email_body: body('您好，', '投资实习生', L2)}),
@@ -135,7 +135,95 @@
   }, 0);
   const qCounts = () => QUEUE.reduce((o, it) => (o[it.status] = (o[it.status] || 0) + 1, o), {});
 
-  const realFetch = window.fetch.bind(window);
+  // ── 网申页（演示）：一家一行、一个颜色；助手代填 → 停下等你 → 填好记看板 → 你提交后它去网站读回实际提交的内容 ──
+  const COLORS = [['🔵', '#2563eb', '蓝'], ['🟢', '#16a34a', '绿'], ['🟣', '#9333ea', '紫'], ['🟠', '#ea580c', '橙'],
+    ['🔴', '#dc2626', '红'], ['🟡', '#ca8a04', '黄'], ['🟤', '#92400e', '棕'], ['⚫', '#334155', '黑']];
+  const task = o => Object.assign({id: 't' + (++id), created_at: ts(1, 20), updated_at: ts(0, 9), status: '待填', company: '', job: '', url: '',
+    source: '投递页（只能网申）', deadline: '', note: '', record_id: '', email_record_id: '', queue_id: '', chat_id: '', result: {}, jd_text: '',
+    account: '', color: 0, todo: '', halted: '', readback: {}, positions: [], site_status: '', readback_state: ''}, o);
+  const WS = [
+    task({company: '某硬科技基金 W', job: '投资实习生（2027届，可留用）', url: 'https://example.com/campus/apply/888', color: 1, deadline: ts(-6).slice(0, 10)}),
+    task({company: '某银行理财子 X', job: '校招（总行管培生、研究岗两个志愿）', url: 'https://example.com/bank/campus', color: 2, status: '等你处理',
+      todo: '在画了紫框的网页里扫码登录（登录好了我会自己接着填，不用你说）', chat_id: 'cX', source: '网申页贴的链接'}),
+    task({company: '某新能源集团 Y', job: '战略投资管培生', url: 'https://example.com/hr/y', color: 3, status: '已填待提交', chat_id: 'cY', account: '138****0000'}),
+    task({company: '某互联网公司 Z', job: '科技投资（志愿一）、财务管培生（志愿二）', url: 'https://example.com/z/campus', color: 4, status: '已提交',
+      chat_id: 'cZ', account: 'san.zhang@example.com', site_status: '志愿一 笔试/测评；志愿二 排队（网站写「志愿将按顺序依次流转」）',
+      site_status_at: ts(0, 8, 30), readback: {status: {at: ts(0, 8, 30), text: '…'}, resume: {at: ts(0, 8, 31), text: '…'}},
+      positions: [{name: '科技投资', location: '北京/上海', status: '笔试/测评'}, {name: '财务管培生', location: '上海', status: '排队'}]}),
+    task({company: '某汽车集团 V', job: '无（不投）', url: 'https://example.com/v/jobs', status: '不投了', note: '看完 384 个岗位，没有投资类岗位'}),
+  ];
+  const CHATS = {};
+  const msg = (role, text, extra = {}) => ({role, text, at: ts(0, 9), ...extra});
+  const chat = (cid, title, task_id, messages) => (CHATS[cid] = {id: cid, title, task_id, session_id: 'demo-' + cid, running: false,
+    cost_usd: 0, created_at: ts(0, 9), updated_at: ts(0, 9), messages});
+  chat('cX', '某银行理财子 X', WS[1].id, [
+    msg('user', '（面板）本人在网申页点了「让助手填」：请填这家网申：某银行理财子 X｜校招'),
+    msg('tool', '打开 https://example.com/bank/campus'),
+    msg('assistant', '这家要先登录才能填表。我在这个网页四周画了紫色框——请你在紫框网页里扫码登录，我留在这一轮里等，看到登录好了就接着填。\n【网申记录】公司：某银行理财子 X｜状态：等你处理｜要你做：在画了紫框的网页里扫码登录'),
+    msg('system', '「网申」页：某银行理财子 X｜校招 → 等你处理')]);
+  chat('cY', '某新能源集团 Y', WS[2].id, [
+    msg('user', '（面板）本人在网申页点了「让助手填」：请填这家网申：某新能源集团 Y｜战略投资管培生'),
+    msg('tool', '连续 9 步：填写：姓名；填写：手机；选择：学历；填写：学校；选择：毕业时间；填写：实习经历 1；填写：实习经历 2；上传：证件照；上传：单页中文简历'),
+    msg('assistant', '能填的都填好了、也暂存了。证件号那一栏留给你（橙框网页「基本信息」第 4 栏）。检查没问题就在网站上提交，然后在网申页点「我已提交」。\n【网申记录】公司：某新能源集团 Y｜岗位：战略投资管培生｜账号：138****0000｜状态：已填待提交'),
+    msg('system', '「网申」页：某新能源集团 Y｜战略投资管培生 → 已填待提交（看板里记了一条草稿）')]);
+  chat('cZ', '某互联网公司 Z', WS[3].id, [
+    msg('user', '（面板）某互联网公司 Z 本人已经提交了。请把这三样从网站上读回来记进投递看板，只看不改：投了哪些岗位、每个岗位的 JD、实际提交的简历。'),
+    msg('system', '已记进投递看板：投递记录（124 字）'), msg('system', '已记进投递看板：岗位 JD「科技投资」（1206 字）'),
+    msg('system', '已记进投递看板：实际提交的简历（1830 字）'),
+    msg('assistant', '读回好了：投了 2 个志愿（科技投资、财务管培生），网站写「志愿将按顺序依次流转」，志愿一现在在笔试/测评。登录账号 san.zhang@example.com。')]);
+  const timers = {};
+  function play(cid, steps, done) {          // 按剧本一条条往对话里加，模拟助手在浏览器里一步步干活
+    const c = CHATS[cid];
+    c.running = true;
+    let k = 0;
+    const next = () => {
+      if (!c.running) return;
+      if (k >= steps.length) { c.running = false; c.updated_at = ts(0, 9); if (done) done(); return; }
+      const [role, text] = steps[k++];
+      c.messages.push(msg(role, text));
+      timers[cid] = setTimeout(next, role === 'tool' ? 1100 : 1700);
+    };
+    timers[cid] = setTimeout(next, 600);
+  }
+  const FILL = t => [
+    ['tool', '看看标签页'], ['tool', '打开 ' + t.url],
+    ['assistant', `这是飞书招聘的申请表（${t.company}）。我先加载填表脚本，在这个网页四周画上${COLORS[t.color][2]}色框——你对着面板就知道这一页是我在填。\n【网申记录】公司：${t.company}｜岗位：${t.job}｜网址：${t.url}`],
+    ['tool', `在页面上跑填表脚本：画框（${COLORS[t.color][2]}·${t.company}）`],
+    ['tool', '连续 7 步：填写：姓名；填写：手机；填写：邮箱；选择：最高学历；填写：学校；选择：入学时间；选择：毕业时间'],
+    ['tool', '上传文件：证件照（295×413）；单页中文简历'],
+    ['tool', '连续 4 步：填写：实习经历 1；填写：实习经历 2；填写：自我评价；勾选：信息真实承诺'],
+    ['tool', '截图看一眼'],
+    ['assistant', `能填的都填好了、也暂存了：\n- 基本信息、教育、两段实习、自我评价：按网申底稿和简历原文填的（不改写、不编）；\n- 照片和单页中文简历我已经传上去了；\n- **证件号那一栏留给你**：${COLORS[t.color][2]}框网页「基本信息」第 3 栏。\n替你做的选择：期望城市选了上海（底稿里的第一优先）。\n检查没问题就在网站上点提交，然后在网申页点「我已提交」。\n【网申记录】公司：${t.company}｜岗位：${t.job}｜账号：138****0000｜状态：已填待提交`],
+    ['system', `「网申」页：${t.company}｜${t.job} → 已填待提交（看板里记了一条草稿）`]];
+  const CONTINUE = t => [
+    ['tool', '看看标签页'], ['tool', '截图看一眼'],
+    ['assistant', `看了一眼${COLORS[t.color][2]}框网页：已经登录好了，我接着填。`],
+    ['tool', '连续 8 步：选择：志愿一 总行管培生；选择：志愿二 研究岗；填写：教育经历；填写：实习经历；填写：家庭成员；上传：证件照；上传：简历；勾选：是否服从调剂（按底稿：否）'],
+    ['assistant', `填好了、也暂存了。证件号那一栏留给你。\n【网申记录】公司：${t.company}｜岗位：总行管培生（第一志愿）、研究岗（第二志愿）｜状态：已填待提交`],
+    ['system', `「网申」页：${t.company} → 已填待提交（看板里记了一条草稿）`]];
+  const READBACK = t => [
+    ['user', `（面板）${t.company}｜${t.job} 本人已经提交了。请把这三样从网站上读回来记进投递看板，只看不改：投了哪些岗位、每个岗位的 JD、实际提交的简历。`],
+    ['tool', '打开「我的投递」页'], ['tool', '在页面上跑填表脚本：读回投递记录'], ['system', '已记进投递看板：投递记录（86 字）'],
+    ['tool', '打开岗位详情页'], ['system', `已记进投递看板：岗位 JD「${t.job.split('（')[0]}」（412 字）`],
+    ['tool', '打开「查看简历」'], ['system', '已记进投递看板：实际提交的简历（1830 字）'],
+    ['assistant', `读回好了：网站上显示「简历筛选中」，登录账号 138****0000。看板里这条记的就是网站上真交上去的内容，不是面板生成的稿子。\n【网申记录】公司：${t.company}｜状态：已提交`]];
+  function boardRecord(t, status) {            // 填好 → 看板一条草稿；提交 → 已投递，带上读回的原文
+    let r = RECORDS.find(x => x.id === 'ws-' + t.id);
+    if (!r) {
+      r = rec({id: 'ws-' + t.id, company_name: t.company, company_type: '人民币VC', job_title: t.job, position_type: '留用实习',
+        job_location: '上海', focus_industry: '硬科技', sent_at: ts(0, 9, 30), to_email: '', send_mode: '未发邮件', resume_version: '网申上传',
+        apply_url: t.url, apply_channel: '网申/链接', apply_account: t.account || '138****0000', subject: '', email_body: ''});
+      RECORDS.unshift(r);
+    }
+    r.status = status;
+    if (status === '已投递') Object.assign(r, {site_status: '简历筛选中', site_status_at: ts(0, 9, 40),
+      ws_submitted: `【投递记录（从网站读回）】\n${t.company}｜${t.job}｜简历筛选中\n\n【实际提交的简历（从网站读回，证件号已隐去）】\n姓名：张三　手机：138****0000\n教育：某大学　硕士　2025.09 - 2027.06\n实习：A资本　投资实习生　2026 - 至今`});
+  }
+  const chatOut = (c, since = 0) => ({...c, total: c.messages.length, messages: c.messages.slice(since)});
+  const lastLine = c => { const m = [...c.messages].reverse().find(x => x.role === 'assistant' || x.role === 'tool'); return m ? m.text.replace(/\n[\s\S]*/, '').slice(0, 60) : ''; };
+  let PROFILE = null;
+  const loadProfile = async () => PROFILE || (PROFILE = await realFetch('../wangshen_profile.example.json').then(r => r.json()).catch(() => ({})));
+
   window.fetch = async (input, opts = {}) => {
     const url = new URL(typeof input === 'string' ? input : input.url, location.href);
     const i = url.pathname.indexOf('/api/');
@@ -205,6 +293,72 @@
     if (path.startsWith('/api/queue/')) return json({ok: true});
     if (path === '/api/check-replies') { await sleep(900); return json({ok: true, logs: ['（演示）检查 12 条记录的回复…', '完成：3 条有回复 / 来信，1 条退信']}); }
     if (path === '/api/gmail-sync') { await sleep(900); return json({ok: true, logs: ['（演示）Gmail 已发送里没有遗漏的投递']}); }
+    if (path === '/api/health') return json({app: 'jobapply', env: 'demo', version: 'demo'});
+    if (path === '/api/wangshen-profile' && method === 'GET') return json({profile: await loadProfile(), example: false, missing: [], notes: []});
+    if (path === '/api/wangshen-profile' && method === 'PUT') { PROFILE = body.profile || PROFILE; return json({ok: true, profile: PROFILE, missing: [], notes: []}); }
+    if (path === '/api/wstasks' && method === 'GET') {
+      const tasks = WS.map(t => { const c = CHATS[t.chat_id]; const busy = c && c.running;
+        return {...t, agent_state: busy ? '在干活' : '', agent_wait: '', last: busy ? lastLine(c) : ''}; });
+      const counts = tasks.reduce((o, t) => (o[t.status] = (o[t.status] || 0) + 1, o), {});
+      return json({tasks, counts, active: Object.values(CHATS).filter(c => c.running).length, waiting: 0, max_parallel: 3, colors: COLORS});
+    }
+    if (path === '/api/wstasks' && method === 'POST') {
+      const t = task({company: body.company || '', job: body.job || '', url: body.url || '', source: '网申页贴的链接', color: WS.length % 8});
+      WS.unshift(t); return json({task: t});
+    }
+    const wt = path.match(/^\/api\/wstasks\/([^/]+)(\/(agent|readback))?$/);
+    if (wt) {
+      const t = WS.find(x => x.id === wt[1]);
+      if (!t) return json({error: '这条待办不存在了'}, 404);
+      if (method === 'DELETE') { WS.splice(WS.indexOf(t), 1); return json({ok: true}); }
+      if (wt[3] === 'agent') {
+        if (t.chat_id && CHATS[t.chat_id]) {
+          const c = CHATS[t.chat_id];
+          c.messages.push(msg('user', `（面板）本人在网申页点了「让助手接着做」。${t.todo ? '你上次说要本人做的是：' + t.todo + '。先看一眼网页确认这件事做好了没有。' : ''}接着填这家：${t.company}｜${t.job}。`));
+          Object.assign(t, {status: '助手在填', todo: ''});
+          play(c.id, CONTINUE(t), () => { Object.assign(t, {status: '已填待提交', job: '总行管培生（第一志愿）、研究岗（第二志愿）'}); boardRecord(t, '草稿'); });
+          return json(chatOut(c));
+        }
+        const c = chat('c' + (++id), t.company, t.id, [msg('user', `（面板）本人在网申页点了「让助手填」：请填这家网申：${t.company}｜${t.job}\n网申链接：${t.url}`)]);
+        Object.assign(t, {chat_id: c.id, status: '助手在填'});
+        play(c.id, FILL(t), () => { Object.assign(t, {status: '已填待提交', account: '138****0000'}); boardRecord(t, '草稿'); });
+        return json(chatOut(c));
+      }
+      if (wt[3] === 'readback' || (method === 'PUT' && body.status === '已提交' && t.status !== '已提交')) {
+        Object.assign(t, {status: '已提交', readback_state: '读回中', todo: ''});
+        boardRecord(t, '已投递');
+        let c = CHATS[t.chat_id] || chat(t.chat_id = 'c' + (++id), t.company, t.id, []);
+        play(c.id, READBACK(t), () => Object.assign(t, {readback_state: '', site_status: '简历筛选中', site_status_at: ts(0, 9, 40),
+          readback: {status: {at: ts(0, 9, 40), text: '…'}, resume: {at: ts(0, 9, 41), text: '…'}}}));
+        const message = '助手去网站读回实际提交的内容了（右下角看进度）';
+        return json(wt[3] === 'readback' ? {chat: chatOut(c), message, task: t} : {task: t, readback: message});
+      }
+      if (method === 'PUT') {
+        ['company', 'job', 'url', 'note', 'deadline', 'account'].forEach(k => { if (k in body) t[k] = body[k]; });
+        if (body.status) Object.assign(t, {status: body.status, todo: body.status === '等你处理' ? t.todo : ''});
+        return json({task: t});
+      }
+    }
+    if (path === '/api/agent' && method === 'GET') {
+      const list = Object.values(CHATS).map(c => ({id: c.id, title: c.title, updated_at: c.updated_at, running: c.running, n: c.messages.length, task_id: c.task_id}))
+        .sort((a, b) => (b.running - a.running) || b.updated_at.localeCompare(a.updated_at));
+      const run = list.filter(c => c.running).map(c => c.id);
+      return json({chats: list, running: run[0] || null, active: run, waiting: {}, max_parallel: 3});
+    }
+    if (path === '/api/agent/new') return json(chatOut(chat('c' + (++id), '', '', [])));
+    const ag = path.match(/^\/api\/agent\/([^/]+)(\/(send|stop))?$/);
+    if (ag && CHATS[ag[1]]) {
+      const c = CHATS[ag[1]];
+      if (ag[3] === 'stop') { c.running = false; clearTimeout(timers[c.id]); c.messages.push(msg('system', '已停下：这一轮中断了，进程和它开的网页都还在。')); return json({ok: true}); }
+      if (ag[3] === 'send') {
+        c.title = c.title || String(body.text || '').slice(0, 24);
+        c.messages.push(msg('user', String(body.text || '')));
+        play(c.id, [['assistant', '（演示版）收到。真实面板里，助手会按这句话接着在网页上操作，干活时你随时可以插话。']]);
+        return json(chatOut(c));
+      }
+      if (method === 'DELETE') { delete CHATS[c.id]; return json({ok: true}); }
+      return json(chatOut(c, Number(url.searchParams.get('since') || 0)));
+    }
     return json({error: '演示版不支持这个操作'}, 400);
   };
 
@@ -213,6 +367,40 @@
     bar.className = 'fixed bottom-0 md:bottom-auto md:top-0 left-0 right-0 z-[80] bg-amber-400 text-amber-950 text-xs text-center py-1 font-bold';
     bar.textContent = '演示版：所有机构、邮箱、人物均为虚构，不连接 AI、不会发送任何邮件';
     document.body.appendChild(bar);
+    // 导览：第一次打开时弹出（之后右下角「导览」按钮随时再看）
+    const go = tab => { const el = document.querySelector(`.nav-link[data-tab="${tab}"]`) || document.querySelector(`[data-tab="${tab}"]`); if (el) el.click(); };
+    const steps = [
+      ['投递', 'new', '贴进链接或 JD，后台写好一封自动打开一封。点队列里的「某硬科技PE C」：左边是 AI 读出来的 JD 硬性要求，中间是写好的信，右边是发信前检查——红色的问题不改不让发，强制发送也发不出去。'],
+      ['网申', 'kit', '只能网申的岗位放在这里，一家一行、一个颜色。点「某硬科技基金 W」那行的「让助手填」，右下角看助手一步步在浏览器里填表、传照片，证件号留给本人；填好后点「我已提交」，看它去网站读回实际提交的内容。'],
+      ['投递看板', 'board', '每条投递一行：阶段、回复、退信一目了然。点开一条看邮件原文；网申的记录里存的是从网站读回来的实际提交内容，不是 AI 写的稿子。'],
+      ['数据分析', 'analytics', '投递节奏、机构类型、地点、阶段分布。'],
+    ];
+    const card = document.createElement('div');
+    card.id = 'demoTour';
+    card.className = 'fixed inset-0 z-[90] bg-slate-900/50 flex items-center justify-center p-4';
+    card.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl max-w-xl w-full p-6 text-sm text-slate-700 max-h-[90vh] overflow-y-auto">
+      <h2 class="text-lg font-bold text-slate-900 mb-1">求职投递面板 · 演示版</h2>
+      <p class="mb-3">一个人用的求职投递系统：贴 JD → AI 起草邮件 → <b>代码逐项核对</b>（邮箱必须在 JD 原文里、占位没填不让发……）→ 发送或定时发送；
+      只能网申的岗位交给面板里的<b>助手在浏览器里代填</b>，本人提交后它把网站上<b>实际提交的内容读回来</b>记进看板。</p>
+      <p class="font-bold text-slate-900 mb-2">建议按这个顺序看：</p>
+      <ol class="space-y-2 mb-4">${steps.map(([name, tab, text], i) => `<li class="flex gap-3"><button data-go="${tab}" class="shrink-0 h-7 px-2 rounded-lg bg-primary text-white text-xs font-bold">${i + 1} ${name}</button><span>${text}</span></li>`).join('')}</ol>
+      <p class="text-xs text-slate-500 mb-4">所有机构、人物、邮箱、账号都是虚构的；演示版不连 AI、不发邮件、不打开任何网站。源码和设计说明见 GitHub README。</p>
+      <div class="flex justify-end gap-2"><button data-go="kit" class="px-4 py-2 rounded-xl border-2 border-primary text-primary font-bold text-xs">先看网申助手</button>
+      <button data-go="new" class="px-4 py-2 rounded-xl bg-primary text-white font-bold text-xs">开始看</button></div></div>`;
+    const close = () => card.remove();
+    card.addEventListener('click', e => {
+      const b = e.target.closest('[data-go]');
+      if (b) { close(); go(b.dataset.go); }
+      else if (e.target === card) close();
+    });
+    const pill = document.createElement('button');
+    pill.className = 'fixed left-4 bottom-20 md:left-[17rem] md:bottom-4 z-[85] px-3 py-1.5 rounded-full bg-slate-900 text-white text-xs font-bold shadow-lg';
+    pill.textContent = '导览';
+    pill.onclick = () => document.body.appendChild(card);
+    document.body.appendChild(pill);
+    let seen = false;
+    try { seen = localStorage.getItem('demoTourSeen') === '1'; localStorage.setItem('demoTourSeen', '1'); } catch (e) {}
+    if (!seen) document.body.appendChild(card);
     ['previewResume', 'downloadResume', 'exportBtn', 'wsResumeDl'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.addEventListener('click', e => { e.preventDefault(); e.stopImmediatePropagation(); if (window.toast) toast('演示版不提供文件下载'); }, true);

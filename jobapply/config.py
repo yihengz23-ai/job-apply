@@ -10,6 +10,24 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
+# ── 运行环境 ────────────────────────────────────────────────
+# 正式（默认）：数据在项目目录，端口 5001。
+# 测试（JOBAPPLY_ENV=test）：数据全在 data_test/（JOBAPPLY_DATA_DIR 可改），端口 5002，用假 claude（tests/fake_claude.py），
+#   不连 Gmail、不开定时发送、不弹系统通知、不走付费 API——随便点、随便改，碰不到正在用的面板、桌面文件和邮箱。
+ENV = (os.environ.get("JOBAPPLY_ENV") or "prod").strip().lower()
+if ENV not in ("prod", "test"):
+    raise SystemExit(f"JOBAPPLY_ENV 只能是 prod 或 test，现在是「{ENV}」")
+IS_TEST_ENV = ENV == "test"
+PORT = int(os.environ.get("JOBAPPLY_PORT") or (5002 if IS_TEST_ENV else 5001))
+PANEL_BASE = f"http://localhost:{PORT}"
+DATA_DIR = Path(os.environ.get("JOBAPPLY_DATA_DIR") or (BASE_DIR / "data_test" if IS_TEST_ENV else BASE_DIR))
+CLAUDE_BIN = os.environ.get("JOBAPPLY_CLAUDE_BIN") or (str(BASE_DIR / "tests" / "fake_claude.py") if IS_TEST_ENV else "")
+if DATA_DIR != BASE_DIR:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+if IS_TEST_ENV:
+    for _k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
+        os.environ.pop(_k, None)   # 测试环境绝不走付费 API
+
 # ── 个人设置（candidate_settings.json；公开版用 .example）────────────
 _settings_file = BASE_DIR / "candidate_settings.json"
 if not _settings_file.exists():
@@ -17,7 +35,8 @@ if not _settings_file.exists():
 SETTINGS = json.loads(_settings_file.read_text(encoding="utf-8"))
 
 # ── 材料（桌面「自动投递」文件夹）──────────────────────────────
-MATERIALS_DIR = Path(os.environ.get("MATERIALS_DIR", Path.home() / "Desktop" / "自动投递"))
+MATERIALS_DIR = Path(os.environ.get("MATERIALS_DIR")
+                     or (DATA_DIR / "自动投递" if IS_TEST_ENV else Path.home() / "Desktop" / "自动投递"))
 RESUME_PATH = MATERIALS_DIR / SETTINGS["resume_file"]
 REPORT_PATH = MATERIALS_DIR / SETTINGS["report_file"]
 REPORT_DEFAULT_NAME = SETTINGS["report_default_name"]
@@ -37,16 +56,17 @@ GRADE_LABEL = SETTINGS.get("grade_label", "")          # 标题 / 文件名里�
 ROLE_PHRASES = SETTINGS.get("role_phrases", [])       # 写到这些经历时必须带上的角色说法（例如「协助MD」）
 
 # ── 程序数据 ────────────────────────────────────────────────
+# 面板只读的内容（档案、写信规则）在项目目录；面板会写的数据在 DATA_DIR（正式环境就是项目目录）
 PROFILE_PATH = BASE_DIR / "candidate_profile.md"
 RULES_PATH = BASE_DIR / "email_rules.md"
-RECORDS_PATH = BASE_DIR / "records.json"
-UPLOADS_DIR = BASE_DIR / "uploads"   # 审核时自己加的附件（文章、作品、成绩单……）
-BACKUP_DIR = BASE_DIR / "backups"
-GMAIL_STATE_PATH = BASE_DIR / "gmail_state.json"
+RECORDS_PATH = DATA_DIR / "records.json"
+UPLOADS_DIR = DATA_DIR / "uploads"   # 审核时自己加的附件（文章、作品、成绩单……）
+BACKUP_DIR = DATA_DIR / "backups"
+GMAIL_STATE_PATH = DATA_DIR / "gmail_state.json"
 CREDENTIALS_PATH = BASE_DIR / "credentials.json"
-TOKEN_PATH = BASE_DIR / "token.json"
-PANEL_KEY_PATH = BASE_DIR / ".panel_key"
-TUNNEL_URL_PATH = Path("/tmp/tunnel_url.txt")
+TOKEN_PATH = DATA_DIR / ("no_gmail_token.json" if IS_TEST_ENV else "token.json")   # 测试环境：指向不存在的文件
+PANEL_KEY_PATH = DATA_DIR / ".panel_key"
+TUNNEL_URL_PATH = DATA_DIR / "tunnel_url.txt" if IS_TEST_ENV else Path("/tmp/tunnel_url.txt")
 
 # ── 身份 ────────────────────────────────────────────────────
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL", SETTINGS["sender_email"])
@@ -69,10 +89,14 @@ CLAUDE_MODEL = os.environ.get("JOBAPPLY_MODEL", "claude-opus-5-5")
 CLAUDE_EFFORT = os.environ.get("JOBAPPLY_EFFORT", "medium")      # JD 分析与写信
 CLAUDE_EFFORT_LIGHT = "low"                                      # 识别岗位 / OCR / 邮件分类
 # 调用通道：claude_code = 本机 Claude Code 登录（Max 会员额度，默认）；api = .env 里的 API Key（按量扣费）
-LLM_BACKEND = os.environ.get("JOBAPPLY_BACKEND", SETTINGS.get("llm_backend", "claude_code"))
+LLM_BACKEND = "claude_code" if IS_TEST_ENV else os.environ.get("JOBAPPLY_BACKEND", SETTINGS.get("llm_backend", "claude_code"))
 # 面板里的助手（聊天 + 操作 Chrome 代填网申）用的模型和思考力度
 AGENT_MODEL = os.environ.get("JOBAPPLY_AGENT_MODEL", SETTINGS.get("agent_model") or CLAUDE_MODEL)
 AGENT_EFFORT = SETTINGS.get("agent_effort", "medium")
+AGENT_MAX_PARALLEL = max(1, int(SETTINGS.get("agent_max_parallel", 3)))   # 同时干活的助手最多几个（Chrome 里各开各的标签页）
+AGENT_MAX_LIVE = max(AGENT_MAX_PARALLEL, int(SETTINGS.get("agent_max_live", 8)))   # 活着的助手进程最多几个（闲着的也算）
+# 助手进程交给独立的宿主托管（面板重启不丢网页）；出问题时设 agent_detached: false 退回「面板自己带着」的老办法
+AGENT_DETACHED = str(os.environ.get("JOBAPPLY_AGENT_DETACHED", SETTINGS.get("agent_detached", True))).lower() not in ("0", "false", "no")
 
 GMAIL_SCOPES = [
     "https://www.googleapis.com/auth/gmail.compose",

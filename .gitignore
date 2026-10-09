@@ -30,3 +30,5 @@ tools/ocr
 .claude/
 cloudflared
 uploads/
+wangshen_tasks.json
+.wsreadback_key

@@ -4,21 +4,25 @@
 import hmac
 import io
 import json
+import os
+import re
 import secrets
+import subprocess
 import tempfile
 import threading
 import traceback
+from datetime import datetime
 
 from flask import Flask, abort, jsonify, render_template, request, send_file
 
-from jobapply import agent, checks, config, fetch, gmail_client, jobqueue, llm, pipeline, records, resume, wsprofile
+from jobapply import agent, checks, config, fetch, gmail_client, jobqueue, llm, pipeline, records, resume, wsprofile, wstasks
 
 app = Flask(__name__)
 app.config["JSON_AS_ASCII"] = False
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.json.ensure_ascii = False
 
-LOCAL_HOSTS = {"localhost:5001", "127.0.0.1:5001", "[::1]:5001"}
+LOCAL_HOSTS = {f"localhost:{config.PORT}", f"127.0.0.1:{config.PORT}", f"[::1]:{config.PORT}"}
 
 
 def _panel_key():
@@ -47,6 +51,10 @@ def guard():
             abort(403)  # 授权只能在电脑本机做
     elif request.host not in LOCAL_HOSTS:
         abort(403)  # 防 DNS rebinding
+    if request.path.startswith("/api/wsreadback/"):
+        if _via_tunnel():
+            abort(403)  # 读回只从本机的网申网站页面发来
+        return None     # 跨域发来的（网申网站页面上），凭这条待办的读回口令认，见 api_wsreadback
     if request.method in ("POST", "PUT", "DELETE") and request.headers.get("X-Requested-With") != "jobapply":
         abort(403)  # 防跨站请求（别的网页无法带这个头）
 
@@ -81,9 +89,49 @@ def _body():
 
 # ── 页面 & 基础信息 ─────────────────────────────────────────
 
+STARTED_AT = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _code_version():
+    """面板代码版本：部署过的用部署的提交号；开发副本用 git 提交号（有没提交的改动加 +）；都没有就用代码文件最后修改的时间。"""
+    mark = config.BASE_DIR / ".deployed_commit"
+    if mark.exists():
+        return "部署 " + mark.read_text().strip()[:8]
+    try:
+        out = subprocess.run(["git", "-C", str(config.BASE_DIR), "describe", "--always", "--dirty=+", "--tags"],
+                             capture_output=True, text=True, timeout=5)
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout.strip()
+    except Exception:
+        pass
+    files = [config.BASE_DIR / "app.py", config.BASE_DIR / "wsfill.js", config.BASE_DIR / "templates" / "index.html",
+             *(config.BASE_DIR / "jobapply").glob("*.py")]
+    newest = max((f.stat().st_mtime for f in files if f.exists()), default=0)
+    return "代码 " + datetime.fromtimestamp(newest).strftime("%m-%d %H:%M")
+
+
+VERSION = _code_version()
+
+
+@app.route("/api/health")
+def api_health():
+    """面板自己的情况：管理脚本（scripts/panelctl.py）和运行状态页用。"""
+    return jsonify({"app": "jobapply", "env": config.ENV, "port": config.PORT, "pid": os.getpid(),
+                    "started_at": STARTED_AT, "version": VERSION})
+
+
+TEST_ENV_BANNER = ('<div style="position:fixed;top:0;left:0;right:0;z-index:99999;pointer-events:none;background:#b45309;'
+                   'color:#fff;font:600 12px/22px sans-serif;text-align:center">测试环境（{port} 端口 · data_test 数据 · 假助手 · '
+                   '不连 Gmail）—— 不是正在用的面板</div>')
+
+
 @app.route("/")
 def index():
-    return render_template("index.html")
+    html = render_template("index.html")
+    if config.IS_TEST_ENV:   # 测试环境：标题加前缀、顶上一条横幅，免得和正在用的面板搞混
+        html = html.replace("<title>", "<title>【测试环境】", 1)
+        html = re.sub(r"(<body[^>]*>)", lambda m: m.group(1) + TEST_ENV_BANNER.format(port=config.PORT), html, count=1)
+    return html
 
 
 @app.route("/api/config")
@@ -223,6 +271,8 @@ def api_send():
                                publish_date=d.get("publish_date", ""), source_type="网页面板")
     except pipeline.Blocked as e:
         qid and jobqueue.release(qid)
+        if e.hard:
+            return _err("这几条不能跳过，改完再发：" + "；".join(i["msg"] for i in e.hard), 409, issues=e.issues, hard=e.hard)
         return _err("还有必须处理的问题，没有发出", 409, issues=e.issues)
     except gmail_client.GmailAuthError as e:
         qid and jobqueue.release(qid)
@@ -251,6 +301,9 @@ def api_schedule():
     result = pipeline._normalize_edits(dict(d.get("result") or {}))
     rev = pipeline.review(result, d.get("jd_text", ""), source_label=d.get("source_label", ""))
     errors = [i for i in rev["issues"] if i["level"] == "error"]
+    hard = [i for i in errors if checks.unskippable(i)]
+    if hard and d.get("force") is True:
+        return _err("这几条不能跳过，改完再发：" + "；".join(i["msg"] for i in hard), 409, issues=rev["issues"], hard=hard)
     if errors and d.get("force") is not True:
         return _err("还有必须处理的问题，没有定时", 409, issues=rev["issues"])
     auth = gmail_client.auth_status()  # 现在就确认 Gmail 能用，免得明早到点才发现发不出去
@@ -316,6 +369,20 @@ def api_kit():
     return jsonify(json.loads(path.read_text(encoding="utf-8")))
 
 
+@app.route("/wsfill.js", methods=["GET", "OPTIONS"])
+def wsfill_js():
+    """网申填表引擎：面板里的助手在网申页面上从这里加载（只是一段通用脚本，不含个人资料）。"""
+    if request.method == "OPTIONS":
+        resp = app.response_class(status=204)
+    else:   # 脚本里的面板地址换成这次请求的面板（测试环境 5002 的脚本就把读回发回 5002）
+        base = f"http://{request.host}" if request.host in LOCAL_HOSTS else config.PANEL_BASE
+        js = (config.BASE_DIR / "wsfill.js").read_text(encoding="utf-8").replace("__PANEL_BASE__", base)
+        resp = app.response_class(js, mimetype="text/javascript")
+    resp.headers.update({"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET",
+                         "Access-Control-Allow-Private-Network": "true", "Cache-Control": "no-store"})
+    return resp
+
+
 @app.route("/api/wangshen-profile")
 def api_wsprofile():
     """网申底稿（简历以外的个人信息）+ 还缺哪些 + 核对提示。"""
@@ -326,18 +393,25 @@ def api_wsprofile():
 
 @app.route("/api/wangshen-profile", methods=["PUT"])
 def api_wsprofile_save():
+    """页面带上「打开时的底稿」（base）：只把这次改了的格子合并进最新的底稿，别处刚改的不会被冲掉。"""
+    d = _body()
+    if "base" not in d:   # 面板升级前打开的旧页面：整份发回来会冲掉别处的改动
+        return _err("面板更新过了：刷新一下页面再改（免得把别处刚改的内容盖掉）", 409)
+    current, example = wsprofile.load()
+    edited = d.get("profile") or {}
     try:
-        profile = wsprofile.save(_body().get("profile"))
+        profile = wsprofile.save(edited if example else wsprofile.merge(d.get("base"), edited, current))
     except wsprofile.Invalid as e:
         return _err(str(e))
-    return jsonify({"ok": True, "profile": profile, "missing": wsprofile.missing(profile)})
+    return jsonify({"ok": True, "profile": profile, "missing": wsprofile.missing(profile), "notes": profile.get("_核对提示") or []})
 
 
 # ── 面板里的助手（聊天 + 操作 Chrome 代填网申）──────────────────
 
 @app.route("/api/agent")
 def api_agent_list():
-    return jsonify({"chats": agent.list_chats(), "running": agent.running_chat()})
+    return jsonify({"chats": agent.list_chats(), "running": agent.running_chat(), "active": agent.active_chats(),
+                    "waiting": agent.waiting_chats(), "max_parallel": config.AGENT_MAX_PARALLEL})
 
 
 @app.route("/api/agent/new", methods=["POST"])
@@ -382,6 +456,155 @@ def api_agent_delete(chat_id):
     except agent.Busy as e:
         return _err(str(e), 409)
     return jsonify({"ok": True})
+
+
+# ── 网申待办（「网申」页）──────────────────────────────────
+
+def _fill_message(t):
+    """本人在网申页点了「让助手填」：发给助手的第一句话（面板发的，以「（面板）」开头）。"""
+    msg = (f"（面板）本人在网申页点了「让助手填」：请填这家网申：{t.get('company') or '（公司见网页）'}"
+           f"｜{t.get('job') or '（岗位见网页）'}\n")
+    msg += f"网申链接：{t['url']}\n" if t.get("url") else "网申链接：还没有，先问本人要。\n"
+    if t.get("jd_text"):
+        msg += "岗位 JD（开放问题可以参考）：\n" + t["jd_text"].strip()[:8000] + "\n"
+    return msg + ("按网申底稿和简历填，填完暂存；最后列出：要本人在网页上做的事（哪个颜色框的网页、哪一栏），"
+                  "以及你替本人做的选择。")
+
+
+@app.route("/api/wstasks")
+def api_wstasks():
+    items = wstasks.list_tasks()
+    active, waiting = set(agent.active_chats()), agent.waiting_chats()
+    for t in items:   # 助手这会儿在不在干这条：在干活 / 排队中（同时干活的满了、或者同一个网站有别的助手在填）
+        cid = t.get("chat_id")
+        t["agent_state"] = "在干活" if cid in active else "排队中" if cid in waiting else ""
+        t["agent_wait"] = waiting.get(cid, "")
+        t["last"] = agent.last_line(cid) if cid in active else ""   # 最新进展：它这会儿在做哪一步
+    return jsonify({"tasks": items, "counts": wstasks.counts(items), "active": len(active), "waiting": len(waiting),
+                    "max_parallel": config.AGENT_MAX_PARALLEL, "colors": wstasks.COLORS})
+
+
+@app.route("/api/wstasks", methods=["POST"])
+def api_wstasks_add():
+    d = _body()
+    url = checks.safe_url((d.get("url") or "").strip())
+    if not url:
+        return _err("先贴网申页面的链接（https:// 开头）")
+    task = wstasks.add(url, (d.get("company") or "").strip(), (d.get("job") or "").strip(), note=(d.get("note") or "").strip())
+    return jsonify({"task": task})
+
+
+@app.route("/api/wstasks/<task_id>", methods=["PUT"])
+def api_wstasks_update(task_id):
+    d = _body()
+    try:
+        fields = {k: str(d[k]).strip() for k in ("company", "job", "url", "note", "deadline", "account") if k in d}
+        task = wstasks.update(task_id, **fields) if fields else wstasks.get(task_id)
+        if d.get("status"):
+            before = task.get("status")
+            task = wstasks.set_status(task_id, d["status"])
+    except wstasks.NotFound:
+        return _err("这条待办不存在了", 404)
+    except ValueError as e:
+        return _err(str(e))
+    out = {"task": task}
+    if d.get("status") == "已提交" and before != "已提交" and d.get("readback", True):
+        out["readback"] = agent.start_readback(task_id)[1]   # 点了「我已提交」：助手去网站把实际提交的内容读回来
+        out["task"] = wstasks.get(task_id)
+    return jsonify(out)
+
+
+@app.route("/api/wstasks/<task_id>", methods=["DELETE"])
+def api_wstasks_delete(task_id):
+    return jsonify({"ok": wstasks.delete(task_id)})
+
+
+def _continue_message(t):
+    """本人在网申页点了「让助手接着做」（中途停了 / 等本人处理的事 / 要接着改）：接着原来的对话、在原来那个网页上做，不新开。
+    这句话是面板发的，以「（面板）」开头，不替本人说「我弄好了」——让助手自己看网页确认。"""
+    head = "（面板）本人在网申页点了「让助手接着做」。"
+    if t.get("status") == "等你处理" and t.get("todo"):
+        head += f"你上次说要本人做的是：{t['todo']}。先看一眼网页确认这件事做好了没有；没做好就跟本人说清楚还差什么。"
+    elif t.get("halted"):
+        head += f"你上次停下的原因：{t['halted']}。"
+    return (f"{head}接着填这家：{t.get('company') or '（公司见网页）'}｜{t.get('job') or '（岗位见网页）'}。"
+            "就用你原来那个画了颜色框的网页（先用 tabs_context_mcp 看一眼）；找不到了就自己新开一个、画上框接着做，不要让本人拖标签页。"
+            "先看清现在填到哪了，把没填的填完、能存的存上，停下来时照规矩写一行【网申记录】报状态。")
+
+
+_ws_agent_lock = threading.Lock()   # 快速点两次「让助手填」：第二次要等第一次把对话建好、记到待办上，才不会开出两个对话
+
+
+@app.route("/api/wstasks/<task_id>/agent", methods=["POST"])
+def api_wstasks_agent(task_id):
+    """让助手填这条：第一次开一个跟这条待办绑在一起的对话；以前开过就接着那个对话（同一家网申只用一个对话、一个网页）。
+    填完它报的结果会自动更新这条待办和看板。"""
+    with _ws_agent_lock:
+        return _wstasks_agent(task_id)
+
+
+def _wstasks_agent(task_id):
+    try:
+        t = wstasks.get(task_id)
+    except wstasks.NotFound:
+        return _err("这条待办不存在了", 404)
+    if t.get("chat_id"):
+        try:
+            agent.get(t["chat_id"])
+            return jsonify(agent.send(t["chat_id"], _continue_message(t)))
+        except KeyError:   # 对话被删了：下面重新开
+            pass
+    chat = agent.new_chat(task_id=task_id, title=wstasks.short_name(t))
+    try:
+        out = agent.send(chat["id"], _fill_message(t))
+    except agent.Busy as e:
+        agent.delete(chat["id"])
+        return _err(str(e), 409)
+    wstasks.update(task_id, chat_id=chat["id"])
+    return jsonify(out)
+
+
+@app.route("/api/wstasks/<task_id>/readback", methods=["POST"])
+def api_wstasks_readback(task_id):
+    """「读回网站内容 / 查最新进度」：助手去网站把实际提交的内容、进度、账号读回来，记进看板。"""
+    try:
+        chat, msg = agent.start_readback(task_id)
+    except wstasks.NotFound:
+        return _err("这条待办不存在了", 404)
+    return jsonify({"chat": chat, "message": msg, "task": wstasks.get(task_id)})
+
+
+@app.route("/api/wsreadback/<task_id>", methods=["POST", "OPTIONS"])
+def api_wsreadback(task_id):
+    """助手在网申网站页面上执行 __wsfill.readback(...)：网站上实际提交的内容 / 进度发到这里，记进看板。
+    请求是网申网站的页面跨域发来的，带不了面板自己的请求头，所以改认这条待办的读回口令（只写在发给助手的话里）。"""
+    def err(msg, code):
+        r = jsonify({"error": msg})
+        r.status_code = code
+        return r
+    if request.method == "OPTIONS":
+        resp = app.response_class(status=204)
+    elif (request.content_length or 0) > 400_000:
+        resp = err("内容太长", 413)
+    else:
+        d = request.get_json(force=True, silent=True)
+        if not isinstance(d, dict) or not wstasks.check_readback_key(task_id, d.get("key", "")):
+            resp = err("口令不对：照面板发来的那句话原样执行（task 和 key 都要带上）", 403)
+        else:
+            try:
+                task, rid = wstasks.save_readback(task_id, str(d.get("kind") or ""), str(d.get("text") or ""),
+                                                  url=str(d.get("url") or ""), title=str(d.get("title") or ""),
+                                                  status=str(d.get("status") or ""), account=str(d.get("account") or ""),
+                                                  position=str(d.get("position") or ""), location=str(d.get("location") or ""),
+                                                  positions=d.get("positions") if isinstance(d.get("positions"), (list, str)) else None)
+                resp = jsonify({"ok": True, "record": rid, "status": task.get("status")})
+            except wstasks.NotFound:
+                resp = err("这条待办不存在了", 404)
+            except ValueError as e:
+                resp = err(str(e), 400)
+    resp.headers.update({"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST",
+                         "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Allow-Private-Network": "true"})
+    return resp
 
 
 @app.route("/api/wangshen", methods=["POST"])
@@ -514,7 +737,7 @@ def api_stats():
 
 
 EDITABLE = ("status", "job_source", "job_location", "notes", "focus_industry", "position_type",
-            "company_name", "job_title", "campaign", "deadline", "reply_status")
+            "company_name", "job_title", "campaign", "deadline", "reply_status", "apply_account")
 
 
 @app.route("/api/records/<record_id>", methods=["PUT"])
@@ -577,8 +800,12 @@ if __name__ == "__main__":
     resumed = jobqueue.resume_pending()
     if resumed:
         print(f"批量队列：接着处理上次没做完的 {resumed} 条")
-    jobqueue.start_scheduler()   # 定时发送：到点由面板自己发
+    if not config.IS_TEST_ENV:   # 测试环境不发信、不碰 Gmail 草稿
+        jobqueue.start_scheduler()   # 定时发送：到点由面板自己发
     agent.recover()              # 上次没做完就关了面板的助手对话：标成已停止
-    threading.Thread(target=jobqueue.startup_tasks, daemon=True).start()   # 定时草稿对齐 + 旧条目按新规则重查
-    print(f"投递面板：http://localhost:5001   模型：{config.CLAUDE_MODEL}   代理：{config.PROXY or '无'}")
-    app.run(host="127.0.0.1", port=5001, debug=False, threaded=True)
+    agent.tidy_chats()           # 一家网申只留一个对话：多出来的旧对话收起来
+    if not config.IS_TEST_ENV:
+        threading.Thread(target=jobqueue.startup_tasks, daemon=True).start()   # 定时草稿对齐 + 旧条目按新规则重查
+    env = f"【测试环境】数据 {config.DATA_DIR}  " if config.IS_TEST_ENV else ""
+    print(f"投递面板：{config.PANEL_BASE}   {env}模型：{config.CLAUDE_MODEL}   代理：{config.PROXY or '无'}", flush=True)
+    app.run(host="127.0.0.1", port=config.PORT, debug=False, threaded=True)

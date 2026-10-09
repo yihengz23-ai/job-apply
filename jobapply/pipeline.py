@@ -8,11 +8,12 @@ from . import checks, config, gmail_client, llm, records, resume
 
 
 class Blocked(Exception):
-    """有 error 级问题且没有强制发送。"""
+    """有 error 级问题且没有强制发送；或者有强制发送也跳不过的问题（hard）。"""
 
-    def __init__(self, issues):
-        super().__init__("；".join(i["msg"] for i in issues if i["level"] == "error"))
+    def __init__(self, issues, hard=None):
+        super().__init__("；".join(i["msg"] for i in (hard or issues) if i["level"] == "error"))
         self.issues = issues
+        self.hard = hard or []
 
 
 def _texts():
@@ -174,8 +175,9 @@ def deliver(result, jd_text, *, mode="send", force=False, source_label="", sourc
     result = _normalize_edits(dict(result))
     rev = review(result, jd_text, source_label=source_label, publish_date=publish_date)
     errors = [i for i in rev["issues"] if i["level"] == "error"]
-    if errors and not force:
-        raise Blocked(rev["issues"])
+    hard = [i for i in errors if checks.unskippable(i)]
+    if (errors and not force) or hard:   # 强制发送也只能跳过「可以确认」的那几类（比如邮箱在 JD 里找不到）
+        raise Blocked(rev["issues"], hard=hard if force else None)
 
     attachments, att_meta = [], []
     version = result.get("resume_version") or "中文"
@@ -266,13 +268,15 @@ def record_web_application(result, jd_text, *, source_label="", source_url="", t
     result = _normalize_edits(dict(result))
     kit = {k: v for k, v in (kit or {}).items() if k in KIT_KEYS}
     version = upload_version or "中文"
+    # 面板生成的网申问答不是实际提交的内容（实际提交的从网站读回）：只存进 wangshen_unused，备注只记「已同时网申」
     if record_id:
         def _merge(recs):
             for r in recs:
                 if r.get("id") == record_id:
-                    r.update(platform=kit.get("platform", "") or r.get("platform", ""), wangshen=kit or r.get("wangshen"))
+                    r.update(platform=kit.get("platform", "") or r.get("platform", ""),
+                             wangshen_unused=kit or r.get("wangshen_unused") or {})
                     if "已同时网申" not in (r.get("notes") or ""):  # 重复点 / 重复请求只记一次
-                        r["notes"] = ((r.get("notes") or "") + f"\n[{records.now_str()}] 已同时网申（上传{version}简历）").strip()
+                        r["notes"] = ((r.get("notes") or "") + f"\n[{records.now_str()}] 已同时网申").strip()
                     return True
             return False
         if records.mutate(_merge):
@@ -281,7 +285,7 @@ def record_web_application(result, jd_text, *, source_label="", source_url="", t
         **_record_fields(result, jd_text, source_label=source_label, source_url=source_url,
                          target_job=target_job, publish_date=publish_date, source_type=source_type),
         status="已投递", send_mode="未发邮件", attach_report=False,
-        resume_version=f"网申上传（{version}）", platform=kit.get("platform", ""), wangshen=kit,
+        resume_version=f"网申上传（{version}）", platform=kit.get("platform", ""), wangshen_unused=kit,
     )
     return {"ok": True, "record_id": records.add(rec)}
 

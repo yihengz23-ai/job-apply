@@ -251,12 +251,14 @@ def test_process_ready_spacing_and_claims(q, monkeypatch):
     assert {q._get(i)["status"] for i in ids} == {"已发送"}
 
 
-def test_process_ready_skips_mail_plus_wangshen(q, monkeypatch):
+def test_process_ready_sends_mail_plus_wangshen(q, monkeypatch):
+    # 「邮箱+网申」：邮件这部分跟普通邮件一样一键发；网申那部分在「网申」页的待办里
     add_ready(q, apply_channel="邮箱+网申")
     monkeypatch.setattr(pipeline, "review", lambda *a, **k: {"issues": []})
-    monkeypatch.setattr(pipeline, "deliver", lambda *a, **k: pytest.fail("不该发送"))
+    sent = []
+    monkeypatch.setattr(pipeline, "deliver", lambda r, jd, **kw: sent.append(kw["mode"]) or {"ok": True, "mode": "发送", "record_id": "r"})
     out = q.process_ready("send")
-    assert out["done"] == [] and "网申" in out["skipped"][0]
+    assert len(out["done"]) == 1 and sent == ["send"]
 
 
 def test_process_ready_stops_on_expired_gmail(q, monkeypatch):

@@ -3,6 +3,7 @@
 简历上的经历、学历、技能在 application_kit.json（和简历逐字一致）；这里只放简历以外的。
 证件号码一律不存（每次本人自己填）：保存时发现像身份证号 / 银行卡号的数字就拒绝。"""
 
+import copy
 import json
 import os
 import re
@@ -12,11 +13,11 @@ from datetime import datetime
 
 from . import config
 
-PATH = config.BASE_DIR / "wangshen_profile.json"
+PATH = config.DATA_DIR / "wangshen_profile.json"
 EXAMPLE = config.BASE_DIR / "wangshen_profile.example.json"
 KIT_PATH = config.BASE_DIR / "application_kit.json"
 KIT_EXAMPLE = config.BASE_DIR / "application_kit.example.json"
-SECTIONS = ("基本信息", "联系方式", "高中", "家庭成员", "经历精确日期", "资格与考试", "求职偏好与声明", "其他")
+SECTIONS = ("基本信息", "联系方式", "高中", "家庭成员", "经历精确日期", "项目经历", "资格与考试", "求职偏好与声明", "其他")
 LONG_NUMBER = re.compile(r"(?<![\dA-Za-z])\d{15,19}[Xx]?(?![\dA-Za-z])")   # 身份证号 / 银行卡号
 KEEP_BACKUPS = 20
 
@@ -108,6 +109,38 @@ def save(profile):
         if os.path.exists(tmp):
             os.unlink(tmp)
     return clean
+
+
+def _cells(profile):
+    """底稿拆成一格一格：(段, 栏目名或第几项, 子栏目) → 内容。"""
+    out = {}
+    for sec in SECTIONS:
+        for i, it in enumerate(profile.get(sec) or []):
+            if isinstance(it, list) and len(it) == 2:
+                out[(sec, it[0], None)] = it[1]
+            elif isinstance(it, dict):
+                for k, v in it.items():
+                    out[(sec, i, k)] = v
+    return out
+
+
+def merge(base, edited, current):
+    """页面上改的只是 base → edited 之间变了的那几格：把这几格写进服务器上最新的 current。
+    这样页面开着的时候别处（助手、另一个窗口）改过的内容不会被整份旧底稿冲掉。"""
+    b = _cells(base or {})
+    changed = {k: v for k, v in _cells(edited or {}).items() if b.get(k) != v}
+    out = copy.deepcopy(current or {})
+    for (sec, key, sub), v in changed.items():
+        items = out.setdefault(sec, [])
+        if sub is None:
+            hit = next((it for it in items if isinstance(it, list) and it and it[0] == key), None)
+            if hit:
+                hit[1] = v
+            else:
+                items.append([key, v])
+        elif isinstance(key, int) and key < len(items) and isinstance(items[key], dict):
+            items[key][sub] = v
+    return out
 
 
 def as_text(profile):

@@ -21,7 +21,7 @@ from .llm import COMPANY_TYPES
 log = logging.getLogger(__name__)
 _lock = threading.RLock()          # 同一进程内（面板的多个请求 / 后台队列线程）
 _flock = {"depth": 0, "fh": None}   # 跨进程（面板和剪贴板投递同时写）
-STATUSES = ["草稿", "已投递", "已电联", "面试中", "offer", "拒绝", "无回复"]
+STATUSES = ["草稿", "已投递", "笔试", "已电联", "面试中", "offer", "拒绝", "无回复"]   # 笔试：含在线测评
 POSITION_LABELS = ["全职", "留用实习", "实习", "不明确"]
 KEEP_BACKUPS = 40
 
@@ -87,10 +87,19 @@ def _backup():
 
 
 def save(records):
+    """写回 records.json：只换 records、updated_at、schema 三个键，别的顶层数据（以后加的）原样保留。"""
     with _locked():
         _backup()
-        payload = json.dumps({"records": records, "updated_at": now_str(), "schema": 2},
-                             ensure_ascii=False, indent=2)
+        data = {}
+        if config.RECORDS_PATH.exists():
+            try:
+                cur = json.loads(config.RECORDS_PATH.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as e:
+                raise RecordsCorrupt(f"records.json 损坏（{e}），为防止覆盖历史记录已停止写入。备份在 {config.BACKUP_DIR}") from e
+            data = cur if isinstance(cur, dict) else {}
+        schema = data.get("schema") if isinstance(data.get("schema"), int) and data.get("schema") > 2 else 2
+        data.update(records=records, updated_at=now_str(), schema=schema)
+        payload = json.dumps(data, ensure_ascii=False, indent=2)
         fd, tmp = tempfile.mkstemp(dir=config.RECORDS_PATH.parent, prefix=".records-", suffix=".tmp")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -123,6 +132,11 @@ NEW_FIELDS = {
     "issues_at_send": [], "model": "", "cc_email": "", "notes": "", "focus_industry": "",
     "job_source": "", "job_post_date": "", "apply_url": "", "status_updated_at": "",
     "platform": "", "wangshen": {},
+    "apply_account": "",     # 网申用哪个账号投的（注册网申账号的手机号 / 邮箱）
+    "ws_submitted": "",      # 网申实际提交的内容：从网站上读回来的原文（证件号打码），不是面板生成的
+    "site_status": "",       # 网站上显示的进度（如「笔试」「已进入测评环节」），和查的时间
+    "site_status_at": "",
+    "wangshen_unused": {},   # 面板生成过、但本人没用上的网申问答：挪到这里，不再当成投递内容显示
     "sent_ts": 0,            # 投递时刻的绝对时间戳（换时区也准；旧记录为 0，按 sent_at 本机时间算）
     "reply_locked": False,   # 看板里手动改过回复状态：查回复时不再覆盖
 }
