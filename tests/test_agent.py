@@ -304,6 +304,8 @@ def test_old_process_told_about_rule_changes_once(ag):
     ag.send(c["id"], "实习描述用精简版")
     first, second = r.runner.sent
     assert first.startswith("（面板）规则改了") and "证件号这一栏空着" in first and first.endswith("接着填")
+    assert "全身照 + 半身照" in first and "1M到5M" in first                 # 两次改动都补上（老进程是第 1 版）
+    assert "可以上传的文件（以这份为准）" in first                          # 文件清单也换成现在的
     assert second == "实习描述用精简版"
     assert ag._load(c["id"])["prompt_version"] == ag.PROMPT_VERSION
     assert [m["text"] for m in ag.get(c["id"])["messages"]] == ["接着填", "实习描述用精简版"]   # 对话里只记本人的原话
@@ -318,3 +320,76 @@ def test_new_process_gets_current_rules_and_no_note(ag, monkeypatch):
     assert ag._load(c["id"])["prompt_version"] == ag.PROMPT_VERSION and stub.sent == ["帮我填"]
     ag.send(c["id"], "再改一下")
     assert stub.sent[-1] == "再改一下"
+
+
+def test_system_prompt_photo_and_waiting_rules(ag):
+    """照片：全身 / 半身、1M 到 5M 怎么挑；事实栏不猜；费时的事不在一轮里等；页面脚本里不久等。"""
+    s = ag.system_prompt()
+    assert "全身用文件名带「全身」的，半身用「生活照」" in s and "「1M到5M」" in s
+    assert "别猜着填" in s and "费时的" in s and "不要在页面脚本里等" in s
+    assert "最多等 25 秒" not in s
+    assert "不要把整段贴进去" in s and "性格关键词" in s and "〔提示：…〕〔≤N字〕" in s     # 「可用5个词描述你的性格」那种
+
+
+def _ws_chat(ag, created_at=None):
+    t = wstasks.add("https://jobs.example.com/profile-note", "底稿资本", "实习生")
+    c = ag.new_chat(task_id=t["id"])
+    chat = ag._load(c["id"])
+    chat["prompt_version"] = ag.PROMPT_VERSION          # 只看底稿那句，规则那句不掺进来
+    if created_at:
+        chat["created_at"] = created_at
+    ag._save(chat)
+    r = ag._Runner(c["id"], _LiveStub())
+    ag._runners[c["id"]] = r
+    return c["id"], r
+
+
+def test_running_assistant_told_what_changed_in_the_profile(ag):
+    """进程只在起来时拿一次底稿：本人中途改了底稿，下一句前面先告诉它改了哪几格（只说一次，带新内容）。"""
+    import copy
+    wsprofile.save(SAMPLE)
+    cid, r = _ws_chat(ag)
+    ag.send(cid, "开始")                                                 # 第一次：只记下指纹
+    changed = copy.deepcopy(SAMPLE)
+    changed["基本信息"][0][1] = "张三丰"
+    changed["其他"] = [["自我评价", "新的一段"]]
+    wsprofile.save(changed)
+    ag.send(cid, "按新底稿重新填")
+    ag.send(cid, "再看一眼")
+    first, second, third = r.runner.sent
+    assert first == "开始" and third == "再看一眼"
+    assert second.startswith("（面板）网申底稿改过了") and second.endswith("按新底稿重新填")
+    assert "基本信息 / 姓名：张三丰" in second and "其他 / 自我评价：新的一段" in second and "出生日期" not in second
+
+
+def test_old_chat_compares_with_the_profile_it_started_with(ag):
+    """上线前开的老对话没记指纹：拿它开始以后第一次保存前备份下来的那份底稿比——就是它起来时看到的那份。"""
+    import copy
+    wsprofile.save(SAMPLE)
+    cid, r = _ws_chat(ag, created_at="2026-10-10 20:45:10")
+    older = copy.deepcopy(SAMPLE)
+    older["基本信息"][0][1] = "更早的名字"
+    config.BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    (config.BACKUP_DIR / "wangshen_profile-20261010-090000.json").write_text(json.dumps(older, ensure_ascii=False), encoding="utf-8")   # 对话开始前的：不算
+    (config.BACKUP_DIR / "wangshen_profile-20261010-213522.json").write_text(json.dumps(SAMPLE, ensure_ascii=False), encoding="utf-8")  # 它看到的
+    changed = copy.deepcopy(SAMPLE)
+    changed["家庭成员"][0]["出生年月"] = "1970-01"
+    wsprofile.save(changed)
+    ag.send(cid, "重新填")
+    note = r.runner.sent[0]
+    assert "家庭成员 第 1 项 / 出生年月：1970-01" in note and "姓名" not in note and note.endswith("重新填")
+
+
+def test_chat_without_application_gets_no_profile_note(ag):
+    import copy
+    wsprofile.save(SAMPLE)
+    c = ag.new_chat()
+    r = ag._Runner(c["id"], _LiveStub())
+    ag._runners[c["id"]] = r
+    chat = ag._load(c["id"]); chat["prompt_version"] = ag.PROMPT_VERSION; ag._save(chat)
+    ag.send(c["id"], "你好")
+    changed = copy.deepcopy(SAMPLE); changed["基本信息"][0][1] = "张三丰"
+    wsprofile.save(changed)
+    ag.send(c["id"], "再问一句")
+    assert r.runner.sent == ["你好", "再问一句"]                          # 问答对话不填表：不用说
+

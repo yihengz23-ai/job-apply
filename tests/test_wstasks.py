@@ -277,6 +277,7 @@ def test_wait_state_from_marker_and_from_silent_stop(store, monkeypatch, tmp_pat
     assert msg.startswith("（面板）本人在网申页点了「让助手接着做」") and "在画了蓝框的网页里输证件号并保存" in msg
     assert "我弄好了" not in msg and "先看一眼网页确认" in msg
     assert "__wsfill.hasValue" in msg and "不截那一栏、不点进去" in msg     # 证件号：只问填没填，不截图、不点
+    assert "可以上传的文件（以这份为准）" in msg                            # 本人可能刚往文件夹里放了照片
     agent._task_started(chat["id"])                                     # 本人点了接着做，助手接着干
     x = wstasks.get(t["id"])
     assert x["status"] == "助手在填" and x["todo"]                       # todo 只在助手报新状态时更新

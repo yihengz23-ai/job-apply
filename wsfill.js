@@ -11,7 +11,7 @@
  * 写值、点下拉选项、分级地区、单选按文字匹配的做法参考了 OpenJobAutofill（MIT License, Br1an67）。
  */
 (() => {
-  const VERSION = '2.34';
+  const VERSION = '2.35';
   if (window.__wsfill && window.__wsfill.version === VERSION && !window.__wsfillReload) return;   // 改脚本调试时先设 window.__wsfillReload = true
 
   const ID = 'data-wsf-id';
@@ -287,6 +287,7 @@
       if ((kind === 'choice' || kind === 'cascader') && (root.matches(MULTI) || root.querySelector(MULTI) || root.getAttribute('aria-multiselectable') === 'true')) f.multi = true;
       const ph = el.getAttribute('placeholder');
       if (ph && ph !== f.label) f.placeholder = norm(ph);
+      if ((kind === 'text' || kind === 'textarea') && el.maxLength > 0 && el.maxLength < 100000) f.maxlength = el.maxLength;
       if (el.disabled || el.readOnly && kind === 'text' || el.getAttribute('aria-disabled') === 'true' || String(root.className).includes('disabled')) f.disabled = true;
       rows.push({f, el, root});
     }
@@ -1030,8 +1031,11 @@
       const short = f.section.split(' > ').pop() || '（无分区）';
       if (short !== sec) { out.push('## ' + short); sec = short; }
       const v = f.kind === 'textarea' ? (f.value ? f.value.length + '字' : '') : f.value.slice(0, 30);
+      // 输入框里的灰字常常就是要求（「可用5个词描述你的性格」「限200字」）：有用的照列；「请输入姓名」这种不列
+      const tip = (f.kind === 'text' || f.kind === 'textarea') && f.placeholder && !/^请(输入|填写|选择)[^，,。；;]{0,10}$/.test(f.placeholder)
+        ? '〔提示：' + f.placeholder.slice(0, 40) + '〕' : '';
       out.push(`${f.id} ${f.label.slice(0, 24)}｜${f.kind}${f.multi ? '(多选)' : ''}${f.required ? '*' : ''}${f.disabled ? '(灰)' : ''}` +
-        (f.options ? '{' + f.options.join('/').slice(0, 60) + '}' : '') + '＝' + v);
+        (f.options ? '{' + f.options.join('/').slice(0, 60) + '}' : '') + tip + (f.maxlength ? `〔≤${f.maxlength}字〕` : '') + '＝' + v);
     }
     return paginate(out.join('\n'));
   }

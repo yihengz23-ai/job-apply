@@ -1,6 +1,6 @@
 """网申要上传的材料：桌面「自动投递/网申上传」文件夹。面板助手只能读这个文件夹，网站要传照片、简历时它自己挑着传。
 
-本人只管往里放两张固定的照片（文件名带「证件照」「生活照」）；单页中文简历、研究样本由面板放进去（简历换了跟着更新）。
+本人只管往里放固定的照片（文件名带「证件照」「生活照」；有全身照的再放一张文件名带「全身」的）；单页中文简历、研究样本由面板放进去（简历换了跟着更新）。
 网站对照片尺寸 / 大小常有要求（比如有的银行要证件照 100×140、30KB 以内），面板按常见规格各做一份，助手照网站写的要求挑。"""
 
 import re
@@ -13,6 +13,9 @@ DIR = config.MATERIALS_DIR / "网申上传"
 GEN = "（自动生成）"                                  # 面板做的文件名都带这个；本人放的照片不带
 PHOTO_EXT = (".jpg", ".jpeg", ".png", ".heic")
 ID_SIZES = ((295, 413), (100, 140))                   # 一寸（5:7）；小尺寸（银行等老规格）
+KINDS = (("证件照", "证件"), ("全身照", "全身"), ("生活照", "生活"))   # 文件名里带哪个词算哪种（「生活照-全身」算全身照）
+MB = 1024 * 1024
+BAND = (int(1.15 * MB), int(4.5 * MB))               # 「1M≤文件≤5M」这类要求（中国人寿）：做一份落在中间的，两头都留余量
 
 
 def _sips(*args):
@@ -26,12 +29,12 @@ def _dims(path):
 
 
 def masters():
-    """本人放的照片：文件名带「证件」「生活」的（面板自己做的不算），每样取第一张。"""
+    """本人放的照片：文件名带「证件」「全身」「生活」的（面板自己做的不算），每样取第一张。"""
     out = {}
     for p in sorted(DIR.iterdir()) if DIR.exists() else []:
         if p.suffix.lower() not in PHOTO_EXT or GEN in p.name or p.name.startswith("."):
             continue
-        kind = "证件照" if "证件" in p.name else "生活照" if "生活" in p.name else ""
+        kind = next((k for k, word in KINDS if word in p.name), "")
         if kind and kind not in out:
             out[kind] = p
     return out
@@ -43,12 +46,13 @@ def _fresh(out, src):
 
 def _photo_variants(kind, src):
     """证件照：裁成一寸的 5:7 竖版（太宽左右各裁一点，太高从下面裁，头顶不动），出 295×413、100×140 两种；
-    两种照片都再出一份长边 1200 的 JPG（原图太大、或者是 HEIC / PNG 时用）。源照片换了才重做。"""
+    每种照片都再出一份长边 1200 的 JPG（原图太大、或者是 HEIC / PNG 时用）；生活照、全身照再出长边 320 和一份 1M 到 5M 的
+    （有的网站要求文件不小于 1M，手机传过来的照片常常压得只有几百 KB）。源照片换了才重做。"""
     jobs = [(f"{kind}_长边1200{GEN}.jpg", None)]
     if kind == "证件照":
         jobs += [(f"证件照_{w}x{h}{GEN}.jpg", (w, h)) for w, h in ID_SIZES]
     else:
-        jobs += [(f"生活照_长边320{GEN}.jpg", None)]
+        jobs += [(f"{kind}_长边320{GEN}.jpg", None), (f"{kind}_1M到5M{GEN}.jpg", "band")]
     for name, size in jobs:
         out = DIR / name
         if _fresh(out, src):
@@ -56,7 +60,9 @@ def _photo_variants(kind, src):
         tmp = DIR / f".tmp_{kind}.jpg"
         try:
             _sips("-s", "format", "jpeg", src, "--out", tmp)
-            if size:
+            if size == "band":
+                _band(tmp, out)
+            elif size:
                 w, h = size
                 sw, sh = _dims(tmp)
                 if sw * h > sh * w:
@@ -72,6 +78,31 @@ def _photo_variants(kind, src):
                 _sips("-s", "formatOptions", 85, tmp, "--out", out)
         finally:
             tmp.unlink(missing_ok=True)
+
+
+def _band(src, out):
+    """重存成落在 BAND 里的大小（只是换尺寸、画质重存，照片内容不改）：长边 3200 起试，小了往大试、大了往小试；
+    都对不上就留最接近的那份（清单里写着大小，助手自己看）。"""
+    lo, hi = BAND
+
+    def save(edge, quality):
+        _sips("-Z", edge, "-s", "formatOptions", quality, src, "--out", out)
+        return out.stat().st_size
+
+    def gap(size):
+        return lo - size if size < lo else size - hi if size > hi else 0
+
+    size = save(3200, 95)
+    if not gap(size):
+        return
+    best, last = (gap(size), (3200, 95)), None
+    for last in ((4000, 95), (4800, 100)) if size < lo else ((2400, 90), (1800, 85)):
+        size = save(*last)
+        if not gap(size):
+            return
+        best = min(best, (gap(size), last))
+    if best[1] != last:
+        save(*best[1])                 # 都没落进去：换回最接近的那份
 
 
 def _copy_if_changed(blob, dest):
@@ -97,7 +128,7 @@ def prepare():
             _photo_variants(kind, src)
         except (subprocess.CalledProcessError, OSError) as e:
             notes.append(f"（{kind}的各种规格没做出来：{e}）")
-    for kind in ("证件照", "生活照"):
+    for kind in ("证件照", "生活照", "全身照"):
         if kind not in found:
             notes.append(f"（还没有{kind}：本人还没往文件夹里放，要传{kind}的话跳过，收尾时请本人自己传）")
     return listing() + ("\n" + "\n".join(notes) if notes else "")

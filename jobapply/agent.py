@@ -6,6 +6,7 @@
 --allowedTools 只放行 Claude in Chrome。所以它发不了邮件、改不了面板数据、碰不到电脑上的文件；
 它看到的资料（网申底稿、简历内容、档案、投递记录摘要、网站笔记）都是面板每一轮放进系统提示里给它的。"""
 
+import hashlib
 import json
 import os
 import re
@@ -40,11 +41,17 @@ BOARD_LINE = re.compile(r"【看板】\s*([^\n]+)")   # 本人在对话里说的
 PREFIX = "mcp__claude-in-chrome__"
 # 助手进程只在起来时拿一次提示词，能活十几个小时。规则改了、要让已经在跑的进程马上知道的：PROMPT_VERSION 加一，
 # 在 RULE_CHANGES 里用几句话写清改了什么；面板下次递话给老进程时先补这几句（新起的进程拿的就是新提示词，不补）。
-PROMPT_VERSION = 2
+PROMPT_VERSION = 3
 RULE_CHANGES = {
     2: "证件号这一栏空着、什么都不做：不填、不点进去、不放光标、不标框、不截这一栏、不为它停（focusField 没有了），本人自己手动填；"
        "表上有这一栏的，收尾清单里说一句「证件号空着，你自己填」，不写进「要你做」。只有网站不填它就进不了后面，才报「等你处理」、"
        "用 __wsfill.hasValue 看（「还在输」就再等）。不挡路的承诺 / 声明勾选不用等，写进收尾清单。",
+    3: "照片：要「全身照 + 半身照」的，全身用文件名带「全身」的，半身用「生活照」；要求文件 1M 以上的，用「1M到5M」那份"
+       "（以面板最新给的文件清单为准）；文件夹里没有就别硬传，收尾写清缺哪张。底稿里没有的事实（实习所在部门、联系人、出生地……）"
+       "别猜着填：空着、收尾问本人。要本人做的里有费时的（找 / 拍照片、回答问题）就不在这一轮里等，直接报「等你处理」。"
+       "页面脚本里别等（标签页在后台会被放慢、超过 45 秒掐断），要等用 computer 的 wait，每次最多 10 秒。"
+       "填文字栏前先看灰字提示和字数上限（view 里的〔提示：…〕〔≤N字〕），要几个词的用底稿「性格关键词」，"
+       "限字数的自我评价用「自我评价（精简版）」原文，不要把整段贴进去。",
 }
 
 _lock = threading.RLock()
@@ -350,7 +357,7 @@ def _go(chat_id, text):
     if r and not r.closed and r.runner.alive():
         try:
             r.begin_turn()
-            r.write(_rule_note(chat_id) + text)
+            r.write(_rule_note(chat_id) + _profile_note(chat_id) + text)
             return
         except (BrokenPipeError, OSError, ValueError):
             pass                           # 进程刚好退了：下面另起一个
@@ -367,7 +374,65 @@ def _rule_note(chat_id):
         return ""
     chat["prompt_version"] = PROMPT_VERSION
     _save(chat)
-    return "（面板）规则改了，以这几句为准：" + " ".join(RULE_CHANGES[k] for k in sorted(RULE_CHANGES) if k > v) + "\n\n"
+    note = "（面板）规则改了，以这几句为准：" + " ".join(RULE_CHANGES[k] for k in sorted(RULE_CHANGES) if k > v) + "\n"
+    try:                                   # 老进程的文件清单也是起来时那份：面板可能新做了照片规格
+        note += "可以上传的文件（以这份为准）：\n" + uploads.prepare() + "\n"
+    except Exception:
+        pass
+    return note + "\n"
+
+
+def _profile_sig(profile):
+    """底稿一格一格的指纹（只记摘要、不记内容），记在对话上：下次递话时比一比哪几格改了。"""
+    return {json.dumps(k, ensure_ascii=False): hashlib.sha1(json.dumps(v, ensure_ascii=False).encode()).hexdigest()[:12]
+            for k, v in wsprofile._cells(profile).items()}
+
+
+def _profile_at(created_at):
+    """对话开始时用的那份底稿（还没记指纹的老对话用）：底稿每次保存前先把旧的备份一份，对话开始以后第一次保存前
+    备份下来的那份就是；之后没存过就返回 None（底稿没变）。"""
+    stamp = re.sub(r"\D", "", created_at or "")
+    if len(stamp) < 14:
+        return None
+    stamp = f"{stamp[:8]}-{stamp[8:14]}"
+    for p in sorted(config.BACKUP_DIR.glob("wangshen_profile-*.json")):
+        if p.stem.removeprefix("wangshen_profile-") > stamp:
+            try:
+                return json.loads(p.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                return None
+    return None
+
+
+def _profile_note(chat_id):
+    """（锁内调用）网申对话开始以来底稿改了哪几格：返回要先告诉助手的话（同一处改动只说一次）；没改就返回空。
+    助手的提示词只在进程起来时拿一次底稿，本人中途改了底稿（自我评价、证明人……），不说它不知道。"""
+    chat = _load(chat_id)
+    if not chat.get("task_id"):
+        return ""
+    try:
+        profile, _ = wsprofile.load()
+        now = _profile_sig(profile)
+    except Exception:
+        return ""
+    old = chat.get("profile_sig")
+    if old is None:
+        base = _profile_at(chat.get("created_at"))
+        old = _profile_sig(base) if base else now
+    chat["profile_sig"] = now
+    _save(chat)
+
+    def where(key):
+        sec, name, sub = json.loads(key)
+        return f"{sec} / {name}" if sub is None else f"{sec} 第 {name + 1} 项 / {sub}"
+    cells = {json.dumps(k, ensure_ascii=False): v for k, v in wsprofile._cells(profile).items()}
+    lines = [f"- {where(k)}：{str(cells[k])[:600]}" for k in now if old.get(k) != now[k]]
+    lines += [f"- {where(k)}：底稿里删掉了" for k in old if k not in now]
+    if not lines:
+        return ""
+    more = f"\n- ……还有 {len(lines) - 30} 项，以底稿为准" if len(lines) > 30 else ""
+    return ("（面板）网申底稿改过了，以下面这几项为准：网页上已经按旧的填了的换成新的，还没填的照新的填。\n"
+            + "\n".join(lines[:30]) + more + "\n\n")
 
 
 def _done(chat_id):
@@ -803,6 +868,7 @@ def _spawn(chat_id, text):
         fresh = _load(chat_id)
         fresh["prompt_version"] = PROMPT_VERSION   # 新进程拿的是现在的提示词
         _save(fresh)
+        note = _profile_note(chat_id)              # 接着做的老对话：网页上可能还是按旧底稿填的
         _starting.discard(chat_id)
         if _load(chat_id).get("stopped"):   # 进程起来之前就点了停止
             runner.kill()
@@ -810,7 +876,7 @@ def _spawn(chat_id, text):
     r.begin_turn()
     sent = [text]
     try:
-        r.write(text)
+        r.write(note + text)
         with _lock:
             for extra in _pending.pop(chat_id, []):
                 r.write(extra)

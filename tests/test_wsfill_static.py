@@ -58,3 +58,11 @@ def test_id_field_left_alone_hasvalue_only_says_filled_or_empty():
     clear = t[t.index("async function clear(id)"):t.index("async function clear(id)") + 400]
     assert "ID_LABEL.test(" in clear                                      # 清空也不碰证件号
     assert t.count("if (r.reason !== ID_REFUSE) mark(step.id, r.ok)") == 2   # fill、start 都不给它标框
+
+
+def test_view_shows_field_hints_and_length_limits():
+    """输入框里的灰字常常就是要求（招商「可用5个词描述你的性格」）：view 里照列，字数上限也列；「请输入姓名」这种不列。"""
+    t = JS.read_text(encoding="utf-8")
+    view = t[t.index("function view("):t.index("async function opts(id)")]
+    assert "〔提示：" in view and "〔≤${f.maxlength}字〕" in view and "请(输入|填写|选择)" in view
+    assert "f.maxlength = el.maxLength" in t

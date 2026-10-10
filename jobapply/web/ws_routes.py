@@ -4,7 +4,7 @@ import threading
 
 from flask import Blueprint, current_app, jsonify, request
 
-from jobapply import agent, apps, checks, config, wstasks
+from jobapply import agent, apps, checks, config, uploads, wstasks
 
 from .common import LOCAL_HOSTS, _body, _err
 
@@ -99,7 +99,15 @@ def _continue_message(t):
         head += f"你上次停下的原因：{t['halted']}。"
     return (f"{head}接着填这家：{t.get('company') or '（公司见网页）'}｜{t.get('job') or '（岗位见网页）'}。"
             "就用你原来那个画了颜色框的网页（先用 tabs_context_mcp 看一眼）；找不到了就自己新开一个、画上框接着做，不要让本人拖标签页。"
-            "先看清现在填到哪了，把没填的填完、能存的存上，停下来时照规矩写一行【网申记录】报状态。")
+            "先看清现在填到哪了，把没填的填完、能存的存上，停下来时照规矩写一行【网申记录】报状态。" + _files_now())
+
+
+def _files_now():
+    """本人可能刚往「网申上传」放了照片：把最新的文件清单带上（顺手把各种规格做好）。做不出来就不带。"""
+    try:
+        return "\n可以上传的文件（以这份为准）：\n" + uploads.prepare()
+    except Exception:
+        return ""
 
 
 _ws_agent_lock = threading.Lock()   # 快速点两次「让助手填」：第二次要等第一次把对话建好、记到待办上，才不会开出两个对话
