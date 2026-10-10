@@ -1,6 +1,7 @@
 """流程编排（网页面板和剪贴板模式共用）：分析 → 自动修正 → 检查 → 发送/存草稿 → 记录。"""
 
 import re
+import threading
 import time
 from datetime import datetime
 
@@ -168,8 +169,9 @@ DRAFT_UNCERTAIN_HINT = ("存草稿结果不确定（{err}）：请到 Gmail「�
 
 
 def deliver(result, jd_text, *, mode="send", force=False, source_label="", source_url="",
-            target_job="", publish_date="", source_type="网页面板"):
-    """mode: send=直接发送；draft=存为 Gmail 草稿（只认这两个值，写错就报错，不会默认去发）。"""
+            target_job="", publish_date="", source_type="网页面板", app_id=""):
+    """mode: send=直接发送；draft=存为 Gmail 草稿（只认这两个值，写错就报错，不会默认去发）。
+    app_id：这封信在队列里已经挂了申请（迁移时给没发出的稿子建的）：记录挂到它上面，不另建一张卡。"""
     if mode not in ("send", "draft"):
         raise ValueError(f"不认识的发送方式：{mode!r}")
     result = _normalize_edits(dict(result))
@@ -229,6 +231,8 @@ def deliver(result, jd_text, *, mode="send", force=False, source_label="", sourc
             gmail_thread_id=ids.get("thread_id", ""), gmail_draft_id=ids.get("draft_id", ""),
             issues_at_send=[i["msg"] for i in rev["issues"] if i["level"] in ("error", "warn")],
         )
+        if app_id:
+            rec["app_id"] = app_id
         out["record_id"] = records.add(rec)
     except Exception as e:  # 邮件已经发出，记录失败要明确告诉用户
         out["record_error"] = f"邮件已{send_mode}，但写入投递记录失败：{e}"
@@ -290,6 +294,48 @@ def record_web_application(result, jd_text, *, source_label="", source_url="", t
     return {"ok": True, "record_id": records.add(rec)}
 
 
+def _reply_events(events):
+    """新来的信落到申请上：阶段变化只当建议（本人点了才改）、截止时间写进下一步（标「按来信推算」）、时间线记一笔、发通知；
+    退信算轮到本人。单条出错不影响别的。"""
+    from . import apps, notify
+    seen = set()
+    for rid, app_id, c, upd in events:
+        if not app_id:
+            continue
+        key = (app_id, upd.get("reply_at", ""), upd.get("reply_subject", ""))
+        first = key not in seen          # 一家几个岗位查到同一封信（网申按机构名查）：来信、时间线、下一步、通知只做一次
+        seen.add(key)
+        try:
+            if first:
+                apps.set_reply(app_id, status=upd.get("reply_status", ""), at=upd.get("reply_at", ""), sender=upd.get("reply_from", ""),
+                               snippet=upd.get("reply_snippet", ""), subject=upd.get("reply_subject", ""))
+                if upd.get("reply_status") == "退信":
+                    notify.send("退信", upd.get("reply_snippet") or "这封信没送到", app_id=app_id, kind="bounce")
+            if not c["kind"]:
+                continue
+            rec = records.get(rid) or {}
+            stage, cur = REPLY_STAGE.get(c["kind"]), rec.get("status") or "已投递"
+            forward = stage and cur != stage and cur not in records.TERMINAL and \
+                (stage in records.TERMINAL or records.STAGE_ORDER.get(stage, 0) > records.STAGE_ORDER.get(cur, 0))
+            if forward:
+                apps.suggest(app_id, "阶段", f"来信像是{c['kind']}：把「{rec.get('job_title') or '这个岗位'}」改成"
+                                            f"「{records.STAGE_LABEL.get(stage, stage)}」？",
+                             {"record_id": rid, "to": stage, "subject": upd.get("reply_subject", ""), "evidence": c["evidence"]})
+            if not first:
+                continue
+            apps.add_timeline(app_id, "来信", f"{c['kind']}：{upd.get('reply_subject') or c['evidence']}"
+                              + (f"（截止 {c['due']}）" if c["due"] else ""), "邮件")
+            if c["due"]:
+                nxt = apps.get(app_id).get("next_step") or {}
+                if not nxt.get("text") or nxt.get("done") or nxt.get("inferred"):
+                    apps.set_next_step(app_id, f"{c['kind'].replace('邀请', '')}（按来信推算：{c['due']} 前）", due=c["due"],
+                                       source="邮件", inferred=True)
+            notify.send(f"来信：{c['kind']}", upd.get("reply_subject") or c["evidence"], app_id=app_id, kind="reply-" + c["kind"],
+                        due=c["due"] or None)
+        except Exception:
+            continue
+
+
 def sync_gmail(progress=print):
     recs = records.load()
     candidates = gmail_client.find_unrecorded_sent(recs, progress=progress)
@@ -318,7 +364,23 @@ def sync_gmail(progress=print):
     return {"candidates": len(candidates), "added": added}
 
 
+_refresh_lock = threading.Lock()   # 手动点「检查回复」和后台自动查不同时跑
+REPLY_STAGE = {"笔试邀请": "笔试", "测评邀请": "笔试", "AI面邀请": "面试中", "面试邀请": "面试中", "offer": "offer", "拒信": "拒绝"}
+
+
 def refresh_replies(campaign=None, progress=print, record_ids=None):
+    # 只查几条（发信后查退信）：等前面那一轮查完再查（最多 2 分钟），不直接跳过；全量查（后台自动、点「检查回复」）撞上了就跳过
+    got = _refresh_lock.acquire(timeout=120) if record_ids else _refresh_lock.acquire(blocking=False)
+    if not got:
+        progress("另一次查回复还在跑，这次先不查")
+        return {"checked": 0, "replied": 0, "busy": True, "at": datetime.now().strftime("%Y-%m-%d %H:%M")}
+    try:
+        return _refresh_replies(campaign, progress, record_ids)
+    finally:
+        _refresh_lock.release()
+
+
+def _refresh_replies(campaign=None, progress=print, record_ids=None):
     recs = records.filter_campaign(records.load(), campaign)
     if record_ids:
         recs = [r for r in recs if r.get("id") in set(record_ids)]
@@ -329,12 +391,23 @@ def refresh_replies(campaign=None, progress=print, record_ids=None):
     except gmail_client.PartialAuthError as e:  # 查到一半授权失效：先把查到的存上，再提示重新授权
         updates, auth_error = e.updates, e
     rank = gmail_client.REPLY_RANK
+    events, now = [], datetime.now()
 
     def _apply(all_recs):
         n = 0
         for r in all_recs:
             upd = updates.get(r.get("id"))
             if upd:
+                latest = upd.get("reply_at")
+                # 新来的信：认一认是哪一类进展。「处理到哪封」另记在 reply_seen_at——下面被压住不更新 reply_at 的信
+                # （本人手动改过回复状态、或者这封级别更低）也只处理一次，不会每两小时又当新信记一遍、弹一遍通知
+                if latest and latest != r.get("reply_at") and latest != r.get("reply_seen_at"):
+                    c = gmail_client.classify_progress(upd.get("reply_subject", ""), upd.get("reply_snippet", ""), now)
+                    events.append((r.get("id"), r.get("app_id"), c, upd))
+                    if c["kind"]:
+                        r["reply_kind"] = c["kind"]
+                if latest:
+                    r["reply_seen_at"] = latest
                 # 你在看板里手动改过回复状态的不动；已经记过更重要的（如「有回复」），后来的自动回复 / 来信不覆盖它
                 if upd.get("reply_status") and (r.get("reply_locked")
                                                 or rank.get(upd["reply_status"], 0) < rank.get(r.get("reply_status"), 0)):
@@ -343,6 +416,7 @@ def refresh_replies(campaign=None, progress=print, record_ids=None):
                 n += 1 if upd.get("reply_status") == "有回复" else 0
         return n
     replied = records.mutate(_apply)
+    _reply_events(events)
     if auth_error:
         progress(f"授权中途失效，已保存前面查到的结果（{replied} 条有回复）")
         raise gmail_client.GmailAuthError(str(auth_error))

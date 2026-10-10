@@ -1,0 +1,24 @@
+{# 「数据分析」页：放在 index.html 的 #tab-analytics 里，脚本是 static/js/analytics.js #}
+  <div class="mb-4"><select id="aCampaign" class="field !w-auto"></select></div>
+  <div id="analyticsMetrics" class="grid grid-cols-3 md:grid-cols-6 gap-3 mb-6"></div>
+  <div class="grid grid-cols-12 gap-4 md:gap-6 mb-6">
+    <div class="col-span-12 md:col-span-8 bg-white p-5 md:p-7 rounded-2xl">
+      <h3 class="text-lg font-semibold">投递趋势</h3><p class="text-xs text-slate-400 mb-4">柱 = 每日投递；橙线 = 累计（悬停看当天投了哪些）</p>
+      <div class="relative">
+        <div id="trendChart" class="h-56 flex items-end gap-1 md:gap-2 relative z-10"></div>
+        <canvas id="cumulativeLine" class="absolute inset-0 w-full h-56 pointer-events-none z-20"></canvas>
+        <div id="trendTooltip" class="hidden absolute z-30 bg-slate-900 text-white text-xs rounded-xl px-4 py-3 shadow-2xl pointer-events-none max-w-[240px]"></div>
+      </div>
+    </div>
+    <div class="col-span-12 md:col-span-4 bg-white p-5 md:p-7 rounded-2xl flex flex-col items-center">
+      <h3 class="text-lg font-semibold w-full mb-4">状态分布</h3>
+      <div id="statusRing" class="relative w-44 h-44 mb-5"></div>
+      <div id="statusLegend" class="w-full grid grid-cols-2 gap-2"></div>
+    </div>
+  </div>
+  <div class="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6">
+    <div class="bg-white p-5 rounded-2xl"><h3 class="font-semibold mb-4">岗位类型</h3><div id="posBars"></div></div>
+    <div class="bg-white p-5 rounded-2xl"><h3 class="font-semibold mb-4">机构性质</h3><div id="typeBars"></div></div>
+    <div class="bg-white p-5 rounded-2xl"><h3 class="font-semibold mb-4">城市</h3><div id="locList"></div></div>
+    <div class="bg-white p-5 rounded-2xl"><h3 class="font-semibold mb-4">行业方向</h3><div id="industryBars"></div></div>
+  </div>

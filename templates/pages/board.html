@@ -1,0 +1,55 @@
+{# 「投递看板」页：放在 index.html 的 #tab-board 里。上半部分（今天、按申请成组的看板、单家详情抽屉）是 static/js/apps.js，
+   「按岗位看」的老表格、筛选、改记录是 static/js/board.js #}
+  <section id="todayBox" class="bg-white rounded-2xl p-4 border mb-5">
+    <div class="flex gap-2 items-end">
+      <textarea id="progText" rows="2" class="field flex-1 resize-none" placeholder="最近有什么进展？比如「收到 A 公司的笔试，周日截止」「B 公司的 AI 面做完了」「C 公司一志愿挂了」（⌘+回车记下）"></textarea>
+      <button id="progSend" class="px-4 py-2 bg-primary text-white rounded-xl text-sm font-bold shrink-0">记下</button>
+    </div>
+    <div id="progResult" class="mt-2"></div>
+    <div id="todayLists" class="grid md:grid-cols-2 gap-x-8 gap-y-3 mt-3"></div>
+  </section>
+  <section class="flex flex-wrap gap-2 items-center mb-4">
+    <div class="flex bg-slate-100 rounded-xl p-1 text-sm"><button class="ap-view px-3 py-1 rounded-lg" data-view="app">按申请看</button><button class="ap-view px-3 py-1 rounded-lg" data-view="record">按岗位看</button></div>
+    <select id="fCampaign" class="field !w-auto"></select>
+    <select id="fPosition" class="field !w-auto"><option value="">全部类型</option></select>
+    <select id="fStatus" class="field !w-auto"><option value="">全部状态</option></select>
+    <select id="fType" class="field !w-auto"><option value="">机构性质</option></select>
+    <select id="fCity" class="field !w-auto"><option value="">城市</option></select>
+    <input id="fSearch" class="field !w-56" placeholder="搜机构 / 岗位 / 邮箱 / 备注"/>
+    <div class="ml-auto flex gap-2">
+      <button id="repliesBtn" class="px-3 py-2 bg-white border rounded-xl text-sm flex items-center gap-1 hover:bg-slate-50"><span class="material-symbols-outlined">mark_email_unread</span>检查回复</button>
+      <button id="syncBtn" class="px-3 py-2 bg-white border rounded-xl text-sm flex items-center gap-1 hover:bg-slate-50"><span class="material-symbols-outlined">sync</span>Gmail 同步</button>
+      <a id="exportBtn" href="/api/export-excel" class="px-3 py-2 bg-white border rounded-xl text-sm flex items-center gap-1 hover:bg-slate-50"><span class="material-symbols-outlined">table_view</span>导出 Excel</a>
+    </div>
+  </section>
+  <section id="boardMetrics" class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5"></section>
+  <div class="text-xs text-slate-400 mb-2" id="recordCount"></div>
+  <div id="appsView">
+    <div class="hidden md:block bg-slate-100/50 rounded-2xl overflow-x-auto">
+      <table class="w-full text-left min-w-[1000px]">
+        <thead><tr class="text-slate-400 text-[11px] font-bold tracking-widest border-b border-slate-200">
+          <th class="px-5 py-3 min-w-[13rem]">机构 · 岗位</th><th class="px-4 py-3 whitespace-nowrap">渠道</th><th class="px-4 py-3 whitespace-nowrap">阶段</th><th class="px-4 py-3 whitespace-nowrap">轮到谁</th>
+          <th class="px-4 py-3 whitespace-nowrap">下一步 · 截止</th><th class="px-4 py-3 whitespace-nowrap">最近动静</th><th class="px-4 py-3 text-right whitespace-nowrap">首次投出</th></tr></thead>
+        <tbody id="appsTable" class="text-sm"></tbody>
+      </table>
+    </div>
+    <div class="md:hidden space-y-3" id="appsCards"></div>
+  </div>
+  <div id="recordsView" class="hidden">
+    <div class="hidden md:block bg-slate-100/50 rounded-2xl overflow-x-auto">
+      <table class="w-full text-left min-w-[900px]">
+        <thead><tr class="text-slate-400 text-[11px] font-bold tracking-widest border-b border-slate-200">
+          <th class="px-5 py-3">机构</th><th class="px-5 py-3">岗位</th><th class="px-4 py-3">类型</th><th class="px-4 py-3">状态</th>
+          <th class="px-4 py-3">地点</th><th class="px-4 py-3">行业</th><th class="px-4 py-3 text-right">投递时间</th></tr></thead>
+        <tbody id="boardTable" class="text-sm"></tbody>
+      </table>
+    </div>
+    <div class="md:hidden space-y-3" id="boardCards"></div>
+  </div>
+  <aside id="appDrawer" class="bg-white shadow-2xl border-l flex flex-col">
+    <div class="flex items-center gap-2 px-4 py-3 border-b">
+      <div id="appDrawerTitle" class="flex items-center gap-2 flex-1 min-w-0"></div>
+      <button id="appDrawerClose" class="text-slate-400 hover:text-slate-700 shrink-0" title="收起"><span class="material-symbols-outlined">close</span></button>
+    </div>
+    <div id="appDrawerBody" class="flex-1 overflow-y-auto"></div>
+  </aside>

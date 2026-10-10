@@ -208,7 +208,10 @@ def test_records_roundtrip_and_excel(tmp_store):
     assert rel_public == []
     assert records.update(rid, {"status": "面试中"})
     rec = records.get(rid)
-    assert rec["status"] == "面试中" and "已投递 → 面试中" in rec["notes"]
+    assert rec["status"] == "面试中" and "→" not in rec["notes"]              # 状态变化不再写进备注（B89）
+    assert [(h["from"], h["to"]) for h in rec["history"]] == [("已投递", "面试中")]
+    from jobapply import apps
+    assert any("已投递 → 面试" in e["text"] for e in apps.get(rec["app_id"])["timeline"])   # 写进了申请的时间线
 
 
 def test_duplicate_send_is_still_recorded(tmp_store):

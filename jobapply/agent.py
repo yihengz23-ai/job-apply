@@ -175,6 +175,27 @@ def waiting_chats():
         return out
 
 
+def state_by_app():
+    """申请（id 就是网申待办的 id）→ 它的助手现在怎样：working（这一轮在做）、queued_why（排着队，为什么排）、
+    alive（进程还在不在）、chat_id、last（在做的话，最新一步）。看板算「轮到谁」用；同一家有几个对话时，在做 / 排队的那个优先。"""
+    act, waiting = _active(), waiting_chats()
+    with _lock:
+        alive = {cid for cid, r in _runners.items() if not r.closed and r.runner.alive()}
+    out = {}
+    for c in list_chats():                 # 新的在前
+        tid = c.get("task_id")
+        if not tid:
+            continue
+        st = {"chat_id": c["id"], "working": c["id"] in act, "queued_why": waiting.get(c["id"], ""), "alive": c["id"] in alive}
+        cur = out.get(tid)
+        if cur is None or (not (cur["working"] or cur["queued_why"]) and (st["working"] or st["queued_why"])):
+            out[tid] = st
+    for st in out.values():
+        if st["working"]:
+            st["last"] = last_line(st["chat_id"])
+    return out
+
+
 def _site_of(chat_id):
     """这个对话在填哪个网站（看它绑定的网申待办的链接）。"""
     try:
@@ -956,7 +977,7 @@ def _apply_readback_blocks(chat_id, chat, text):
         try:
             wstasks.save_readback(tid, kind, body, url=d.get("网址", ""), status=d.get("进度", ""), account=d.get("账号", ""),
                                   position=d.get("岗位", "") if kind == "jd" else "", location=d.get("地点", ""),
-                                  positions=d.get("岗位") if kind == "status" else None)
+                                  positions=d.get("岗位") if kind == "status" else None, source="助手照抄")
             what = {"jd": f"岗位 JD「{d.get('岗位', '')}」", "resume": "实际提交的简历", "status": "投递记录"}.get(kind, "页面原文")
             _append(chat_id, "system", f"已记进投递看板：{what}（{len(body.strip())} 字）")
         except (wstasks.NotFound, ValueError) as e:
@@ -1119,7 +1140,8 @@ def system_prompt(chat=None):
 - 一律用中文，包括做事过程中的简短说明。简洁，先说结论。本人不是工程师，不说技术术语。
 - 能自己判断的直接做，不要问。照片、简历这些附件自己传（用 file_upload，文件见下面「可以上传的文件」）。要本人登录、扫码的，照规则在这一轮里等。
 - 真正只有本人能做的事（证件号这一栏、最后提交、资料里没有而只有本人知道的信息）先跳过、把别的都做完，最后一次性说清楚：在哪个颜色框的网页、哪一栏。
-- 证件号（身份证号、护照号）一律不填：哪怕资料里有、哪怕本人说过可以，也留给本人自己输。
+- 证件号（身份证号、护照号）一律不填：哪怕资料里有、哪怕本人说过可以，也留给本人自己输。也不要往这一栏粘贴任何东西（剪贴板里可能就是证件号）。
+  要本人填证件号时，【网申记录】的「要你做」里写明「证件号」三个字和哪个颜色框的网页、哪一栏：面板会给本人一个「复制证件号」按钮，本人粘贴后点「我填好了」叫你接着做。
 - 操作浏览器时少说多做；一段做完再简短汇报。
 - 本人可能在你干活时插话（新消息会跟在某一步的工具结果后面出现）：先按新消息调整（比如换个写法、跳过某段、先填别的），再接着做，不用等做完才理。
 
@@ -1151,8 +1173,5 @@ def system_prompt(chat=None):
 
 
 def _notify(title, text):
-    if config.IS_TEST_ENV:
-        return
-    text = text.replace('"', "'")
-    subprocess.run(["osascript", "-e", f'display notification "{text}" with title "{title}" sound name "Glass"'],
-                   capture_output=True)
+    from . import notify
+    notify.send(title, text)

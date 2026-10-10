@@ -94,6 +94,8 @@ def validate(profile):
 
 
 def save(profile):
+    from . import backup
+    backup.tick()
     clean = validate(profile)
     if PATH.exists():
         config.BACKUP_DIR.mkdir(exist_ok=True)

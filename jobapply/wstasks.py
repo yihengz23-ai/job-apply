@@ -64,6 +64,8 @@ def _load():
 
 
 def _save(items):
+    from . import backup
+    backup.tick()
     fd, tmp = tempfile.mkstemp(dir=PATH.parent, prefix=".wstasks-", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -154,7 +156,9 @@ def add(url="", company="", job="", *, source="手动添加", **extra):
         t.setdefault("color", _pick_color(items))
         items.append(t)
         _save(items)
-        return t
+    from . import apps
+    apps.ensure_for_task(t)   # v3：每条网申待办对应一个申请（id 相同）
+    return t
 
 
 def from_analysis(result, *, page=None, jd_text="", queue_id="", email_too=False):
@@ -168,7 +172,7 @@ def from_analysis(result, *, page=None, jd_text="", queue_id="", email_too=False
                result={k: result.get(k, "") for k in RESULT_KEYS})
 
 
-def update(task_id, **fields):
+def update(task_id, by="面板", **fields):
     with _lock:
         items = _load()
         t = next((x for x in items if x.get("id") == task_id), None)
@@ -183,6 +187,8 @@ def update(task_id, **fields):
         for rid in {t.get("record_id"), t.get("email_record_id")} - {"", None}:
             if records.get(rid):
                 records.update(rid, {"apply_account": fields["account"]})
+    from . import apps
+    apps.mirror_task(t, fields, by=by)   # v3：同步到同 id 的申请上
     return t
 
 
@@ -211,7 +217,12 @@ def link_email_record(queue_id, record_id):
         t["email_record_id"] = record_id
         t["updated_at"] = _now()
         _save(items)
-        return t
+    try:                                      # 邮件那条记录并进网申待办的申请（同一家一张卡，渠道「邮件+网申」）
+        from . import apps
+        apps.ensure_for_task(t)
+    except Exception:
+        pass
+    return t
 
 
 # ── 状态 → 看板记录 ─────────────────────────────────────────
@@ -246,7 +257,7 @@ def _ensure_record(t, status):
             records.update(rid, fields)
         return rid
     rec = records.new_record(**_record_fields(t), status=status, send_mode="未发邮件", attach_report=False,
-                             apply_account=t.get("account", ""),
+                             apply_account=t.get("account", ""), app_id=t["id"],
                              resume_version="网申上传", source_type="网申（面板助手）" if t.get("chat_id") else "网申")
     return records.add(rec)
 
@@ -280,6 +291,14 @@ def set_status(task_id, status, note=""):
             fields["record_id"] = ""
         t = update(task_id, **fields)
     sync_readback(t)   # 提交前就读回过的（或者刚建出看板记录）：带到记录上
+    from . import apps
+    try:
+        if status == "已提交":
+            apps.mark_submitted(task_id, at=t.get("submitted_at") or None, basis=note or "网申页标了已提交", by="本人")
+        elif status == "不投了":
+            apps.give_up(task_id, note or t.get("note") or "待补原因", by="本人")
+    except (apps.NotFound, ValueError):
+        pass
     return t
 
 
@@ -488,7 +507,8 @@ def _merge_positions(t, new):
             pos.append(dict(p))
 
 
-def save_readback(task_id, kind, text, *, url="", title="", status="", account="", position="", location="", positions=None):
+def save_readback(task_id, kind, text, *, url="", title="", status="", account="", position="", location="", positions=None,
+                  source="网页脚本"):
     """助手从网站读回来的一页（__wsfill.readback 发来的，或者它回复里的【网申读回】）：存在待办上，有看板记录就同步过去。
     kind：status＝投递记录 / 进度页（可带 positions＝投了哪些岗位）；resume＝实际提交的简历；jd＝某个岗位的 JD（带 position、location）。
     返回 (待办, 记录 id)。"""
@@ -521,7 +541,18 @@ def save_readback(task_id, kind, text, *, url="", title="", status="", account="
         t["readback_state"] = ""
         t["updated_at"] = _now()
         _save(items)
-    return t, sync_readback(t)
+    rid = sync_readback(t)
+    from . import apps
+    try:   # v3：读回原文另存成快照（只追加、按内容去重），志愿规则顺手认出来
+        label = {"status": "投递记录", "resume": "简历", "jd": f"岗位JD-{position or title}"}.get(kind, "页面")
+        apps.mirror_task(t, {"readback", "readback_state", "positions", "position_records", "site_status", "account", "jds"})
+        apps.add_snapshot(task_id, label, text, url=url, source=source)
+        mode, line = apps.guess_volunteer_mode(text)
+        if mode and not apps.get(task_id).get("volunteer_mode"):
+            apps.set_volunteer_mode(task_id, mode, line, by="读回")
+    except (apps.NotFound, ValueError):
+        pass
+    return t, rid
 
 
 def compose_readback(t):
@@ -576,7 +607,8 @@ def sync_readback(t):
                     send_mode="未发邮件", apply_channel="网申/链接", apply_url=t.get("url", ""), platform=base.get("platform", ""),
                     apply_account=t.get("account", ""), resume_version="网申上传", attach_report=False,
                     source_type=base.get("source_type", "网申"), sent_at=base.get("sent_at", ""), sent_ts=base.get("sent_ts", 0),
-                    campaign=base.get("campaign", ""), focus_industry=base.get("focus_industry", ""), ws_task_id=t["id"])
+                    campaign=base.get("campaign", ""), focus_industry=base.get("focus_industry", ""), ws_task_id=t["id"],
+                    app_id=base.get("app_id") or t["id"])
                 r_id = records.add(rec)
             pr[p["name"]] = r_id
         rec = records.get(r_id)

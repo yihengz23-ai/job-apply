@@ -21,9 +21,14 @@ from .llm import COMPANY_TYPES
 log = logging.getLogger(__name__)
 _lock = threading.RLock()          # 同一进程内（面板的多个请求 / 后台队列线程）
 _flock = {"depth": 0, "fh": None}   # 跨进程（面板和剪贴板投递同时写）
-STATUSES = ["草稿", "已投递", "笔试", "已电联", "面试中", "offer", "拒绝", "无回复"]   # 笔试：含在线测评
+STATUSES = ["草稿", "已投递", "笔试", "已电联", "面试中", "offer", "拒绝", "无回复", "放弃"]   # 笔试：含在线测评
+# 阶段：存储词不改（vault 按「已投递」「offer」「已电联」统计），界面统一用显示词（4.4）
+STAGE_LABEL = {"草稿": "准备中", "已投递": "已投递", "笔试": "笔试/测评", "已电联": "已电联", "面试中": "面试", "offer": "offer",
+               "拒绝": "未通过", "无回复": "无回复", "放弃": "放弃"}
+STAGE_ORDER = {"草稿": 0, "已投递": 1, "笔试": 2, "已电联": 3, "面试中": 4, "offer": 5}
+TERMINAL = ("拒绝", "无回复", "放弃")
 POSITION_LABELS = ["全职", "留用实习", "实习", "不明确"]
-KEEP_BACKUPS = 40
+KEEP_BACKUPS = 40   # 旧的每日备份留几份（backup.py 接手以后不再用）
 
 
 class RecordsCorrupt(Exception):
@@ -55,41 +60,65 @@ def _locked():
                 _flock["fh"] = None
 
 
-def load():
+def load_all():
+    """整个 records.json：{"schema", "records", "applications", "updated_at", …}。schema 2 的文件 applications 当成空列表。"""
     with _lock:
         if not config.RECORDS_PATH.exists():
-            return []
+            return {"schema": 3, "records": [], "applications": []}
         text = config.RECORDS_PATH.read_text(encoding="utf-8")
         try:
             data = json.loads(text)
         except json.JSONDecodeError as e:
             raise RecordsCorrupt(
                 f"records.json 损坏（{e}），为防止覆盖历史记录已停止写入。备份在 {config.BACKUP_DIR}") from e
-        records = data.get("records") if isinstance(data, dict) else data
+        if isinstance(data, list):
+            data = {"records": data}
+        records = data.get("records") if isinstance(data, dict) else None
         if not isinstance(records, list):
             raise RecordsCorrupt("records.json 格式不对（没有 records 列表），已停止写入。")
+        apps = data.setdefault("applications", [])
+        if not isinstance(apps, list):
+            raise RecordsCorrupt("records.json 格式不对（applications 不是列表），已停止写入。")
         for r in records:
             _fill_defaults(r)
-        return records
+        return data
 
 
-def _backup():
-    if not config.RECORDS_PATH.exists():
-        return
-    config.BACKUP_DIR.mkdir(exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d")
-    target = config.BACKUP_DIR / f"records-{stamp}.json"
-    if not target.exists():
-        shutil.copy2(config.RECORDS_PATH, target)
-    backups = sorted(config.BACKUP_DIR.glob("records-*.json"))
-    for old in backups[:-KEEP_BACKUPS]:
-        old.unlink(missing_ok=True)
+def load():
+    """只要岗位（看板上的记录）。"""
+    return load_all()["records"]
+
+
+def _write(data):
+    from . import backup
+    backup.tick()
+    payload = json.dumps(data, ensure_ascii=False, indent=2)
+    fd, tmp = tempfile.mkstemp(dir=config.RECORDS_PATH.parent, prefix=".records-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(payload)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, config.RECORDS_PATH)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+def save_all(data):
+    """写回整个文件（schema 3：岗位和申请一起）。不认识的顶层键原样保留。"""
+    with _locked():
+        data = dict(data)
+        data["schema"] = max(3, data.get("schema") if isinstance(data.get("schema"), int) else 3)
+        data["updated_at"] = now_str()
+        data.setdefault("applications", [])
+        _write(data)
+    export_excel_safe(data["records"], data["applications"])
 
 
 def save(records):
-    """写回 records.json：只换 records、updated_at、schema 三个键，别的顶层数据（以后加的）原样保留。"""
+    """只换岗位列表：records、updated_at、schema 之外的顶层数据（applications 等）原样保留。"""
     with _locked():
-        _backup()
         data = {}
         if config.RECORDS_PATH.exists():
             try:
@@ -99,26 +128,25 @@ def save(records):
             data = cur if isinstance(cur, dict) else {}
         schema = data.get("schema") if isinstance(data.get("schema"), int) and data.get("schema") > 2 else 2
         data.update(records=records, updated_at=now_str(), schema=schema)
-        payload = json.dumps(data, ensure_ascii=False, indent=2)
-        fd, tmp = tempfile.mkstemp(dir=config.RECORDS_PATH.parent, prefix=".records-", suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write(payload)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp, config.RECORDS_PATH)
-        finally:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
-    export_excel_safe(records)
+        _write(data)
+    export_excel_safe(records, data.get("applications"))
 
 
 def mutate(fn):
-    """在锁内读-改-写。fn(records) 的返回值原样返回。fn 里不要再调 add/update（外层保存会盖掉内层写入）。"""
+    """在锁内读-改-写岗位列表。fn(records) 的返回值原样返回。fn 里不要再调 add/update（外层保存会盖掉内层写入）。"""
     with _locked():
         records = load()
         out = fn(records)
         save(records)
+        return out
+
+
+def mutate_all(fn):
+    """在锁内读-改-写整个文件（岗位和申请一起，要么一起写成功、要么都不写）。fn(data) 的返回值原样返回。"""
+    with _locked():
+        data = load_all()
+        out = fn(data)
+        save_all(data)
         return out
 
 
@@ -139,6 +167,17 @@ NEW_FIELDS = {
     "wangshen_unused": {},   # 面板生成过、但本人没用上的网申问答：挪到这里，不再当成投递内容显示
     "sent_ts": 0,            # 投递时刻的绝对时间戳（换时区也准；旧记录为 0，按 sent_at 本机时间算）
     "reply_locked": False,   # 看板里手动改过回复状态：查回复时不再覆盖
+    # v3：岗位挂在申请下面（4.1、4.2）
+    "app_id": "",            # 属于哪个申请
+    "org": "",               # 实际机构或部门（某理财子公司、某基金子公司……）
+    "choice_no": 0,          # 志愿序号（第几志愿；0 = 没有志愿这一说）
+    "accept_adjust": "",     # 是否服从调剂（是 / 否 / 空）
+    "exam_city": "",         # 笔试城市
+    "jd_url": "", "jd_at": "", "jd_source": "",   # JD 从哪读的、什么时候、谁读的（网页脚本 / 助手照抄 / 投递页）
+    "uploaded_files": [],    # 这个岗位传过的文件
+    "history": [],           # 阶段变化：[{at, from, to, by, reason}]（不再写进备注）
+    "reply_subject": "",     # 来信标题
+    "reply_kind": "",        # 来信认出来是哪一类进展（笔试 / 测评 / AI 面 / 面试邀请、拒信、offer）
 }
 
 
@@ -192,34 +231,43 @@ def _clean_urls(r):
 
 
 def add(record):
-    def _add(recs):
-        recs.append(record)
+    """加一条岗位；它所属的申请没有就顺手建好（links 迁移之后旧代码新建的记录也有申请）。"""
+    def _add(data):
+        from . import apps
+        data["records"].append(record)
+        apps.ensure_in(data, record)
         return record["id"]
-    return mutate(_add)
+    return mutate_all(_add)
 
 
 def get(record_id):
     return next((r for r in load() if r.get("id") == record_id), None)
 
 
-def update(record_id, fields):
-    """更新字段；状态变化会自动在备注里留痕。"""
-    def _upd(recs):
-        for r in recs:
+def update(record_id, fields, by="面板"):
+    """更新字段。状态变化记进这个岗位的 history 和它申请的时间线（不再往备注里写）。"""
+    def _upd(data):
+        for r in data["records"]:
             if r.get("id") != record_id:
                 continue
             upd = dict(fields)
             new_status = upd.get("status")
-            if new_status and new_status != r.get("status"):
+            old_status = r.get("status", "")
+            if new_status and new_status != old_status:
                 stamp = now_str()
-                log = f"[{stamp}] {r.get('status', '')} → {new_status}"
-                notes = upd.get("notes", r.get("notes", "")) or ""
-                upd.update(notes=(notes + "\n" + log).strip(), status_updated_at=stamp)
+                upd["status_updated_at"] = stamp
+                r.setdefault("history", []).append({"at": stamp, "from": old_status, "to": new_status, "by": by})
+                app = next((a for a in data.get("applications", []) if a.get("id") == r.get("app_id")), None)
+                if app is not None:
+                    app.setdefault("timeline", []).append(
+                        {"at": stamp, "kind": "阶段", "by": by,
+                         "text": f"{r.get('job_title') or '岗位'}：{STAGE_LABEL.get(old_status, old_status)} → {STAGE_LABEL.get(new_status, new_status)}"})
+                    app["updated_at"] = stamp
             r.update(upd)
             _clean_urls(r)
             return True
         return False
-    return mutate(_upd)
+    return mutate_all(_upd)
 
 
 def delete(record_id):
@@ -269,7 +317,7 @@ def find_related(company_name, emails, records=None, exclude_id=None):
             out.append({"id": r.get("id"), "sent_at": r.get("sent_at", ""), "company_name": r.get("company_name", ""),
                         "job_title": r.get("job_title", ""), "status": r.get("status", ""),
                         "campaign": r.get("campaign", ""), "position_type": r.get("position_type", ""),
-                        "match": match})
+                        "reply_status": r.get("reply_status", ""), "match": match})
     out.sort(key=lambda x: x["sent_at"], reverse=True)
     return out
 
@@ -399,11 +447,36 @@ def _append(ws, row):
             c.data_type = "s"
 
 
-def export_excel(records, path=None):
+_PHONE = re.compile(r"(?<!\d)(1[3-9]\d)(\d{4})(\d{4})(?!\d)")
+
+
+def _mask_id(text):
+    from .apps import mask
+    return mask(text)
+
+
+def mask_phone(text):
+    """手机号中间四位打码（桌面 Excel 里用）。"""
+    return _PHONE.sub(r"\1****\3", text or "")
+
+
+def _app_cols(r, apps_by_id):
+    a = apps_by_id.get(r.get("app_id")) or {}
+    nxt = a.get("next_step") or {}
+    channel = a.get("channel") or r.get("apply_channel") or ("邮件" if r.get("to_email") else "网申")
+    return {"_channel": channel, "_account": mask_phone(r.get("apply_account", "")),
+            "_stage": STAGE_LABEL.get(r.get("status") or "已投递", r.get("status", "")),
+            "_progress": r.get("site_status", ""),
+            "_next": (nxt.get("text", "") + (f"（{nxt['due']}）" if nxt.get("due") else "")).strip(),
+            "_link": f"{config.PANEL_BASE}/#app/{r['app_id']}" if r.get("app_id") else ""}
+
+
+def export_excel(records, path=None, applications=None):
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
 
     path = path or config.EXCEL_MIRROR_PATH
+    apps_by_id = {a.get("id"): a for a in applications or []}
     wb = Workbook()
     ws = wb.active
     ws.title = "投递记录"
@@ -413,12 +486,15 @@ def export_excel(records, path=None):
             ("回复", "reply_status", 10), ("收件人", "to_email", 28), ("邮件标题", "subject", 40),
             ("简历版本", "resume_version", 14), ("附研究样本", "attach_report", 10),
             ("来源", "job_source", 18), ("截止", "deadline", 11), ("投递方式", "send_mode", 9),
-            ("备注", "notes", 40)]
+            ("备注", "notes", 40),
+            ("渠道", "_channel", 10), ("申请账号", "_account", 18), ("阶段", "_stage", 10), ("网站进度", "_progress", 22),
+            ("下一步·截止", "_next", 26), ("面板链接", "_link", 30)]
     ws.append([c[0] for c in cols])
     for r in sorted(records, key=lambda x: x.get("sent_at") or "", reverse=True):
+        extra = _app_cols(r, apps_by_id)
         row = []
         for _, key, _ in cols:
-            v = r.get(key, "")
+            v = extra[key] if key.startswith("_") else r.get(key, "")
             if key == "attach_report":
                 v = "是" if v in (True, "是") else ""
             row.append(v)
@@ -443,15 +519,40 @@ def export_excel(records, path=None):
         for cell in row[3:]:
             cell.alignment = Alignment(wrap_text=True, vertical="top")
     ws2.freeze_panes = "A2"
+
+    ws3 = wb.create_sheet("网申实际提交")   # 每个网申申请一行：网站上真交上去的内容（从网站读回的原文）
+    ws3.append(["首次投出", "机构", "岗位", "申请账号", "网站进度", "实际提交（从网站读回）"])
+    by_app = {}
+    for r in records:
+        if r.get("app_id"):
+            by_app.setdefault(r["app_id"], []).append(r)
+    rows = []
+    for a in applications or []:
+        if "网申" not in (a.get("channel") or "") or a.get("deleted_at"):
+            continue
+        pos = by_app.get(a.get("id"), [])
+        text = next((p.get("ws_submitted") for p in pos if p.get("ws_submitted")), "")
+        acct = a.get("account") or {}
+        rows.append([a.get("first_submitted_at", ""), a.get("company", ""), "、".join(p.get("job_title", "") for p in pos),
+                     mask_phone(acct.get("login") or acct.get("form_phone") or next((p.get("apply_account") for p in pos if p.get("apply_account")), "")),
+                     (a.get("site_progress") or {}).get("text") or next((p.get("site_status") for p in pos if p.get("site_status")), ""),
+                     mask_phone(_mask_id(text))[:32000]])
+    for row in sorted(rows, key=lambda x: x[0] or "", reverse=True):
+        _append(ws3, row)
+    for col, width in zip("ABCDEF", (17, 22, 40, 18, 22, 100)):
+        ws3.column_dimensions[col].width = width
+    for row in ws3.iter_rows(min_row=2):
+        row[5].alignment = Alignment(wrap_text=True, vertical="top")
+    ws3.freeze_panes = "A2"
     wb.save(path)
     return path
 
 
-def export_excel_safe(records):
+def export_excel_safe(records, applications=None):
     """Excel 正被打开等情况：跳过，下次保存时再同步；原因记在 EXCEL_STATUS 里给面板显示。"""
     try:
         if config.MATERIALS_DIR.exists():
-            export_excel(records)
+            export_excel(records, applications=applications)
         EXCEL_STATUS.update(ok=True, error="", at=now_str())
     except Exception as e:
         log.warning("Excel 镜像同步失败：%s", e)

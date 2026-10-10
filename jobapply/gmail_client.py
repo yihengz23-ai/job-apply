@@ -252,6 +252,7 @@ BODY_INVITE = re.compile(r"诚邀您|邀请您参加|邀您参加|邀请你参�
 # 「简历通过筛选者将收到面试通知」这类条件句：是确认信，不是邀请
 CONDITIONAL = re.compile(r"(?:如|若|如果|一旦|待)[^。！？\n]{0,15}(?:筛选|评估|审核|通过)|"
                          r"(?:通过|合适|符合)(?:者|的同学|的候选人)[^。！？\n]{0,6}(?:将|会)|"
+                         r"(?:通过|进入)[^。！？\n]{1,8}(?:者|的同学|的候选人)[^。！？\n]{0,6}(?:将|会)|"
                          r"(?:筛选|评估|审核|通过)[^。！？\n]{0,4}后[^。！？\n]{0,12}(?:会|将)|"
                          r"将在[^。！？\n]{0,8}内[^。！？\n]{0,6}(?:通知|联系|安排)|"
                          r"we will (?:contact|reach out|be in touch)|we'll be in touch|should we|"
@@ -271,6 +272,68 @@ APPLICATION_WORDS = re.compile(r"面试|笔试|测评|简历|投递|申请|应�
 JOB_BOARDS = ("zhipin.com", "shixiseng.com", "liepin.com", "lagou.com", "linkedin.com", "yingjiesheng.com",
               "51job.com", "zhaopin.com", "kanzhun.com", "maimai.cn")
 REPLY_RANK = {"有回复": 4, "退信": 3, "来信": 2, "自动回复": 1}
+
+
+# 来信是哪一类进展（WP5）：按这个顺序认，先认到的算
+PROGRESS_KINDS = (
+    ("offer", re.compile(r"录用通知|拟录用|录取通知|offer letter|恭喜您?通过(?:了)?(?:终面|全部)|发放\s*offer", re.I)),
+    ("拒信", re.compile(r"很遗憾|遗憾地通知|未能进入|未通过|暂不匹配|不太匹配|不合适|无法进入下一|unfortunately|regret to inform|"
+                      r"not (?:be )?moving forward|decided not to proceed", re.I)),
+    ("AI面邀请", re.compile(r"AI\s*(?:视频)?面试|智能面试|AI interview|HireVue|视频面试（AI）", re.I)),
+    ("测评邀请", re.compile(r"测评|在线测试|性格测试|职业性格|online assessment|assessment|SHL|北森|Talent\s?Q|测验", re.I)),
+    ("笔试邀请", re.compile(r"笔试|written test|online test|coding test|在线考试", re.I)),
+    ("面试邀请", re.compile(r"面试邀请|邀请您?参加.{0,6}面试|面试通知|面试安排|interview invitation|schedule (?:an |your )?interview|"
+                        r"[一二三四]面|终面|群面|复试", re.I)),
+)
+_DATE_PATTERNS = (
+    re.compile(r"(?P<y>20\d{2})\s*[年\-/.]\s*(?P<m>\d{1,2})\s*[月\-/.]\s*(?P<d>\d{1,2})\s*[日号]?(?:\s*(?P<H>\d{1,2})\s*[:：点]\s*(?P<M>\d{2})?)?"),
+    re.compile(r"(?P<m>\d{1,2})\s*月\s*(?P<d>\d{1,2})\s*[日号](?:\s*(?:\(|（)?[^\d]{0,6}(?:\)|）)?\s*(?P<H>\d{1,2})\s*[:：点]\s*(?P<M>\d{2})?)?"),
+)
+_DUE_HINT = re.compile(r"截止|之前|以前|[日号点]前|前(?:完成|提交|确认|回复|作答|报名|登录)|有效期|过期|失效|deadline|due|before|by\s", re.I)
+_HOURS = re.compile(r"(\d{1,3})\s*(?:个)?小时内")
+
+
+def _parse_due(text, now):
+    """来信里的截止时间（YYYY-MM-DD HH:MM / YYYY-MM-DD），找不到返回空串。「48 小时内」按收到的时间推算。"""
+    text = text or ""
+    for pat in _DATE_PATTERNS:
+        for m in pat.finditer(text):
+            near = text[max(0, m.start() - 12): m.end() + 12]
+            if not _DUE_HINT.search(near):
+                continue
+            y = int(m.group("y")) if "y" in m.groupdict() and m.group("y") else now.year
+            try:
+                d = datetime(y, int(m.group("m")), int(m.group("d")))
+            except ValueError:
+                continue
+            if "y" not in m.groupdict() or not m.group("y"):
+                if d < now - timedelta(days=30):      # 跨年：「1 月 5 日」在 12 月收到的信里是明年
+                    d = d.replace(year=y + 1)
+            if m.group("H"):
+                return d.replace(hour=min(int(m.group("H")), 23), minute=int(m.group("M") or 0)).strftime("%Y-%m-%d %H:%M")
+            return d.strftime("%Y-%m-%d")
+    h = _HOURS.search(text)
+    if h and _DUE_HINT.search(text) or h and re.search(r"内完成|内提交", text):
+        return (now + timedelta(hours=int(h.group(1)))).strftime("%Y-%m-%d %H:%M")
+    return ""
+
+
+def classify_progress(subject, snippet="", now=None):
+    """来信是哪一类进展：{kind: offer / 拒信 / AI面邀请 / 测评邀请 / 笔试邀请 / 面试邀请 / ""，due: 截止时间，evidence: 那一句}。
+    系统确认信（投递成功、已收到简历）不算进展。"""
+    now = now or datetime.now()
+    text = f"{subject or ''}\n{snippet or ''}"
+    if SUBJECT_AUTO.search(subject or "") and not SUBJECT_INVITE.search(subject or ""):
+        return {"kind": "", "due": "", "evidence": ""}
+    for kind, pat in PROGRESS_KINDS:
+        m = pat.search(text)
+        if not m:
+            continue
+        if kind not in ("offer", "拒信") and CONDITIONAL.search(text) and not SUBJECT_INVITE.search(subject or ""):
+            continue                                   # 「通过筛选者将收到面试通知」这类条件句不算邀请
+        line = next((seg for seg in re.split(r"[。！？!\n]", text) if m.group(0) in seg), m.group(0))
+        return {"kind": kind, "due": _parse_due(text, now) if kind.endswith("邀请") else "", "evidence": line.strip()[:120]}
+    return {"kind": "", "due": "", "evidence": ""}
 
 
 def is_invite(subject, snippet=""):
@@ -373,7 +436,7 @@ def _check_one(svc, r, progress=None):
         m, h = reply
         upd.update(reply_status=_kind_of(reply, by_company), reply_at=_ts(m).strftime("%Y-%m-%d %H:%M"),
                    reply_from=parseaddr(h.get("from", ""))[1] or h.get("from", ""),
-                   reply_snippet=(m.get("snippet") or "")[:160])
+                   reply_snippet=(m.get("snippet") or "")[:160], reply_subject=(h.get("subject") or "")[:200])
     upd["reply_checked_at"] = _now()
     return upd
 

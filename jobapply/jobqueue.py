@@ -55,6 +55,8 @@ def _load():
 
 
 def _save(items):
+    from . import backup
+    backup.tick()
     fd, tmp = tempfile.mkstemp(dir=QUEUE_PATH.parent, prefix=".queue-", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -523,10 +525,8 @@ def _process(item_id):
 
 
 def _notify(title, text):
-    if config.IS_TEST_ENV:
-        return
-    subprocess.run(["osascript", "-e", f'display notification "{text}" with title "{title}" sound name "Glass"'],
-                   capture_output=True)
+    from . import notify
+    notify.send(title, text)
 
 
 def _maybe_notify():
@@ -606,7 +606,7 @@ def send_due(now=None, gap=SEND_GAP_SECONDS):
     """到点的定时邮件发出去。到点时正赶上晚上（比如电脑一整天没开，晚上才打开面板）就顺延到下一个发送时间。"""
     now = now or checks.beijing_now()
     stamp = now.strftime("%Y-%m-%d %H:%M")
-    sent, failed = [], []
+    sent, failed, sent_ids = [], [], []
     for snap in [x for x in list_items() if x["status"] == SCHEDULED and (x.get("send_at") or "") <= stamp]:
         if checks.is_night(now):
             _update(snap["id"], send_at=next_send_time(now))
@@ -624,7 +624,7 @@ def send_due(now=None, gap=SEND_GAP_SECONDS):
                 out = pipeline.deliver(result, it["jd_text"], mode="send", force=it.get("send_force") is True,
                                        source_label=page.get("source_label", ""), source_url=page.get("url", ""),
                                        target_job=it.get("target_job", ""), publish_date=page.get("publish_date", ""),
-                                       source_type="定时发送")
+                                       source_type="定时发送", app_id=it.get("app_id", ""))
         except gmail_client.SendUncertain as e:  # 可能已经发出：不再自动发，请人去 Gmail 确认
             _fail_scheduled(it["id"], f"定时发送结果不确定（{e}），可能已经发出：先去 Gmail「已发送」确认", send_uncertain=True)
             failed.append(_label(it))
@@ -643,9 +643,15 @@ def send_due(now=None, gap=SEND_GAP_SECONDS):
             continue
         mark_done(it["id"], "已发送", out.get("record_id", ""))
         sent.append(_label(it))
+        if out.get("record_id"):
+            sent_ids.append(out["record_id"])
     if sent or failed:
         _notify("定时发送", f"已发出 {len(sent)} 封" + (f"，{len(failed)} 封没发出，打开面板看看" if failed else ""))
-    return {"sent": sent, "failed": failed}
+    if sent_ids and not config.IS_TEST_ENV:   # 发出 3 分钟后查一次退信（以前定时发出的信从来没查过）
+        t = threading.Timer(BOUNCE_CHECK_AFTER, auto_refresh, kwargs={"record_ids": sent_ids})
+        t.daemon = True
+        t.start()
+    return {"sent": sent, "failed": failed, "record_ids": sent_ids}
 
 
 _caffeinate = None
@@ -664,6 +670,31 @@ def _keep_awake(on):
 _scheduler_started = False
 
 
+AUTO_REFRESH_EVERY = 2 * 3600      # 白天每两小时自动查一次回复（含网申的来信）
+BOUNCE_CHECK_AFTER = 180           # 定时信发出 3 分钟后查一次退信
+_auto = {"at": 0.0}
+
+
+def maybe_auto_refresh(now_ts=None):
+    """到点了（距上次两小时、北京时间 8 点到 23 点之间）就在后台查一次本轮的回复。返回这次查没查。"""
+    now_ts = now_ts if now_ts is not None else time.time()
+    if now_ts - _auto["at"] < AUTO_REFRESH_EVERY:
+        return False
+    if not 8 <= checks.beijing_now().hour < 23:
+        return False
+    _auto["at"] = now_ts
+    threading.Thread(target=auto_refresh, daemon=True, name="auto-refresh").start()
+    return True
+
+
+def auto_refresh(record_ids=None):
+    from . import pipeline
+    try:
+        pipeline.refresh_replies(campaign=config.CURRENT_CAMPAIGN, progress=lambda m: None, record_ids=record_ids)
+    except Exception as e:   # 授权过期、断网：下一轮再查
+        print(f"自动查回复没查成：{type(e).__name__}: {e}")
+
+
 def start_scheduler(interval=30):
     """面板启动时开一个后台线程：每 30 秒看一次有没有到点的定时邮件。"""
     global _scheduler_started
@@ -675,6 +706,7 @@ def start_scheduler(interval=30):
         while True:
             try:
                 send_due()
+                maybe_auto_refresh()
                 _keep_awake(any(it["status"] == SCHEDULED for it in list_items()))
             except Exception as e:  # 出错也别让线程死掉，下一轮接着看
                 print(f"定时发送出错：{type(e).__name__}: {e}")
@@ -729,7 +761,7 @@ def _process_ready(mode, gap):
         try:
             out = pipeline.deliver(result, it["jd_text"], mode=mode, source_label=page.get("source_label", ""),
                                    source_url=page.get("url", ""), target_job=it.get("target_job", ""),
-                                   publish_date=page.get("publish_date", ""), source_type="批量队列")
+                                   publish_date=page.get("publish_date", ""), source_type="批量队列", app_id=it.get("app_id", ""))
         except gmail_client.GmailAuthError:
             release(it["id"])
             raise

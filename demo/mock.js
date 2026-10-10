@@ -224,6 +224,104 @@
   let PROFILE = null;
   const loadProfile = async () => PROFILE || (PROFILE = await realFetch('../wangshen_profile.example.json').then(r => r.json()).catch(() => ({})));
 
+  // ── 看板上半部分（演示）：今天、按申请成组（同一家几个志愿一张卡，串行显示在看 / 排队）、单家详情、口述进展（可撤销）──
+  const STAGE_LABEL = {'草稿': '准备中', '已投递': '已投递', '笔试': '笔试/测评', '已电联': '已电联', '面试中': '面试', 'offer': 'offer', '拒绝': '未通过', '无回复': '无回复', '放弃': '放弃'};
+  const ORDER = ['草稿', '已投递', '笔试', '已电联', '面试中', 'offer'];
+  const ENDED = ['拒绝', '无回复', '放弃'];
+  const AX = {};          // 申请上的状态（下一步、建议、时间线、志愿方式、退信看过没有），按申请 id 存
+  const ax = aid => AX[aid] || (AX[aid] = {next: {text: '', due: '', source: '', done: false}, sugg: [], timeline: [], mode: '', handled: false});
+  const PROG = [];
+  const tl = (aid, kind, text, by, at = ts(0, 9)) => ax(aid).timeline.push({at, kind, text, by});
+  const VOL = {   // 某互联网公司 Z：两个志愿，串行（网站原话：志愿将按顺序依次流转）
+    pos: [{id: 'zp1', job_title: '科技投资', location: '北京/上海', status: '笔试', site_status: '笔试/测评'}, {id: 'zp2', job_title: '财务管培生', location: '上海', status: '已投递', site_status: '排队'}]};
+  const BANK = [{id: 'xp1', job_title: '总行管培生', location: '上海', status: '草稿', site_status: ''}, {id: 'xp2', job_title: '研究岗', location: '上海', status: '草稿', site_status: ''}];
+  (() => {   // 演示开场的状态
+    const d = RECORDS.find(r => r.company_name === '某产业资本 D'), a = RECORDS.find(r => r.company_name === '某美元VC A' && r.campaign === CUR);
+    ax('a-' + d.id).next = {text: `参加面试（一面·线上，${ts(-1, 14, 0)}）`, due: ts(-1, 14, 0), source: '本人口述', done: false};
+    tl('a-' + d.id, '进展', '面试邀请（一面）：「D 约了周四下午两点线上一面」', '本人', ts(1, 15, 10));
+    ax('a-' + a.id).sugg.push({id: 'sA', kind: '阶段', text: '来信像是面试邀请：把「投资实习生（可留用）」改成「面试」？', state: '待定', payload: {record_id: a.id, to: '面试中'}});
+    tl('a-' + a.id, '来信', '面试邀请：同学你好，简历已收到，方便明天下午电话聊一下吗？', '面板', ts(0, 11, 20));
+    const z = WS[3];
+    Object.assign(ax(z.id), {mode: '串行', note: '投递后志愿将按顺序依次流转'});
+    ax(z.id).next = {text: '做测评（志愿一 科技投资）', due: ts(-2, 23, 59), source: '邮件', inferred: true, done: false};
+    tl(z.id, '来信', '测评邀请：请于 3 天内完成在线测评', '面板', ts(0, 8, 0));
+    Object.assign(ax(WS[1].id), {mode: '平行', note: '本次招聘可同时投递多个职位，互不影响'});
+  })();
+  const stageOf = pos => { const live = pos.filter(p => !ENDED.includes(p.status)); if (!pos.length) return '草稿';
+    return live.length ? live.reduce((m, p) => ORDER.indexOf(p.status) > ORDER.indexOf(m) ? p.status : m, live[0].status) : pos[0].status; };
+  function serial(mode, pos) {
+    let cur = false;
+    return pos.map((p, i) => {
+      let s = '';
+      if (mode === '串行') { if (ENDED.includes(p.status)) s = p.status === '拒绝' ? '未通过 · 已流转' : STAGE_LABEL[p.status]; else if (!cur) { s = '在看'; cur = true; } else s = '排队：前面的志愿有结果后才看'; }
+      return {choice_no: i + 1, choice_guessed: false, org: '', has_jd: true, sent_at: p.sent_at || '', reply_status: '', reply_kind: '', ...p, stage_label: STAGE_LABEL[p.status], serial_state: s};
+    });
+  }
+  function apCard(kind, src) {
+    const isWs = kind === 'ws', aid = isWs ? src.id : 'a-' + src.id, A = ax(aid);
+    let pos;
+    if (isWs) {
+      const r = RECORDS.find(x => x.id === 'ws-' + src.id);
+      pos = src === WS[3] ? VOL.pos : src === WS[1] && src.status !== '已提交' ? BANK
+        : [{id: r ? r.id : src.id + '-p', job_title: src.job, location: '', status: r ? r.status : (src.status === '不投了' ? '放弃' : '草稿'), site_status: src.site_status || ''}];
+    } else pos = [{id: src.id, job_title: src.job_title, location: src.job_location, status: src.status, site_status: src.site_status || '', sent_at: src.sent_at}];
+    const mode = A.mode, pv = serial(mode, pos), cur = pv.find(p => p.serial_state === '在看');
+    let stage = cur ? cur.status : stageOf(pos);
+    const phase = isWs ? {'待填': '待开始', '助手在填': '在填', '等你处理': '等你', '已填待提交': '待你提交', '已提交': '已提交', '不投了': '已放弃'}[src.status] : '';
+    const c = {id: aid, company: isWs ? src.company : src.company_name, channel: isWs ? '网申' : '邮件', campaign: isWs ? CUR : src.campaign,
+      color: isWs ? src.color : null, color_label: isWs ? COLORS[src.color][2] : '灰', color_hex: isWs && src.status !== '不投了' ? COLORS[src.color][1] : '',
+      web_phase: phase, first_submitted_at: isWs ? (src.status === '已提交' ? ts(1, 21, 29) : '') : (src.send_mode === '发送' ? src.sent_at : ''), first_submitted_guess: false,
+      account: isWs ? src.account : '', volunteer_mode: mode, volunteer_note: A.note || '', site_progress: isWs ? src.site_status : (src.site_status || ''),
+      chat_id: isWs ? src.chat_id : '', need: src.status === '等你处理' ? {kind: /登录|扫码/.test(src.todo) ? '登录' : /证件/.test(src.todo) ? '证件号' : '回答', text: src.todo} : null,
+      mail_status: '', positions: pv, reply: isWs ? {} : {status: src.reply_status, at: src.reply_at, from: src.reply_from, snippet: src.reply_snippet, handled: A.handled},
+      entry_url: isWs ? src.url : '', suggestions: A.sugg.filter(s => s.state === '待定'), next: A.next, stage, stage_label: STAGE_LABEL[stage] || stage,
+      sub: [phase].filter(Boolean), stage_counts: {}, last_activity: (A.timeline[A.timeline.length - 1] || {}).at || (isWs ? src.updated_at : src.sent_at),
+      last_text: (A.timeline[A.timeline.length - 1] || {}).text || (isWs ? src.status : '投出'), todo: '', button: null, why: ''};
+    if (pv.length > 1 && mode !== '串行') pv.forEach(p => { c.stage_counts[p.stage_label] = (c.stage_counts[p.stage_label] || 0) + 1; });
+    if (Object.keys(c.stage_counts).length < 2) c.stage_counts = {};
+    const turn = (t, todo = '', button = null) => Object.assign(c, {turn: t, todo, button});
+    const n = c.next, chatBusy = isWs && CHATS[src.chat_id] && CHATS[src.chat_id].running;
+    if (src.status === '不投了' || (!isWs && (ENDED.includes(src.status) || src.status === 'offer') && !c.suggestions.length)) return turn('已结束');
+    if (!isWs && src.reply_status === '退信' && !A.handled) return turn('轮到你', '这封信被退回来了：换个邮箱重投', {label: '看退信', action: 'open_reply'});
+    if (!isWs && src.send_mode === '草稿') return turn('轮到你', '存在 Gmail 草稿里还没发', {label: '去看信', action: 'open_mail'});
+    if (chatBusy) return turn('面板在做', '助手在填：' + lastLine(CHATS[src.chat_id]));
+    if (phase === '等你') return turn('轮到你', src.todo, {label: c.need.kind === '登录' ? '我登录好了' : c.need.kind === '证件号' ? '我填好了' : '我弄完了', action: 'need_done'});
+    if (phase === '待你提交') return turn('轮到你', '填好了：检查一下，在网站上提交', {label: '我已在网站上提交', action: 'submitted'});
+    if (c.suggestions.length) return turn('轮到你', c.suggestions[0].text, {label: '看看', action: 'review'});
+    if (n.text && !n.done && (n.source === '本人口述' || n.due)) return turn('轮到你', n.text + (n.due && !n.text.includes(n.due) ? `（截止 ${n.due}）` : ''), {label: '做完了', action: 'step_done'});
+    if (phase === '待开始') return turn('轮到你', '还没开始填', {label: '让助手填', action: 'run'});
+    if (phase === '在填') return turn('停了', '助手停了：这一轮停下了', {label: '让助手接着做', action: 'continue'});
+    return turn('等对方');
+  }
+  const RANK = {'轮到你': 0, '停了': 1, '面板在做': 2, '等对方': 3, '已结束': 4};
+  const appsAll = () => [...WS.map(t => apCard('ws', t)), ...RECORDS.filter(r => !r.id.startsWith('ws-') && r.send_mode !== '未发邮件').map(r => apCard('rec', r)),
+    ...RECORDS.filter(r => r.send_mode === '未发邮件' && !r.id.startsWith('ws-')).map(r => apCard('rec', r))];
+  const appsOf = camp => appsAll().filter(c => !camp || camp === '全部' || c.campaign === camp)
+    .sort((a, b) => (RANK[a.turn] - RANK[b.turn]) || String(b.last_activity).localeCompare(String(a.last_activity)));
+  function progApply(text) {     // 演示版：按关键词拆，不调 AI（真实面板用一次结构化 AI 调用）
+    const before = JSON.parse(JSON.stringify({AX, VOL, BANK, RECORDS: RECORDS.map(r => ({id: r.id, status: r.status}))}));
+    const entry = {id: 'p' + (++id), at: ts(0, new Date().getHours(), new Date().getMinutes()), text, changes: [], applied: [], ask: [], before};
+    const cards = appsOf(CUR);
+    for (const part of text.split(/[；;。\n]/).map(s => s.trim()).filter(Boolean)) {
+      const flat = part.replace(/\s/g, '');
+      const hits = cards.filter(c => flat.includes(c.company.replace(/\s/g, '')) || flat.includes(c.company.replace(/^某/, '').replace(/\s/g, '')));
+      const ev = /挂|拒/.test(part) ? '拒绝' : /offer/i.test(part) ? 'offer' : /做完|完成|面完|交了/.test(part) ? (/AI ?面/.test(part) ? 'AI面完成' : /面/.test(part) ? '面试完成' : /测评/.test(part) ? '测评完成' : '笔试完成')
+        : /AI ?面/.test(part) ? 'AI面邀请' : /面试|一面|二面|约/.test(part) ? '面试邀请' : /测评/.test(part) ? '测评邀请' : /笔试/.test(part) ? '笔试邀请' : '';
+      if (!ev) continue;
+      if (hits.length !== 1) { entry.ask.push({company: part.slice(0, 12), event: ev, position: '', round: '', happened_at: '', due: '', quote: part, candidates: hits.slice(0, 6).map(c => ({app_id: c.id, company: c.company}))}); continue; }
+      const c = hits[0], A = ax(c.id), stage = {'拒绝': '拒绝', 'offer': 'offer'}[ev] || (/面/.test(ev) ? '面试中' : '笔试');
+      const recs = c.id === WS[3].id ? VOL.pos : RECORDS.filter(r => 'a-' + r.id === c.id || r.id === 'ws-' + c.id);
+      recs.filter(r => !ENDED.includes(r.status)).slice(0, c.volunteer_mode === '串行' ? 1 : 99).forEach(r => { if (stage === '拒绝' || ORDER.indexOf(stage) > ORDER.indexOf(r.status)) r.status = stage; });
+      const due = /周日/.test(part) ? ts(-((7 - now.getDay()) % 7 || 7)).slice(0, 10) : '';
+      if (/邀请$/.test(ev)) A.next = {text: ({'笔试邀请': '做笔试', '测评邀请': '做测评', 'AI面邀请': '做 AI 面', '面试邀请': '参加面试'}[ev]) + (due ? `（${due} 截止）` : '（截止没说）'), due, source: '本人口述', done: false};
+      else if (/完成$/.test(ev) && A.next.text) A.next = {...A.next, done: true};
+      tl(c.id, '进展', `${ev}：「${part}」`, '本人', entry.at);
+      entry.applied.push({app_id: c.id, company: c.company, company_name: c.company, event: ev, round: '', due, quote: part});
+    }
+    if (entry.applied.length) PROG.unshift(entry);
+    return entry;
+  }
+
   window.fetch = async (input, opts = {}) => {
     const url = new URL(typeof input === 'string' ? input : input.url, location.href);
     const i = url.pathname.indexOf('/api/');
@@ -359,20 +457,85 @@
       if (method === 'DELETE') { delete CHATS[c.id]; return json({ok: true}); }
       return json(chatOut(c, Number(url.searchParams.get('since') || 0)));
     }
+    if (path === '/api/apps/overview') return json({apps: appsOf(url.searchParams.get('campaign') || CUR)});
+    if (path === '/api/apps/today') {
+      const cards = appsOf(CUR);
+      return json({your_turn: cards.filter(c => c.turn === '轮到你'), stopped: cards.filter(c => c.turn === '停了'),
+        soon: cards.filter(c => c.turn !== '轮到你' && c.turn !== '已结束' && c.next.due && !c.next.done),
+        busy: cards.filter(c => c.turn === '面板在做').length, waiting: cards.filter(c => c.turn === '等对方').length,
+        mail_review: QUEUE.filter(x => ['待审核', '需处理', '失败'].includes(x.status)).length,
+        recent_progress: PROG.slice(0, 5).map(({before, ...e}) => e)});
+    }
+    const apm = path.match(/^\/api\/apps\/([^/]+)(?:\/([a-z-]+)(?:\/([^/]+))?)?$/);
+    if (apm) {
+      const aid = decodeURIComponent(apm[1]), act = apm[2], A = ax(aid), c = appsAll().find(x => x.id === aid);
+      if (!c) return json({error: '这次申请不存在了'}, 404);
+      if (!act) {
+        const t = WS.find(x => x.id === aid), r0 = RECORDS.find(x => 'a-' + x.id === aid || x.id === 'ws-' + aid);
+        const snaps = t === WS[3] ? [{kind: '投递记录', at: ts(0, 8, 30), text: '我的投递\n志愿一 科技投资（北京/上海）　笔试/测评\n志愿二 财务管培生（上海）　排队\n说明：投递后志愿将按顺序依次流转。'}]
+          : r0 && r0.ws_submitted ? [{kind: '投递记录', at: r0.site_status_at || ts(0, 9), text: r0.ws_submitted}] : [];
+        return json({card: c, positions: c.positions.map(p => ({...p, jd_text: (RECORDS.find(r => r.id === p.id) || {}).jd_text || '（演示数据：JD 原文略）',
+          jd_url: '', history: [], notes: '', to_email: '', subject: '', email_body: '', ws_submitted: ''})),
+          snapshots: snaps, timeline: [...A.timeline].reverse(), next_step: A.next, mail: null, notes: '', ai_drafts: [], volunteer_hints: []});
+      }
+      if (act === 'step-done' && A.next.text && !A.next.done) { A.next = {...A.next, done: true}; tl(aid, '下一步', '做完了：' + A.next.text, '本人'); }
+      if (act === 'step-undo' && A.next.done) { A.next = {...A.next, done: false}; tl(aid, '下一步', '改回没做完：' + A.next.text, '本人'); }
+      if (act === 'volunteer-mode') { A.mode = body.mode || ''; tl(aid, '志愿', '志愿方式 → ' + (A.mode || '未知'), '本人'); }
+      if (act === 'reply-handled') { A.handled = true; tl(aid, '来信', '看过了：退信', '本人'); }
+      if (act === 'suggestions') {
+        const s = A.sugg.find(x => x.id === apm[3]);
+        if (s && s.state === '待定') {
+          s.state = body.action === 'accept' ? '采纳' : '不用';
+          const r = s.state === '采纳' && RECORDS.find(x => x.id === s.payload.record_id);
+          if (r) r.status = s.payload.to;
+          tl(aid, '建议', (s.state === '采纳' ? '采纳：' : '不用：') + s.text, '本人');
+        }
+      }
+      return json({ok: true, result: true});
+    }
+    if (path === '/api/progress' && method === 'POST') {
+      const text = String(body.text || '').trim();
+      if (!text) return json({error: '说点什么，比如「收到某硬科技PE C的笔试，周日截止」'}, 400);
+      await sleep(600);
+      const e = Array.isArray(body.events) && body.events[0]
+        ? progApply((appsAll().find(x => x.id === body.events[0].app_id) || {}).company + body.events[0].event) : progApply(text);
+      const {before, ...out} = e;
+      return json({...out, text});
+    }
+    if (path === '/api/progress/recent') return json({items: PROG.map(({before, ...e}) => e)});
+    const pu = path.match(/^\/api\/progress\/([^/]+)\/undo$/);
+    if (pu) {
+      const e = PROG.find(x => x.id === pu[1]);
+      if (!e) return json({error: '没找到这条口述记录'}, 404);
+      if (e.undone) return json({ok: true, undone: 0});
+      Object.keys(AX).forEach(k => delete AX[k]);
+      Object.assign(AX, JSON.parse(JSON.stringify(e.before.AX)));
+      VOL.pos.splice(0, VOL.pos.length, ...e.before.VOL.pos);
+      BANK.splice(0, BANK.length, ...e.before.BANK);
+      e.before.RECORDS.forEach(x => { const r = RECORDS.find(y => y.id === x.id); if (r) r.status = x.status; });
+      e.undone = true;
+      if (e.applied[0]) tl(e.applied[0].app_id, '撤销', `撤销了口述：「${e.text}」`, '本人');
+      return json({ok: true, undone: e.applied.length});
+    }
+    if (path === '/api/idcard' && method === 'GET') return json({saved: false, masked: ''});
+    if (path.startsWith('/api/idcard')) return json({error: '演示版不存证件号（真实面板里只存在本机的钥匙串里，点「复制证件号」时直接进本机剪贴板）'}, 400);
     return json({error: '演示版不支持这个操作'}, 400);
   };
 
   document.addEventListener('DOMContentLoaded', () => {
     const bar = document.createElement('div');
-    bar.className = 'fixed bottom-0 md:bottom-auto md:top-0 left-0 right-0 z-[80] bg-amber-400 text-amber-950 text-xs text-center py-1 font-bold';
+    bar.className = 'fixed bottom-[70px] md:bottom-auto md:top-0 left-0 right-0 z-[80] bg-amber-400 text-amber-950 text-xs text-center py-1 font-bold';   // 手机上放在底部导航上面，不盖住导航的字
     bar.textContent = '演示版：所有机构、邮箱、人物均为虚构，不连接 AI、不会发送任何邮件';
     document.body.appendChild(bar);
+    const st = document.createElement('style');   // 电脑上演示条在顶上：右边两个抽屉从它下面开始，标题和关闭按钮不被盖住
+    st.textContent = '@media (min-width: 768px) { #appDrawer, #agentDrawer { top: 24px; } }';
+    document.head.appendChild(st);
     // 导览：第一次打开时弹出（之后右下角「导览」按钮随时再看）
     const go = tab => { const el = document.querySelector(`.nav-link[data-tab="${tab}"]`) || document.querySelector(`[data-tab="${tab}"]`); if (el) el.click(); };
     const steps = [
       ['投递', 'new', '贴进链接或 JD，后台写好一封自动打开一封。点队列里的「某硬科技PE C」：左边是 AI 读出来的 JD 硬性要求，中间是写好的信，右边是发信前检查——红色的问题不改不让发，强制发送也发不出去。'],
       ['网申', 'kit', '只能网申的岗位放在这里，一家一行、一个颜色。点「某硬科技基金 W」那行的「让助手填」，右下角看助手一步步在浏览器里填表、传照片，证件号留给本人；填好后点「我已提交」，看它去网站读回实际提交的内容。'],
-      ['投递看板', 'board', '每条投递一行：阶段、回复、退信一目了然。点开一条看邮件原文；网申的记录里存的是从网站读回来的实际提交内容，不是 AI 写的稿子。'],
+      ['投递看板', 'board', '顶上是「今天」：轮到你的事（看信、做测评、退信、登录）每条一个按钮；口述框里随口说一句「收到某硬科技PE C的笔试，周日截止」，面板拆成事件、记进那家、可撤销。下面一行一次申请：同一家投的几个志愿合成一张卡（某互联网公司 Z 是串行志愿：志愿一在看、志愿二排队），点开看这家的详情、时间线、从网站读回的原文。'],
       ['数据分析', 'analytics', '投递节奏、机构类型、地点、阶段分布。'],
     ];
     const card = document.createElement('div');

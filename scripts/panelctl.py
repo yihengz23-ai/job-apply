@@ -348,7 +348,8 @@ def cmd_safe_restart(args):
 
 def cmd_export_excel(_args):
     from jobapply import records
-    path = records.export_excel(records.load())
+    d = records.load_all()        # 带上申请：「下一步·截止」那一列和「网申实际提交」那张表要用
+    path = records.export_excel(d["records"], applications=d.get("applications"))
     print(f"已从 {config.RECORDS_PATH} 导出：{path}")
     return 0
 

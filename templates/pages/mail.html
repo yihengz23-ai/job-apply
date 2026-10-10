@@ -1,0 +1,155 @@
+{# 「投递」页：放在 index.html 的 #tab-new 里，脚本是 static/js/mail.js #}
+  <section id="intake" class="bg-white rounded-2xl p-5 border shadow-sm mb-4">
+    <h2 class="text-sm font-bold flex items-center gap-2 mb-1"><span class="material-symbols-outlined text-primary">playlist_add</span>贴链接或 JD：一个、一堆都行</h2>
+    <p class="text-xs text-slate-500 mb-3">公众号 / 网页链接一行一个，或一整段 JD 文字。后台同时写 <span id="queueWorkers">3</span> 封（抓文章 → 一篇多个岗位自动拆开 → 写邮件 → 检查），写好一封就在下面自动打开；全部写完弹 Mac 通知。</p>
+    <textarea id="queueInput" rows="3" class="w-full bg-slate-50 border-none rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary/20" placeholder="在这里 ⌘V 粘贴；勾着「粘贴后直接交给 AI 写」时，贴完就开始写，可以马上贴下一个"></textarea>
+    <div class="flex flex-wrap items-center gap-3 mt-3">
+      <button id="queueAddBtn" class="px-4 py-2 bg-primary text-white rounded-xl text-sm font-bold flex items-center gap-1"><span class="material-symbols-outlined">add</span>交给 AI 写（⌘+回车）</button>
+      <label class="flex items-center gap-1.5 text-xs text-slate-600"><input id="autoAdd" type="checkbox" checked class="rounded text-primary"/>粘贴后直接交给 AI 写</label>
+      <span id="modelBadge" class="ml-auto text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-bold"></span>
+    </div>
+    <div id="queueOpts" class="mt-4 p-3 rounded-xl border border-dashed border-slate-200">
+      <div class="flex flex-wrap items-center gap-x-2">
+        <button id="qOptsToggle" class="text-[11px] font-bold text-slate-600 flex items-center gap-0.5"><span class="material-symbols-outlined text-sm">tune</span>这批的设置</button>
+        <span id="qOptsSummary" class="text-[11px] text-slate-500">都按默认（AI 按 JD 判断）</span>
+        <button id="qOptsReset" class="hidden text-[11px] text-primary font-bold">恢复默认</button>
+        <button id="qOptsMore" class="ml-auto text-[11px] text-primary font-bold">改设置</button>
+      </div>
+      <p id="qOptsHint" class="hidden text-[11px] text-slate-400 mt-1 mb-2">对之后加入的每一条生效，已在列表里的不变；每封打开后还能单独改</p>
+      <div id="qOptsGrid" class="hidden grid grid-cols-2 md:grid-cols-5 gap-3">
+        <label class="text-[11px] font-bold text-slate-500">岗位类型
+          <select id="qPos" class="field mt-1"><option value="">自动识别</option></select></label>
+        <label class="text-[11px] font-bold text-slate-500">简历版本
+          <select id="qResume" class="field mt-1"><option value="">自动（默认中文）</option></select></label>
+        <label class="text-[11px] font-bold text-slate-500">研究样本
+          <select id="qReport" class="field mt-1"><option value="">按 JD 判断</option><option value="附上">附上</option><option value="不附">不附</option></select></label>
+        <label class="col-span-2 text-[11px] font-bold text-slate-500">给 AI 的补充要求
+          <input id="qExtra" class="field mt-1" placeholder="如：重点写某段研究经历 / 再短一点"/></label>
+      </div>
+    </div>
+  </section>
+  <!-- 待办列表（打开一封时自动收起） -->
+  <div class="flex flex-wrap items-center gap-2 mb-2">
+    <span id="queueSummary" class="text-xs text-slate-500"></span>
+    <button id="queueToggle" class="text-xs text-primary font-bold">收起列表</button>
+    <div class="ml-auto flex gap-2">
+      <button id="queueDraftsBtn" class="hidden px-3 py-2 bg-purple-600 text-white rounded-xl text-xs font-bold" title="点了会先让你确认；到点由面板把这些草稿从 Gmail 原样发出（面板别关、电脑别合盖）"></button>
+    </div>
+  </div>
+  <section id="queueList" class="space-y-2 mb-4 max-h-[42vh] overflow-y-auto"></section>
+  <!-- 当前这封 -->
+  <div id="reviewBanner" class="hidden mb-4 p-3 rounded-2xl bg-indigo-50 border border-indigo-200 flex flex-wrap items-center gap-3 text-sm">
+    <span class="material-symbols-outlined text-indigo-600">rate_review</span>
+    <span id="reviewText" class="flex-1 text-indigo-900"></span>
+    <button id="reviewSkip" class="px-3 py-1.5 bg-white border rounded-lg text-xs font-bold" title="这封挪到待看的最后，先打开下一封">先跳过（排到最后）</button>
+    <button id="reviewBack" class="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold" title="收起这封，写好的信先不自动打开；点列表里的「打开」继续">收起，先不看</button>
+  </div>
+  <div id="emptyDesk" class="p-8 rounded-2xl border-2 border-dashed border-slate-200 text-center text-sm text-slate-400">把链接或 JD 贴到上面，写好的邮件会自动在这里打开。</div>
+  <div id="desk" class="hidden grid grid-cols-12 gap-6">
+    <div class="col-span-12 lg:col-span-7 space-y-5">
+      <!-- JD -->
+      <section class="bg-slate-100/60 rounded-2xl p-5">
+        <h2 class="text-sm font-bold flex flex-wrap items-center gap-2 mb-3"><span class="material-symbols-outlined text-primary">description</span>JD 原文<span class="text-[11px] font-normal text-slate-400">可以改；改完点右边「按要求重写」</span></h2>
+        <textarea id="jdInput" class="w-full bg-white border-none rounded-xl p-4 text-sm leading-relaxed min-h-[220px] md:min-h-[300px] focus:ring-2 focus:ring-primary/20 shadow-sm" placeholder="JD 原文"></textarea>
+        <input id="targetJob" type="hidden"/>
+        <div id="analyzeStatus" class="hidden mt-3 p-3 rounded-xl text-sm"></div>
+      </section>
+
+      <!-- 信息卡 -->
+      <section id="infoCards" class="hidden grid grid-cols-2 md:grid-cols-4 gap-3 animate-in"></section>
+      <!-- 「邮箱+网申」：网申那部分在「网申」页 -->
+      <section id="wsMini" class="hidden bg-teal-50 rounded-2xl p-4 border border-teal-200 text-sm text-teal-900 flex flex-wrap items-center gap-2 animate-in">
+        <span class="material-symbols-outlined text-teal-600">assignment</span><span id="wsMiniText" class="flex-1 min-w-[12rem]"></span>
+        <button class="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-bold" data-tab="kit">去网申页</button>
+      </section>
+      <!-- 旧的网申资料包（不再显示，留着元素免得别的代码找不到） -->
+      <section id="wsCard" class="hidden bg-white rounded-2xl p-5 border-2 border-teal-200 shadow-sm animate-in">
+        <div class="flex flex-wrap items-center gap-2 mb-1">
+          <span class="material-symbols-outlined text-teal-600">assignment_ind</span>
+          <h3 class="text-sm font-bold">网申资料包</h3>
+          <span id="wsPlatform" class="chip bg-teal-100 text-teal-700 hidden"></span>
+          <span id="wsChannel" class="chip bg-slate-100 text-slate-600 hidden"></span>
+          <button id="wsGenBtn" class="ml-auto px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-bold flex items-center gap-1"><span class="material-symbols-outlined text-sm">auto_awesome</span>生成问答</button>
+        </div>
+        <p class="text-xs text-slate-500 mb-2">按 1→4 做完，回到这个页面点最下面的「我已网申，记一笔」。</p>
+        <div class="ws-step"><div class="ws-n">1</div><div class="flex-1 min-w-0"><p class="text-sm font-bold mb-1">打开网申页面</p><div id="wsLinks" class="space-y-1.5 text-sm"></div></div></div>
+        <div class="ws-step"><div class="ws-n">2</div><div class="flex-1 min-w-0"><p class="text-sm font-bold mb-1">上传简历 <span class="text-xs font-normal text-slate-400">网申默认传单页中文版；英文岗位传英文版</span></p>
+          <div class="flex flex-wrap gap-2 items-center">
+            <select id="wsResumeVer" class="text-xs bg-slate-100 border-none rounded-lg py-1.5 pl-2 pr-7"><option>中文</option><option>英文</option><option>双语</option></select>
+            <input id="wsResumeName" class="field !w-auto flex-1 min-w-[12rem] !text-xs" placeholder="简历文件名"/>
+            <button id="wsResumeDl" class="copy-btn !py-1.5"><span class="material-symbols-outlined text-sm">download</span>下载这份简历</button>
+          </div></div></div>
+        <div class="ws-step"><div class="ws-n">3</div><div class="flex-1 min-w-0"><p class="text-sm font-bold mb-1">填姓名、学校、经历等固定栏目</p>
+          <p class="text-xs text-slate-600 mb-2">先在 Chrome 里登录这家网申。牛客支持的网站先点工具栏的牛客图标「一键填写」，再让助手校对补全；不支持的直接让助手填。它按<a class="text-teal-700 underline cursor-pointer" data-tab="kit">网申底稿</a>和简历填好、暂存，<b>提交由你自己点</b>。</p>
+          <button id="wsAgentBtn" class="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-bold flex items-center gap-1"><span class="material-symbols-outlined text-sm">smart_toy</span>让助手代填这家网申</button></div></div>
+        <div class="ws-step"><div class="ws-n">4</div><div class="flex-1 min-w-0"><p class="text-sm font-bold mb-1">开放问题（AI 按这个岗位写的，可以先改再复制）</p><div id="wsAnswers" class="space-y-3"></div></div></div>
+        <div id="wsExtra" class="hidden ws-step"><div class="ws-n"><span class="material-symbols-outlined text-sm">info</span></div><div id="wsExtraBody" class="flex-1 min-w-0 text-xs space-y-2"></div></div>
+        <button id="wsRecordBtn" class="mt-2 w-full py-3 bg-teal-600 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-40"><span class="material-symbols-outlined">task_alt</span>我已网申，记一笔</button>
+        <button id="wsSkipMail" class="hidden mt-2 w-full text-xs text-slate-500 underline">邮件发不了 / 已经在别处发过？不发邮件，只记网申</button>
+      </section>
+      <!-- JD 要求 -->
+      <section id="rulesCard" class="hidden bg-white rounded-2xl p-5 border shadow-sm animate-in">
+        <h3 class="text-sm font-bold mb-3 flex items-center gap-2"><span class="material-symbols-outlined text-amber-600">rule</span>JD 的要求（AI 从原文提取，用来对照邮件）</h3>
+        <div id="rulesBody" class="text-sm space-y-2"></div>
+      </section>
+      <!-- 检查 -->
+      <section id="issuesCard" class="hidden bg-white rounded-2xl p-5 border shadow-sm animate-in">
+        <h3 class="text-sm font-bold mb-3 flex items-center gap-2"><span class="material-symbols-outlined text-red-600">fact_check</span>发信前检查 <span id="issuesSummary" class="text-xs font-normal text-slate-400"></span></h3>
+        <div id="issuesBody" class="space-y-1.5 text-sm"></div>
+      </section>
+    </div>
+
+    <!-- 邮件 -->
+    <div class="col-span-12 lg:col-span-5">
+      <section class="bg-white rounded-2xl overflow-hidden flex flex-col shadow-xl border">
+        <div class="bg-slate-900 px-5 py-3 flex items-center justify-between">
+          <h3 class="text-white text-sm font-medium flex items-center gap-2"><span class="material-symbols-outlined">mail</span>邮件</h3>
+          <span id="gmailPill" class="chip bg-slate-700 text-slate-200">Gmail…</span>
+        </div>
+        <div id="wsOnlyNote" class="hidden m-5 mb-0 p-3 rounded-xl bg-teal-50 text-teal-800 text-xs">这家只能网申，不用发邮件：已转到「网申」页，在那里让助手填。</div>
+        <div id="emailFields" class="p-5 space-y-3">
+          <div class="flex items-center gap-3 pb-2 border-b"><span class="text-xs font-bold text-slate-400 w-12 shrink-0">收件人</span><input id="emailTo" class="flex-1 text-sm bg-transparent border-none p-0 focus:ring-0 font-medium" placeholder="等待分析…"/></div>
+          <div class="flex items-center gap-3 pb-2 border-b"><span class="text-xs font-bold text-slate-400 w-12 shrink-0">抄送</span><input id="emailCc" class="flex-1 text-sm bg-transparent border-none p-0 focus:ring-0" placeholder="JD 写了抄送才填"/></div>
+          <div class="flex items-start gap-3 pb-2 border-b"><span class="text-xs font-bold text-slate-400 w-12 shrink-0 pt-0.5">标题</span><textarea id="emailSub" rows="1" class="grow-y flex-1 text-sm bg-transparent border-none p-0 focus:ring-0 font-medium resize-none overflow-hidden" placeholder="等待分析…"></textarea></div>
+          <textarea id="emailBody" class="grow-y w-full min-h-[260px] bg-transparent border-none focus:ring-0 resize-none overflow-hidden text-sm leading-relaxed" placeholder="等待分析…"></textarea>
+          <div id="attachments" class="pt-3 border-t border-dashed border-slate-200 space-y-2 text-xs">
+            <p class="text-[11px] font-bold text-slate-400 tracking-wider">附件</p>
+            <div class="p-3 bg-blue-50 rounded-xl space-y-2">
+              <div class="flex items-center gap-2 flex-wrap">
+                <label class="flex items-center gap-1.5 font-bold text-blue-800"><input type="checkbox" id="chkResume" checked class="rounded text-primary"/>简历</label>
+                <select id="resumeVersion" class="text-xs bg-white border-none rounded-lg py-1 pl-2 pr-7"></select>
+                <a id="previewResume" href="#" target="_blank" class="text-blue-600 hover:underline flex items-center gap-0.5"><span class="material-symbols-outlined text-sm">visibility</span>预览</a>
+                <button id="downloadResume" class="text-blue-600 hover:underline flex items-center gap-0.5"><span class="material-symbols-outlined text-sm">download</span>下载改名版（网申用）</button>
+              </div>
+              <input id="resumeName" class="field !bg-white !text-xs" placeholder="简历文件名"/>
+              <input id="resumeNameEn" class="field !bg-white !text-xs hidden" placeholder="英文简历文件名"/>
+            </div>
+            <div class="p-3 bg-orange-50 rounded-xl space-y-2">
+              <label class="flex items-center gap-1.5 font-bold text-orange-800"><input type="checkbox" id="chkReport" class="rounded text-orange-500"/><span id="reportLabel">研究样本</span></label>
+              <input id="reportName" class="field !bg-white !text-xs" placeholder="研究样本文件名"/>
+            </div>
+            <div class="p-3 bg-slate-100 rounded-xl space-y-2">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="font-bold text-slate-700">其他附件</span>
+                <span class="text-[11px] text-slate-400">文章、作品、成绩单……正文提到了就要加上</span>
+                <label class="ml-auto copy-btn cursor-pointer"><span class="material-symbols-outlined text-sm">attach_file</span>添加附件<input id="extraFile" type="file" class="hidden"/></label>
+              </div>
+              <div id="extraList" class="space-y-1"></div>
+            </div>
+          </div>
+        </div>
+        <div class="p-5 bg-slate-50 border-t space-y-3">
+          <a id="applyUrlBtn" href="#" target="_blank" rel="noopener" class="hidden w-full py-2.5 bg-slate-900 text-white rounded-xl font-bold text-sm items-center justify-center gap-2 hover:bg-slate-800"><span class="material-symbols-outlined">open_in_new</span>打开网申页面</a>
+          <label class="block text-[11px] font-bold text-slate-500">想让 AI 重写这封？写下要求（比如：再短一点 / 重点写某段经历）
+            <input id="extraInput" class="field mt-1 !bg-white" placeholder="写下要求，点「按要求重写」"/></label>
+          <div class="grid grid-cols-2 gap-2">
+            <button id="sendBtn" disabled class="py-3 bg-primary text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary/20 disabled:opacity-40 disabled:cursor-not-allowed"><span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1">send</span>发送</button>
+            <button id="draftBtn" disabled class="py-3 bg-white border-2 border-primary/30 text-primary rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><span class="material-symbols-outlined">drafts</span>存进 Gmail 草稿（先不发）</button>
+            <button id="recordBtn" disabled class="py-2.5 bg-slate-200 text-slate-700 rounded-xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><span class="material-symbols-outlined">bookmark_add</span>不发邮件，只记一笔</button>
+            <button id="regenBtn" disabled class="py-2.5 bg-slate-200 text-slate-700 rounded-xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"><span class="material-symbols-outlined">refresh</span>按要求重写</button>
+          </div>
+          <p id="metaLine" class="text-[10px] text-center text-slate-400">点「发出」会先让你再确认一遍收件人、标题和附件</p>
+        </div>
+      </section>
+    </div>
+  </div>

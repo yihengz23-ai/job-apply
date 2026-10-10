@@ -1,0 +1,18 @@
+{# 「网申」页上半部分（网申待办）：放在 index.html 的 #tab-kit 里，下面接 pages/profile.html；脚本是 static/js/ws.js #}
+  <section id="wsTasksCard" class="bg-white rounded-2xl p-5 border-2 border-teal-200 shadow-sm mb-6">
+    <div class="flex flex-wrap items-center gap-2 mb-1">
+      <h2 class="text-sm font-bold flex items-center gap-2"><span class="material-symbols-outlined text-teal-600">assignment</span>网申待办</h2>
+      <span id="wsTasksSummary" class="text-xs text-slate-400"></span>
+      <button id="wtRunAll" class="ml-auto hidden px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-bold flex items-center gap-1" title="同时最多几个助手一起填，其余排队、空出来自动接上；同一个网站的一家一家来"><span class="material-symbols-outlined text-sm">smart_toy</span><span id="wtRunAllLabel">待填的全部交给助手</span></button>
+      <button id="wsResumeDl2" class="copy-btn !py-1.5" title="网站要上传简历时用（单页中文版）"><span class="material-symbols-outlined text-sm">download</span>下载网申用简历</button>
+    </div>
+    <p class="text-xs text-slate-500 mb-3">投递页里没有邮箱、只能网申的岗位会自动出现在这里；「邮箱 + 网申」的邮件在投递页发，网申在这里。也可以直接贴网申链接。
+      登录、证件号、最后提交由你来；助手填完会在投递看板自动记一条「草稿」，你提交后点「我已提交」或跟助手说一声，就变成「已投递」，助手再去网站把实际交上去的内容读回来记进看板。可以同时让好几个助手填不同的公司（满了自动排队）；它们干活时你随时可以在对话框里说话，下一步就能看到。</p>
+    <div class="flex flex-wrap gap-2 mb-3">
+      <input id="wsTaskUrl" class="field flex-1 min-w-[16rem]" placeholder="粘贴网申页面链接 https://…"/>
+      <input id="wsTaskName" class="field !w-56" placeholder="公司｜岗位（可以不填）"/>
+      <button id="wsTaskAddRun" class="px-4 py-2 bg-teal-600 text-white rounded-xl text-sm font-bold flex items-center gap-1 whitespace-nowrap"><span class="material-symbols-outlined text-sm">smart_toy</span>加上并让助手填</button>
+      <button id="wsTaskAdd" class="px-3 py-2 border rounded-xl text-sm whitespace-nowrap">只加到待办</button>
+    </div>
+    <div id="wsTaskList" class="space-y-2"></div>
+  </section>

@@ -122,10 +122,11 @@ def test_marker_placeholder_account_not_stored(store):
 # ── 10. 保存保留不认识的顶层键 ─────────────────────────────────
 
 def test_save_keeps_unknown_top_level_keys(store):
-    config.RECORDS_PATH.write_text(json.dumps({"records": [], "schema": 3, "applications": {"x": 1}}), encoding="utf-8")
-    records.add(records.new_record(company_name="测试资本"))
+    config.RECORDS_PATH.write_text(json.dumps({"records": [], "schema": 3, "applications": [{"id": "a1"}], "future_key": {"x": 1}}),
+                                   encoding="utf-8")
+    records.save([records.new_record(company_name="测试资本")])          # 只换岗位列表的老接口
     data = json.loads(config.RECORDS_PATH.read_text(encoding="utf-8"))
-    assert data["applications"] == {"x": 1} and data["schema"] == 3 and len(data["records"]) == 1
+    assert data["future_key"] == {"x": 1} and data["applications"] == [{"id": "a1"}] and data["schema"] == 3 and len(data["records"]) == 1
 
 
 def test_save_refuses_to_overwrite_corrupt_file(store):
@@ -261,7 +262,8 @@ def test_double_click_opens_one_chat(store, monkeypatch):
 # ── 13. 前端三处（静态检查）──────────────────────────────────────
 
 def test_frontend_fixes_present():
-    html = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+    html = "\n".join(p.read_text(encoding="utf-8") for p in    # 前端拆成了模板和 static/js 下的脚本：拼起来查
+                     sorted((ROOT / "templates").rglob("*.html")) + sorted((ROOT / "static" / "js").glob("*.js")))
     assert "agAppend(d.messages.slice(AG.n))" in html                       # 插话后不重复
     assert "await agOpenChat(d.task.chat_id)" in html                        # 我已提交后打开这一家的对话
     assert "我弄好了" not in html and "wsWriteBack(" in html and "WT.inflight" in html
