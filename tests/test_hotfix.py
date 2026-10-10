@@ -236,7 +236,7 @@ def test_system_prompt_matches_rules_on_login_and_photos(store, monkeypatch):
     monkeypatch.setattr(agent, "_uploads_text", lambda: "（测试）")
     text = agent.system_prompt({"messages": []})
     assert "留在这一轮里等" in text and "照片、简历这些附件自己传" in text
-    assert "证件号（身份证号、护照号）一律不填" in text                    # 证件号留给本人
+    assert "证件号（身份证号、护照号）这一栏空着、什么都不做" in text      # 证件号本人自己手动填，助手不碰
     assert "要你做：在画了绿框的" not in text and "传照片、最后提交）先跳过" not in text
 
 

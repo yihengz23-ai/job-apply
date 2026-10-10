@@ -41,13 +41,20 @@ def test_wsfill_never_clicks_submit():
     assert "证件号码由本人自己填" in t
 
 
-def test_id_field_helpers_never_write_or_return_the_number():
-    """证件号那一栏：focusField 只放光标、标橙框；hasValue 只回「已填 / 空」——两者都不写值、不回内容；fillOne 照样拒绝写证件号。"""
+def test_id_field_left_alone_hasvalue_only_says_filled_or_empty():
+    """证件号那一栏本人自己手动填：脚本里没有往里放光标、标框的 focusField 了；hasValue（只在网站不填就不让往下时用）
+    只回「已填 / 还在输 / 空 / 找不到」，不写值、不回内容、不碰这一栏；fillOne 照样拒绝写证件号，清空也不碰，不标框。"""
     t = JS.read_text(encoding="utf-8")
     exports = re.search(r"window\.__wsfill = \{([^}]*)\}", t).group(1)
-    assert re.search(r"\bfocusField\b", exports) and re.search(r"\bhasValue\b", exports)
+    assert "focusField" not in t and re.search(r"\bhasValue\b", exports)
     body = t[t.index("function inputOf(id)"):t.index("function mark(id, ok)")]
     assert "setNative(" not in body and ".value =" not in body and "fillOne(" not in body and "press(" not in body
+    assert "focusOn(" not in body and "outline" not in body and "click(" not in body
     has = body[body.index("function hasValue(id)"):]
-    assert "'已填' : '空'" in has
-    assert "证件号码由本人自己填" in t
+    for expr in re.findall(r"return ([^;]+);", has):                      # 回的只有这几个字，号码出不去
+        rest = re.sub(r"'(已填|还在输|空|找不到)'", "", expr)
+        assert re.fullmatch(r"[\s()&|?:]*(?:(?:changed|focused|short)[\s()&|?:]*)*", rest), expr
+    assert "证件号码由本人自己填" in t and "ID_LABEL.test(labelOf(el))" in t
+    clear = t[t.index("async function clear(id)"):t.index("async function clear(id)") + 400]
+    assert "ID_LABEL.test(" in clear                                      # 清空也不碰证件号
+    assert t.count("if (r.reason !== ID_REFUSE) mark(step.id, r.ok)") == 2   # fill、start 都不给它标框

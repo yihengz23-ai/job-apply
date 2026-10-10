@@ -3,7 +3,6 @@
 // ━━━ 我的资料（网申常用栏目，一键复制）━━━
 async function loadKitPage() {
   loadWsProfile();
-  loadIdcard();
   if (!S.kitData) {
     try { S.kitData = await api('/api/kit'); } catch (e) { $('#kitBody').innerHTML = `<p class="text-red-600 text-sm">${esc(e.message)}</p>`; return; }
   }
@@ -124,40 +123,3 @@ setInterval(async () => {
     S.wsProfile = d.profile; S.wsProfileBase = JSON.parse(JSON.stringify(d.profile));
   } catch (e) {}
 }, 10000);
-
-// ━━━ 证件号：只存在这台 Mac 的钥匙串里，页面上只看得到打码的样子 ━━━
-async function loadIdcard() {
-  let d;
-  try { d = await api('/api/idcard'); } catch (e) { $('#idcardBox').innerHTML = `<p class="text-red-600">${esc(e.message)}</p>`; return; }
-  const how = '网申页上「等你·证件号」那条点「复制证件号」：号码直接进这台 Mac 的剪贴板（60 秒后自动清掉），你在网页那一栏 ⌘V，再点「我填好了」。助手不碰这一栏。';
-  if (!(S.cfg && S.cfg.local)) {   // 手机（隧道）上：不给输入框，号码不走隧道
-    $('#idcardBox').innerHTML = `<div class="flex items-center gap-2"><span class="material-symbols-outlined text-teal-600">badge</span><b>证件号</b>
-      <span>${d.saved ? esc(d.masked) + '（已存在电脑的钥匙串里）' : '还没存'}</span></div><p class="text-[11px] text-slate-500 mt-1">证件号只能在电脑上存、在电脑上复制。</p>`;
-    return;
-  }
-  $('#idcardBox').innerHTML = `<div class="flex items-center gap-2 flex-wrap"><span class="material-symbols-outlined text-teal-600">badge</span><b>证件号</b>
-      ${d.saved ? `<span class="font-mono">${esc(d.masked)}</span><span class="text-xs text-slate-400">只存在这台 Mac 的钥匙串里</span>
-        <button id="idcardChange" class="copy-btn ml-auto">换一个</button><button id="idcardForget" class="copy-btn">删掉</button>`
-      : `<input id="idcardInput" type="password" autocomplete="off" class="field !w-64 !py-1.5" placeholder="18 位身份证号（只存钥匙串）"/><button id="idcardSave" class="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold">存进钥匙串</button>`}</div>
-    <p class="text-[11px] text-slate-500 mt-1">${esc(how)}</p>`;
-}
-document.addEventListener('click', async e => {
-  if (e.target.closest('#idcardSave')) {
-    const inp = $('#idcardInput');
-    try { const d = await api('/api/idcard', {method: 'PUT', body: {number: inp.value}}); inp.value = ''; toast('存好了：' + d.masked, 3000); loadIdcard(); }
-    catch (er) { toast(er.message, 6000); }
-  }
-  if (e.target.closest('#idcardChange')) {
-    $('#idcardBox').querySelector('#idcardChange').outerHTML = '<input id="idcardInput" type="password" autocomplete="off" class="field !w-64 !py-1.5 ml-auto" placeholder="新的 18 位号码"/><button id="idcardSave" class="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold">存进钥匙串</button>';
-  }
-  if (e.target.closest('#idcardForget')) {
-    try { await api('/api/idcard', {method: 'DELETE'}); toast('删掉了', 2000); loadIdcard(); } catch (er) { toast(er.message, 6000); }
-  }
-});
-async function copyIdcard(appId) {   // 网申页、看板上「复制证件号」：放进本机剪贴板（号码不经过网页），顺手把 Chrome 切到这家的网页
-  try {
-    const d = await api('/api/idcard/copy', {method: 'POST', body: {app_id: appId || ''}});
-    toast(d.jumped ? `已复制，Chrome 已切到那个网页：光标在证件号那一栏，按 ⌘V（${d.clear_after} 秒后剪贴板自动清掉）。助手看到填好了会自己接着做`
-      : `证件号已复制（${d.clear_after} 秒后自动清掉）：去那一栏按 ⌘V，助手看到填好了会自己接着做`, 8000);
-  } catch (er) { toast(er.message, 8000); }
-}

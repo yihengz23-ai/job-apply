@@ -11,10 +11,11 @@
  * 写值、点下拉选项、分级地区、单选按文字匹配的做法参考了 OpenJobAutofill（MIT License, Br1an67）。
  */
 (() => {
-  const VERSION = '2.33';
+  const VERSION = '2.34';
   if (window.__wsfill && window.__wsfill.version === VERSION && !window.__wsfillReload) return;   // 改脚本调试时先设 window.__wsfillReload = true
 
   const ID = 'data-wsf-id';
+  const ID_LABEL = /身份证|证件号|护照号|银行卡/, ID_REFUSE = '证件号码由本人自己填';   // 证件号这一栏：不填、不清、不标框
   const CONTROL = [
     'input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=reset]):not([type=image])',
     'textarea', 'select', '[contenteditable="true"]', '[role="combobox"]', '[role="radio"]', '[role="checkbox"]',
@@ -508,6 +509,7 @@
   async function clear(id) {
     const root = byId(id);
     if (!root) return {ok: false, reason: '找不到这一项'};
+    if (ID_LABEL.test(labelOf(inputOf(id) || root))) return {ok: false, reason: ID_REFUSE};
     // 清除小叉要鼠标悬停才出来；Element 的悬停事件绑在里层 .el-input 上（mouseenter 不往里传），所以里外都悬停一下
     const hoverOn = [root, ...root.querySelectorAll('.el-input,[class*="selector"],[class*="input-wrapper"],input')].slice(0, 6);
     for (const el of hoverOn) {
@@ -874,7 +876,7 @@
     const el = inner || root;
     const kind = kindOf(el);
     if (el.disabled || root.getAttribute('aria-disabled') === 'true') return {ok: false, reason: '这一项是灰的，不能填'};
-    if (/身份证|证件号|护照号|银行卡/.test(labelOf(el))) return {ok: false, reason: '证件号码由本人自己填'};
+    if (ID_LABEL.test(labelOf(el))) return {ok: false, reason: ID_REFUSE};
     try {
       if (kind === 'radio' || kind === 'checkbox') return await fillChoiceGroup(el, value);
       if (kind === 'select') {
@@ -896,26 +898,26 @@
     }
   }
 
-  // 证件号这一栏（只能本人填）：助手只把光标放进去、标个橙框；之后只问「填了没有」，不回内容
+  // 证件号这一栏（本人自己手动填，助手不碰）：只有网站不填它就进不了下一步时，助手用 hasValue 问一句「填了没有」，不回内容。
+  // 本人是一位一位打的：光标还在这一栏、或者身份证位数不对，而且跟上次看时不一样，就回「还在输」；没再变了才算「已填」
   function inputOf(id) {
     let root = byId(id);
     if (!root) { const nid = relocate(id); root = nid && byId(nid); if (root) id = nid; }
     if (!root) return null;
     return document.querySelector(`[${ID}-inner="${CSS.escape(id)}"]`) || (root.matches(CONTROL) ? root : root.querySelector('input,textarea')) || root;
   }
-  function focusField(id) {
-    const el = inputOf(id);
-    if (!el) return '页面上找不到 ' + id + '（重新 view 看编号）';
-    el.scrollIntoView({block: 'center'});
-    focusOn(el);
-    el.style.outline = '3px solid #f59e0b';
-    el.style.outlineOffset = '2px';
-    return '光标已放进 ' + id + '，这一栏标了橙框';
-  }
+  const typing_ = {};
   function hasValue(id) {
     const el = inputOf(id);
     if (!el) return '找不到';
-    return currentValue(el, kindOf(el)) ? '已填' : '空';
+    const v = String(currentValue(el, kindOf(el)) || '').replace(/\s/g, '');
+    if (!v) { delete typing_[id]; return '空'; }
+    const sig = v.length + ':' + [...v].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);   // 只记长度和摘要，不留号码
+    const changed = typing_[id] !== sig;
+    typing_[id] = sig;
+    const focused = document.activeElement === el || el.contains(document.activeElement);
+    const short = /身份证/.test(labelOf(el)) && v.length !== 15 && v.length !== 18;
+    return changed && (focused || short) ? '还在输' : '已填';
   }
 
   function mark(id, ok) {
@@ -930,7 +932,7 @@
     for (const step of plan || []) {
       if (!step || step.id == null) continue;
       const r = await fillOne(step.id, step.value);
-      mark(step.id, r.ok);
+      if (r.reason !== ID_REFUSE) mark(step.id, r.ok);   // 证件号那一栏不标框
       results.push({id: step.id, ...r});
       await sleep(40);
     }
@@ -960,7 +962,7 @@
         try {
           r = step.clear ? await clear(step.id) : await fillOne(step.id, step.value);
         } catch (e) { r = {ok: false, reason: '出错：' + e.message}; }
-        mark(step.id, r.ok);
+        if (r.reason !== ID_REFUSE) mark(step.id, r.ok);
         (r.ok ? job_.done : job_.failed).push({id: step.id, value: step.value, ...r});
         await sleep(60);
       }
@@ -1172,5 +1174,5 @@
   try { const m = JSON.parse(sessionStorage.getItem('__wsfill_mark') || 'null'); if (m && m.label) markPage(m); } catch (e) {}
 
   window.__wsfill = {version: VERSION, scan, fill, fillOne, clickAdd, options, clear, start, progress, peek,
-    view, more, opts, peekText, job, fillText, snapshot, snapshotText, readback, mark: markPage, focusField, hasValue};
+    view, more, opts, peekText, job, fillText, snapshot, snapshotText, readback, mark: markPage, hasValue};
 })();

@@ -299,3 +299,26 @@ def test_email_plus_web_email_record_joins_task_card(store):
     assert records.get(rid)["app_id"] == t["id"] and apps.get(t["id"])["channel"] == "邮件+网申"
     with pytest.raises(apps.NotFound):
         apps.get(first)                                                         # 自动建的那张空卡并掉了
+
+
+@pytest.mark.parametrize("text", ["证件号码 1234561990****1233", "身份证号：123456 19900101 1233", "读回：123456199001 以后"])
+def test_mask_truncated_and_starred_ids(text):
+    out = apps.mask(text)
+    assert "[证件号已隐去]" in out and "1990" not in out
+
+
+def test_mask_leaves_phones_and_long_numbers():
+    t = "电话 13800000000，订单 202610091200，编号 1791568678339"
+    assert apps.mask(t) == t
+
+
+@pytest.mark.parametrize("todo,kind", [
+    ("告诉我高中信息；另外证件号空着，你自己填", "回答"),
+    ("勾选承诺书、证件号空着你自己填", "承诺"),
+    ("上传成绩单；证件号空着", "上传"),
+    ("证件号（网站不填不让往下：蓝框网页「基本信息」那一栏）", "证件号"),
+    ("在画了绿框的网页里扫码登录", "登录"),
+])
+def test_need_kind_counts_id_only_when_it_is_the_blocker(todo, kind):
+    """证件号平时不是停下的原因：「要你做」里顺带提一句的，按真正挡路的那件算；只说证件号的才是等你填证件号。"""
+    assert apps.need_kind(todo) == kind

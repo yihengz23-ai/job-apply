@@ -1,14 +1,13 @@
-"""我的资料：简历预览和下载（网申按 JD 要求的文件名）、网申资料包、网申底稿、证件号（只存钥匙串，复制进本机剪贴板）。"""
+"""我的资料：简历预览和下载（网申按 JD 要求的文件名）、网申资料包、网申底稿。证件号不存（网申时本人自己手动填）。"""
 
 import io
 import json
-from urllib.parse import urlparse
 
 from flask import Blueprint, jsonify, request, send_file
 
-from jobapply import checks, config, idcard, resume, wsprofile
+from jobapply import checks, config, resume, wsprofile
 
-from .common import _body, _err, _via_tunnel
+from .common import _body, _err
 
 bp = Blueprint("profile", __name__)
 
@@ -66,49 +65,3 @@ def api_wsprofile_save():
     except wsprofile.Invalid as e:
         return _err(str(e))
     return jsonify({"ok": True, "profile": profile, "missing": wsprofile.missing(profile), "notes": profile.get("_核对提示") or []})
-
-
-# ── 证件号：只存在这台 Mac 的钥匙串里；页面上只看得到打码的样子 ─────────────────
-
-@bp.route("/api/idcard")
-def api_idcard_status():
-    return jsonify(idcard.status())
-
-
-@bp.route("/api/idcard", methods=["PUT"])
-def api_idcard_save():
-    if _via_tunnel():
-        return _err("证件号只能在电脑上存（手机上不行）", 403)
-    try:
-        return jsonify({"ok": True, "masked": idcard.save(_body().get("number"))})
-    except idcard.Invalid as e:
-        return _err(str(e))
-    except RuntimeError as e:
-        return _err(str(e), 500)
-
-
-@bp.route("/api/idcard", methods=["DELETE"])
-def api_idcard_forget():
-    if _via_tunnel():
-        return _err("证件号只能在电脑上删", 403)
-    return jsonify({"ok": True, **idcard.forget()})
-
-
-@bp.route("/api/idcard/copy", methods=["POST"])
-def api_idcard_copy():
-    """放进这台 Mac 的剪贴板（号码不经过网页），60 秒后自动清掉。"""
-    if _via_tunnel():
-        return _err("复制证件号只能在电脑上点（手机上复制不到电脑的剪贴板）", 403)
-    if not idcard.copy_to_clipboard():
-        return _err("还没存证件号：去「网申」页的「我的资料」里存一次（只存在这台 Mac 的钥匙串里）", 404)
-    app_id = str((request.get_json(silent=True) or {}).get("app_id") or "")
-    host = ""
-    if app_id:      # 顺手把 Chrome 切到这家的网页（助手已经把光标放进证件号那一栏）
-        from jobapply import apps
-        try:
-            a = apps.get(app_id)
-            host = a.get("site") or (urlparse(a.get("entry_url") or "").hostname or "")
-        except apps.NotFound:
-            pass
-    idcard.bring_tab(host)
-    return jsonify({"ok": True, "clear_after": idcard.CLEAR_AFTER, "jumped": bool(host)})

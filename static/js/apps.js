@@ -33,12 +33,10 @@ function apNext(c) {
   const due = n.due && !n.text.includes(n.due) ? `（截止 ${esc(n.due)}）` : '';
   return `<span class="${n.done ? 'line-through text-slate-400' : ''}">${esc(n.text)}${due}</span>${n.inferred ? ' <span class="chip bg-slate-100 text-slate-500">推算</span>' : ''}`;
 }
-function apBtn(c, cls = '') {   // 这张卡上「轮到你 / 停了」那一个按钮（按钮上的字 = 点了会怎样）；等你填证件号时前面多一个「复制证件号」
+function apBtn(c, cls = '') {   // 这张卡上「轮到你 / 停了」那一个按钮（按钮上的字 = 点了会怎样）
   const b = c.button;
   if (!b) return '';
-  const id = (c.need || {}).kind === '证件号' && b.action === 'need_done' && S.cfg && S.cfg.local   // 手机上复制不到电脑的剪贴板：不显示
-    ? `<button class="ap-idcopy shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 text-white ${cls}" data-id="${esc(c.id)}" title="放进这台 Mac 的剪贴板（60 秒后自动清掉）、Chrome 切到那个网页，按 ⌘V；助手看到填好了自己接着做">复制证件号并跳过去</button>` : '';
-  return id + `<button class="ap-act shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold ${c.turn === '停了' ? 'bg-red-600' : 'bg-amber-600'} text-white ${cls}" data-id="${esc(c.id)}" data-action="${esc(b.action)}">${esc(b.label)}</button>`;
+  return `<button class="ap-act shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold ${c.turn === '停了' ? 'bg-red-600' : 'bg-amber-600'} text-white ${cls}" data-id="${esc(c.id)}" data-action="${esc(b.action)}">${esc(b.label)}</button>`;
 }
 
 async function loadApps() {
@@ -251,7 +249,6 @@ document.addEventListener('click', async e => {
   const t = e.target;
   const act = t.closest('.ap-act');
   if (act) { e.stopPropagation(); setBusy(act, true, ''); await apAction(act.dataset.id, act.dataset.action); setBusy(act, false); return; }
-  if (t.closest('.ap-idcopy')) { e.stopPropagation(); return copyIdcard(t.closest('.ap-idcopy').dataset.id); }
   const open = t.closest('.ap-open');
   if (open) { e.stopPropagation(); return apDetail(open.dataset.id); }
   const row = t.closest('tr.ap-row');

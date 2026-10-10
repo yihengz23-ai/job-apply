@@ -28,7 +28,6 @@ function wtTurn(x) {   // 这一行最显眼的那句：现在轮到谁
   return {chip: x.status, cls: WT_CLS[x.status] || '', line: x.status === '已填待提交' ? '填好了：你检查一下，在网站上提交后点「我已提交」' : ''};
 }
 function renderWsTasks(c) {
-  const onMac = !!(S.cfg && S.cfg.local);   // 在电脑本机打开（手机隧道上不给复制证件号）；下面 map 里的 S 是按钮样式，不是全局状态
   $('#wsTasksSummary').textContent = Object.entries(c).map(([k, v]) => `${k} ${v}`).join(' ｜ ');
   $('#wsTaskList').innerHTML = WT.items.map(x => {
     const done = ['已提交', '不投了'].includes(x.status), url = safeUrl(x.url), turn = wtTurn(x), col = wtColor(x);
@@ -37,9 +36,8 @@ function renderWsTasks(c) {
     const btn = (cls, label, extra = '', title = '') => `<button class="${cls}" data-id="${id}" ${extra} ${title ? `title="${esc(title)}"` : ''}>${label}</button>`;
     const P = 'px-3 py-1.5 rounded-lg text-xs font-bold text-white ', S = 'px-2 py-1.5 border rounded-lg text-xs ';
     let main = '';   // 最该点的那个按钮
-    const idNeed = x.status === '等你处理' && /证件|身份证|护照/.test(x.todo || '');
-    if (idNeed) main = (onMac ? btn('wt-idcopy ' + P + 'bg-slate-900', '复制证件号并跳过去', '', '放进这台 Mac 的剪贴板（60 秒后自动清掉）、Chrome 切到那个网页，按 ⌘V；助手看到填好了自己接着做') : '') +
-      (!busy ? btn('wt-run ' + S, '我填好了', '', '助手已经停了的话：叫它接着做') : '');
+    const idNeed = x.status === '等你处理' && x.need_kind === '证件号';   // 面板按「要你做」算的（和看板同一个判断）
+    if (idNeed) main = !busy ? btn('wt-run ' + P + 'bg-amber-600', '我填好了', '', '证件号你在网页上填好了：叫助手接着做') : '';   // 助手还在等的话它自己会看到
     else if (!busy && x.status === '等你处理') main = btn('wt-run ' + P + 'bg-amber-600', '让助手接着做', '', '助手会先看一眼网页，确认你那边做好了再接着填');
     else if (!busy && x.status === '已填待提交') main = btn('wt-set ' + P + 'bg-blue-600', '我已提交', 'data-status="已提交"', '记进投递看板，助手再去网站把实际提交的内容读回来');
     else if (!busy && !done) main = btn('wt-run ' + P + 'bg-teal-600', x.chat_id ? '让助手接着做' : '让助手填');
@@ -123,7 +121,6 @@ $('#wsTaskList').addEventListener('click', async e => {
   const b = e.target.closest('button'); if (!b) return;
   try {
     if (b.classList.contains('wt-run')) return wtRun(b.dataset.id);
-    if (b.classList.contains('wt-idcopy')) return copyIdcard(b.dataset.id);
     if (b.classList.contains('wt-rb')) return wtReadback(b.dataset.id);
     if (b.classList.contains('wt-acct')) {
       const cur = (WT.items.find(x => x.id === b.dataset.id) || {}).account || '';

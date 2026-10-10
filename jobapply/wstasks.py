@@ -324,6 +324,8 @@ def parse_markers(text):
 
 def _marker_status(word):
     word = word or ""
+    if re.match(r"\s*(?:在填|接着填|继续填)", word):   # 「在填（证件号你填好了，我接着填）」：先认开头，别被括号里的「填好了」「你」带偏
+        return "助手在填"
     if any(w in word for w in SUBMITTED_WORDS) and "待" not in word:
         return "已提交"
     if any(w in word for w in FILLED_WORDS):

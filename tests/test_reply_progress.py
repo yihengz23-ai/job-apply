@@ -61,6 +61,7 @@ def test_reply_becomes_suggestion_next_step_and_timeline(store, monkeypatch):
     assert records.get(rid)["status"] == "已投递" and records.get(rid)["reply_kind"] == "测评邀请"   # 只建议，不直接改
     sug = [s for s in a["suggestions"] if s["state"] == "待定"]
     assert len(sug) == 1 and sug[0]["payload"]["to"] == "笔试" and "笔试/测评" in sug[0]["text"]
+    assert "」的阶段改成「笔试/测评」？" in sug[0]["text"] and "把「" not in sug[0]["text"]   # 说的是改阶段，不是改岗位名
     assert a["next_step"]["due"] == "2026-10-12" and a["next_step"]["inferred"] is True and a["next_step"]["source"] == "邮件"
     assert any(e["kind"] == "来信" and "测评邀请" in e["text"] for e in a["timeline"])
     assert apps.view(a)["turn"] == "轮到你"

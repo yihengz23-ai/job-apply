@@ -196,6 +196,18 @@ def test_system_prompt_has_profile_rules_and_records(ag, monkeypatch):
     assert "careers.example.com：日期会晚一天" in s and "不点最终的「提交" in s
 
 
+
+def test_system_prompt_leaves_id_field_alone(ag):
+    """证件号本人自己手动填：提示词和规则都叫助手空着不碰、不为它停，收尾提一句；只有网站不填就进不了后面才等。
+    放光标、复制粘贴那一套都不在了。"""
+    s = ag.system_prompt()
+    assert "这一栏空着、什么都不做" in s and "证件号空着，你自己填" in s and "不要为它停下来" in s
+    assert "不为了过校验往里写任何东西" in s and "不按 ⌘V" in s
+    assert "不填证件号就进不了后面" in s and "__wsfill.hasValue" in s          # 唯一会等的情况
+    assert "focusField" not in s and "复制证件号" not in s and "光标已经放好" not in s and "输证件号" not in s
+    assert "不写进【网申记录】的「要你做」" in s and "不挡路的承诺 / 声明勾选不用等" in s and "还在输" in s
+
+
 def test_agent_api(ag):
     panel.app.config["TESTING"] = True
     c = panel.app.test_client()
@@ -268,3 +280,41 @@ def test_board_line_in_chat_goes_through_progress(ag, monkeypatch):
     assert any(r == "system" and t.startswith("看板已改：聊改资本：笔试邀请，截止 2026-10-13") for r, t in msgs)
     assert records.get(rid)["status"] == "笔试" and apps.get(aid)["next_step"]["due"] == "2026-10-13"
     assert progress.recent()[0]["text"] == "聊改资本那封不是拒信，是笔试，13 号截止"
+
+
+class _LiveStub:
+    pid = 1
+
+    def __init__(self):
+        self.sent = []
+
+    def alive(self):
+        return True
+
+    def write(self, text):
+        self.sent.append(text)
+
+
+def test_old_process_told_about_rule_changes_once(ag):
+    """进程只在起来时拿一次提示词：上线前就在跑的老进程，递给它的第一句前面补上改了什么，之后不再补。"""
+    c = ag.new_chat()
+    r = ag._Runner(c["id"], _LiveStub())
+    ag._runners[c["id"]] = r
+    ag.send(c["id"], "接着填")
+    ag.send(c["id"], "实习描述用精简版")
+    first, second = r.runner.sent
+    assert first.startswith("（面板）规则改了") and "证件号这一栏空着" in first and first.endswith("接着填")
+    assert second == "实习描述用精简版"
+    assert ag._load(c["id"])["prompt_version"] == ag.PROMPT_VERSION
+    assert [m["text"] for m in ag.get(c["id"])["messages"]] == ["接着填", "实习描述用精简版"]   # 对话里只记本人的原话
+
+
+def test_new_process_gets_current_rules_and_no_note(ag, monkeypatch):
+    stub = _LiveStub()
+    monkeypatch.setattr(ag.agent_runner, "start", lambda *a, **k: stub)
+    monkeypatch.setattr(ag, "_ensure_watchdog", lambda: None)
+    c = ag.new_chat()
+    ag._spawn(c["id"], "帮我填")
+    assert ag._load(c["id"])["prompt_version"] == ag.PROMPT_VERSION and stub.sent == ["帮我填"]
+    ag.send(c["id"], "再改一下")
+    assert stub.sent[-1] == "再改一下"

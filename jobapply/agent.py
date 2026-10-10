@@ -19,7 +19,7 @@ import uuid
 from datetime import datetime
 from urllib.parse import urlparse
 
-from . import agent_runner, checks, config, notify, records, uploads, wsprofile, wstasks
+from . import agent_runner, apps, checks, config, notify, records, uploads, wsprofile, wstasks
 from .llm import _claude_bin
 
 CHATS_DIR = config.DATA_DIR / "agent_chats"
@@ -38,6 +38,14 @@ SITE_NOTE = re.compile(r"【网站笔记】\s*([^\s：:]+)\s*[：:]\s*(.+)")
 READBACK_BLOCK = re.compile(r"【网申读回】([^\n]*)\n([\s\S]*?)【/网申读回】")
 BOARD_LINE = re.compile(r"【看板】\s*([^\n]+)")   # 本人在对话里说的进展 / 看板更正：照原话转给口述那一套（progress.apply）
 PREFIX = "mcp__claude-in-chrome__"
+# 助手进程只在起来时拿一次提示词，能活十几个小时。规则改了、要让已经在跑的进程马上知道的：PROMPT_VERSION 加一，
+# 在 RULE_CHANGES 里用几句话写清改了什么；面板下次递话给老进程时先补这几句（新起的进程拿的就是新提示词，不补）。
+PROMPT_VERSION = 2
+RULE_CHANGES = {
+    2: "证件号这一栏空着、什么都不做：不填、不点进去、不放光标、不标框、不截这一栏、不为它停（focusField 没有了），本人自己手动填；"
+       "表上有这一栏的，收尾清单里说一句「证件号空着，你自己填」，不写进「要你做」。只有网站不填它就进不了后面，才报「等你处理」、"
+       "用 __wsfill.hasValue 看（「还在输」就再等）。不挡路的承诺 / 声明勾选不用等，写进收尾清单。",
+}
 
 _lock = threading.RLock()
 _runners = {}                        # chat_id → 常驻的 claude 进程（_Runner）
@@ -342,13 +350,24 @@ def _go(chat_id, text):
     if r and not r.closed and r.runner.alive():
         try:
             r.begin_turn()
-            r.write(text)
+            r.write(_rule_note(chat_id) + text)
             return
         except (BrokenPipeError, OSError, ValueError):
             pass                           # 进程刚好退了：下面另起一个
     _make_room(keep=chat_id)
     _starting.add(chat_id)
     threading.Thread(target=_run_safe, args=(chat_id, text), daemon=True).start()
+
+
+def _rule_note(chat_id):
+    """（锁内调用）这个进程起来时的提示词比现在旧：返回要补的那几句（只补一次）；不旧就返回空。"""
+    chat = _load(chat_id)
+    v = chat.get("prompt_version") or 1
+    if v >= PROMPT_VERSION:
+        return ""
+    chat["prompt_version"] = PROMPT_VERSION
+    _save(chat)
+    return "（面板）规则改了，以这几句为准：" + " ".join(RULE_CHANGES[k] for k in sorted(RULE_CHANGES) if k > v) + "\n\n"
 
 
 def _done(chat_id):
@@ -781,6 +800,9 @@ def _spawn(chat_id, text):
     r = _Runner(chat_id, runner)
     with _lock:
         _runners[chat_id] = r
+        fresh = _load(chat_id)
+        fresh["prompt_version"] = PROMPT_VERSION   # 新进程拿的是现在的提示词
+        _save(fresh)
         _starting.discard(chat_id)
         if _load(chat_id).get("stopped"):   # 进程起来之前就点了停止
             runner.kill()
@@ -933,7 +955,7 @@ def apply_event(chat_id, ev, runner=None):
                                 + ("（看板里记了一条草稿）" if task["status"] == "已填待提交" else
                                    "（看板里记成已投递）" if task["status"] == "已提交" else ""))
                         if task["status"] == "等你处理":   # 助手在这一轮里等本人（证件号、登录……）：马上提醒，不等这一轮结束
-                            notify.send("等你：" + ("填证件号" if re.search(r"证件|身份证|护照", task.get("todo") or "") else "要你做"),
+                            notify.send("等你：" + ("填证件号" if apps.need_kind(task.get("todo")) == "证件号" else "要你做"),
                                         task.get("todo") or "看对话", app_id=task["id"], kind="need")
                         if task["status"] == "已提交" and not task.get("readback") and not task.get("readback_state"):
                             with _lock:   # 跟它说「交了」：这一轮做完让它去网站读回提交的内容
@@ -1161,16 +1183,16 @@ def system_prompt(chat=None):
 - 投了几个岗位 / 志愿、网站上又写了志愿规则的（比如「志愿将按顺序依次流转」「可同时投递多个职位」），在那一行里加一项「志愿方式：串行（原话：……）」或「志愿方式：平行（原话：……）」；网站没写就不写，不要猜。
 - 每次停下来（这一轮做完）都要写一行，状态三选一：
   - 「已填待提交」：能填的都填了、能存的都存了，等本人检查提交；
-  - 「等你处理」：卡在只有本人能做的事上，再加一项「要你做：……」，一句话写清（比如「要你做：告诉我高中信息」）。要本人登录的，照规则请本人在画了颜色框的网页里登录、留在这一轮里等，不用先报「等你处理」结束这一轮；
+  - 「等你处理」：卡在只有本人能做的事上，再加一项「要你做：……」，一句话只写让你停下来的那一件事（比如「要你做：告诉我高中信息」；证件号空着不算，写在收尾清单里）。要本人登录的，照规则请本人在画了颜色框的网页里登录、留在这一轮里等，不用先报「等你处理」结束这一轮；
   - 本人说已经提交了：写「已提交」。
-- 在这一轮里等本人做完网页上的事（证件号、登录）、本人已经做好了：写一行「在填」再接着干，面板那一行就从「等你」回到「助手在填」。
+- 报过「等你处理」、留在这一轮里等到本人做好了（比如网站不填证件号就不让往下）：写一行「在填」再接着干，面板那一行就从「等你」回到「助手在填」。
 
 # 说话方式
 - 一律用中文，包括做事过程中的简短说明。简洁，先说结论。本人不是工程师，不说技术术语。
 - 能自己判断的直接做，不要问。照片、简历这些附件自己传（用 file_upload，文件见下面「可以上传的文件」）。要本人登录、扫码的，照规则在这一轮里等。
 - 真正只有本人能做的事（证件号这一栏、最后提交、资料里没有而只有本人知道的信息）先跳过、把别的都做完，最后一次性说清楚：在哪个颜色框的网页、哪一栏。
-- 证件号（身份证号、护照号）一律不填：哪怕资料里有、哪怕本人说过可以，也留给本人自己输。不往这一栏粘贴、不按 ⌘V（剪贴板里可能就是证件号），不读这一栏的内容，不打开面板（localhost:5001）的网页。
-  做法见规则里「证件号这一栏」：把光标放进去（__wsfill.focusField）→ 马上写一行【网申记录】…｜状态：等你处理｜要你做：证件号（哪个颜色框的网页、哪一栏）→ 留在这一轮里用 __wsfill.hasValue 每 30 秒看一眼，「已填」了就写【网申记录】…｜状态：在填，接着干。
+- 证件号（身份证号、护照号）这一栏空着、什么都不做，本人自己手动填：哪怕资料里有、哪怕本人说过可以，也不填；不往里粘贴、不按 ⌘V、不点进去、不放光标、不标框、不截这一栏、不读内容，不为了过校验往里写任何东西，不打开面板（localhost:5001）的网页。
+  也不要为它停下来：别的照常填完，状态照常「已填待提交」；表上有这一栏的，收尾清单里说一句「证件号空着，你自己填（哪个颜色框的网页、哪一栏）」。只有网站不填它就进不了后面、别的路都试过了，才报「等你处理」并留在这一轮里等（做法见规则里「证件号这一栏」）。
 - 操作浏览器时少说多做；一段做完再简短汇报。
 - 本人可能在你干活时插话（新消息会跟在某一步的工具结果后面出现）：先按新消息调整（比如换个写法、跳过某段、先填别的），再接着做，不用等做完才理。
 - 本人在对话里说投递进展、或者要改看板（比如「A 公司那封不是拒信，是笔试，13 号截止」「把 B 证券改回已投递」「C 公司那条建议不用」「D 公司 AI 面做完了」）：单独写一行【看板】后面照抄本人的原话（公司说得含糊可以补上全称），面板会去改，结果会出现在这个对话里；你不要自己说「已经改好了」。

@@ -325,7 +325,6 @@ tailwind.config={theme:{extend:{colors:{primary:'#005bbf'},fontFamily:{sans:['In
   </section>
 
   <section id="wsProfileAlert" class="hidden bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-4 text-sm"></section>
-  <section id="idcardBox" class="bg-white rounded-2xl p-4 border shadow-sm mb-4 text-sm"></section>
   <div class="flex items-center gap-2 mb-2">
     <h2 class="text-base font-bold">网申底稿 <span class="text-xs font-normal text-slate-400">简历以外、网申会问的个人信息；直接改，自动保存。助手代填时照这里填。</span></h2>
     <span id="wsProfileSaved" class="ml-auto text-xs text-slate-400"></span>
@@ -1813,7 +1812,6 @@ $('#wsAgentBtn').onclick = () => {
 // ━━━ 我的资料（网申常用栏目，一键复制）━━━
 async function loadKitPage() {
   loadWsProfile();
-  loadIdcard();
   if (!S.kitData) {
     try { S.kitData = await api('/api/kit'); } catch (e) { $('#kitBody').innerHTML = `<p class="text-red-600 text-sm">${esc(e.message)}</p>`; return; }
   }
@@ -1934,43 +1932,6 @@ setInterval(async () => {
     S.wsProfile = d.profile; S.wsProfileBase = JSON.parse(JSON.stringify(d.profile));
   } catch (e) {}
 }, 10000);
-
-// ━━━ 证件号：只存在这台 Mac 的钥匙串里，页面上只看得到打码的样子 ━━━
-async function loadIdcard() {
-  let d;
-  try { d = await api('/api/idcard'); } catch (e) { $('#idcardBox').innerHTML = `<p class="text-red-600">${esc(e.message)}</p>`; return; }
-  const how = '网申页上「等你·证件号」那条点「复制证件号」：号码直接进这台 Mac 的剪贴板（60 秒后自动清掉），你在网页那一栏 ⌘V，再点「我填好了」。助手不碰这一栏。';
-  if (!(S.cfg && S.cfg.local)) {   // 手机（隧道）上：不给输入框，号码不走隧道
-    $('#idcardBox').innerHTML = `<div class="flex items-center gap-2"><span class="material-symbols-outlined text-teal-600">badge</span><b>证件号</b>
-      <span>${d.saved ? esc(d.masked) + '（已存在电脑的钥匙串里）' : '还没存'}</span></div><p class="text-[11px] text-slate-500 mt-1">证件号只能在电脑上存、在电脑上复制。</p>`;
-    return;
-  }
-  $('#idcardBox').innerHTML = `<div class="flex items-center gap-2 flex-wrap"><span class="material-symbols-outlined text-teal-600">badge</span><b>证件号</b>
-      ${d.saved ? `<span class="font-mono">${esc(d.masked)}</span><span class="text-xs text-slate-400">只存在这台 Mac 的钥匙串里</span>
-        <button id="idcardChange" class="copy-btn ml-auto">换一个</button><button id="idcardForget" class="copy-btn">删掉</button>`
-      : `<input id="idcardInput" type="password" autocomplete="off" class="field !w-64 !py-1.5" placeholder="18 位身份证号（只存钥匙串）"/><button id="idcardSave" class="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold">存进钥匙串</button>`}</div>
-    <p class="text-[11px] text-slate-500 mt-1">${esc(how)}</p>`;
-}
-document.addEventListener('click', async e => {
-  if (e.target.closest('#idcardSave')) {
-    const inp = $('#idcardInput');
-    try { const d = await api('/api/idcard', {method: 'PUT', body: {number: inp.value}}); inp.value = ''; toast('存好了：' + d.masked, 3000); loadIdcard(); }
-    catch (er) { toast(er.message, 6000); }
-  }
-  if (e.target.closest('#idcardChange')) {
-    $('#idcardBox').querySelector('#idcardChange').outerHTML = '<input id="idcardInput" type="password" autocomplete="off" class="field !w-64 !py-1.5 ml-auto" placeholder="新的 18 位号码"/><button id="idcardSave" class="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold">存进钥匙串</button>';
-  }
-  if (e.target.closest('#idcardForget')) {
-    try { await api('/api/idcard', {method: 'DELETE'}); toast('删掉了', 2000); loadIdcard(); } catch (er) { toast(er.message, 6000); }
-  }
-});
-async function copyIdcard(appId) {   // 网申页、看板上「复制证件号」：放进本机剪贴板（号码不经过网页），顺手把 Chrome 切到这家的网页
-  try {
-    const d = await api('/api/idcard/copy', {method: 'POST', body: {app_id: appId || ''}});
-    toast(d.jumped ? `已复制，Chrome 已切到那个网页：光标在证件号那一栏，按 ⌘V（${d.clear_after} 秒后剪贴板自动清掉）。助手看到填好了会自己接着做`
-      : `证件号已复制（${d.clear_after} 秒后自动清掉）：去那一栏按 ⌘V，助手看到填好了会自己接着做`, 8000);
-  } catch (er) { toast(er.message, 8000); }
-}
 </script>
 <script>
 // 右下角助手：对话框、对话列表、轮询新消息。
@@ -2113,7 +2074,6 @@ function wtTurn(x) {   // 这一行最显眼的那句：现在轮到谁
   return {chip: x.status, cls: WT_CLS[x.status] || '', line: x.status === '已填待提交' ? '填好了：你检查一下，在网站上提交后点「我已提交」' : ''};
 }
 function renderWsTasks(c) {
-  const onMac = !!(S.cfg && S.cfg.local);   // 在电脑本机打开（手机隧道上不给复制证件号）；下面 map 里的 S 是按钮样式，不是全局状态
   $('#wsTasksSummary').textContent = Object.entries(c).map(([k, v]) => `${k} ${v}`).join(' ｜ ');
   $('#wsTaskList').innerHTML = WT.items.map(x => {
     const done = ['已提交', '不投了'].includes(x.status), url = safeUrl(x.url), turn = wtTurn(x), col = wtColor(x);
@@ -2122,9 +2082,8 @@ function renderWsTasks(c) {
     const btn = (cls, label, extra = '', title = '') => `<button class="${cls}" data-id="${id}" ${extra} ${title ? `title="${esc(title)}"` : ''}>${label}</button>`;
     const P = 'px-3 py-1.5 rounded-lg text-xs font-bold text-white ', S = 'px-2 py-1.5 border rounded-lg text-xs ';
     let main = '';   // 最该点的那个按钮
-    const idNeed = x.status === '等你处理' && /证件|身份证|护照/.test(x.todo || '');
-    if (idNeed) main = (onMac ? btn('wt-idcopy ' + P + 'bg-slate-900', '复制证件号并跳过去', '', '放进这台 Mac 的剪贴板（60 秒后自动清掉）、Chrome 切到那个网页，按 ⌘V；助手看到填好了自己接着做') : '') +
-      (!busy ? btn('wt-run ' + S, '我填好了', '', '助手已经停了的话：叫它接着做') : '');
+    const idNeed = x.status === '等你处理' && x.need_kind === '证件号';   // 面板按「要你做」算的（和看板同一个判断）
+    if (idNeed) main = !busy ? btn('wt-run ' + P + 'bg-amber-600', '我填好了', '', '证件号你在网页上填好了：叫助手接着做') : '';   // 助手还在等的话它自己会看到
     else if (!busy && x.status === '等你处理') main = btn('wt-run ' + P + 'bg-amber-600', '让助手接着做', '', '助手会先看一眼网页，确认你那边做好了再接着填');
     else if (!busy && x.status === '已填待提交') main = btn('wt-set ' + P + 'bg-blue-600', '我已提交', 'data-status="已提交"', '记进投递看板，助手再去网站把实际提交的内容读回来');
     else if (!busy && !done) main = btn('wt-run ' + P + 'bg-teal-600', x.chat_id ? '让助手接着做' : '让助手填');
@@ -2208,7 +2167,6 @@ $('#wsTaskList').addEventListener('click', async e => {
   const b = e.target.closest('button'); if (!b) return;
   try {
     if (b.classList.contains('wt-run')) return wtRun(b.dataset.id);
-    if (b.classList.contains('wt-idcopy')) return copyIdcard(b.dataset.id);
     if (b.classList.contains('wt-rb')) return wtReadback(b.dataset.id);
     if (b.classList.contains('wt-acct')) {
       const cur = (WT.items.find(x => x.id === b.dataset.id) || {}).account || '';
@@ -2282,12 +2240,10 @@ function apNext(c) {
   const due = n.due && !n.text.includes(n.due) ? `（截止 ${esc(n.due)}）` : '';
   return `<span class="${n.done ? 'line-through text-slate-400' : ''}">${esc(n.text)}${due}</span>${n.inferred ? ' <span class="chip bg-slate-100 text-slate-500">推算</span>' : ''}`;
 }
-function apBtn(c, cls = '') {   // 这张卡上「轮到你 / 停了」那一个按钮（按钮上的字 = 点了会怎样）；等你填证件号时前面多一个「复制证件号」
+function apBtn(c, cls = '') {   // 这张卡上「轮到你 / 停了」那一个按钮（按钮上的字 = 点了会怎样）
   const b = c.button;
   if (!b) return '';
-  const id = (c.need || {}).kind === '证件号' && b.action === 'need_done' && S.cfg && S.cfg.local   // 手机上复制不到电脑的剪贴板：不显示
-    ? `<button class="ap-idcopy shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 text-white ${cls}" data-id="${esc(c.id)}" title="放进这台 Mac 的剪贴板（60 秒后自动清掉）、Chrome 切到那个网页，按 ⌘V；助手看到填好了自己接着做">复制证件号并跳过去</button>` : '';
-  return id + `<button class="ap-act shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold ${c.turn === '停了' ? 'bg-red-600' : 'bg-amber-600'} text-white ${cls}" data-id="${esc(c.id)}" data-action="${esc(b.action)}">${esc(b.label)}</button>`;
+  return `<button class="ap-act shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold ${c.turn === '停了' ? 'bg-red-600' : 'bg-amber-600'} text-white ${cls}" data-id="${esc(c.id)}" data-action="${esc(b.action)}">${esc(b.label)}</button>`;
 }
 
 async function loadApps() {
@@ -2500,7 +2456,6 @@ document.addEventListener('click', async e => {
   const t = e.target;
   const act = t.closest('.ap-act');
   if (act) { e.stopPropagation(); setBusy(act, true, ''); await apAction(act.dataset.id, act.dataset.action); setBusy(act, false); return; }
-  if (t.closest('.ap-idcopy')) { e.stopPropagation(); return copyIdcard(t.closest('.ap-idcopy').dataset.id); }
   const open = t.closest('.ap-open');
   if (open) { e.stopPropagation(); return apDetail(open.dataset.id); }
   const row = t.closest('tr.ap-row');

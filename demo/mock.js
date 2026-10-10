@@ -164,7 +164,7 @@
   chat('cY', '某新能源集团 Y', WS[2].id, [
     msg('user', '（面板）本人在网申页点了「让助手填」：请填这家网申：某新能源集团 Y｜战略投资管培生'),
     msg('tool', '连续 9 步：填写：姓名；填写：手机；选择：学历；填写：学校；选择：毕业时间；填写：实习经历 1；填写：实习经历 2；上传：证件照；上传：单页中文简历'),
-    msg('assistant', '能填的都填好了、也暂存了。证件号那一栏留给你（橙框网页「基本信息」第 4 栏）。检查没问题就在网站上提交，然后在网申页点「我已提交」。\n【网申记录】公司：某新能源集团 Y｜岗位：战略投资管培生｜账号：138****0000｜状态：已填待提交'),
+    msg('assistant', '能填的都填好了、也暂存了。证件号空着，你自己填（橙框网页「基本信息」第 4 栏）。检查没问题就在网站上提交，然后在网申页点「我已提交」。\n【网申记录】公司：某新能源集团 Y｜岗位：战略投资管培生｜账号：138****0000｜状态：已填待提交'),
     msg('system', '「网申」页：某新能源集团 Y｜战略投资管培生 → 已填待提交（看板里记了一条草稿）')]);
   chat('cZ', '某互联网公司 Z', WS[3].id, [
     msg('user', '（面板）某互联网公司 Z 本人已经提交了。请把这三样从网站上读回来记进投递看板，只看不改：投了哪些岗位、每个岗位的 JD、实际提交的简历。'),
@@ -193,13 +193,13 @@
     ['tool', '上传文件：证件照（295×413）；单页中文简历'],
     ['tool', '连续 4 步：填写：实习经历 1；填写：实习经历 2；填写：自我评价；勾选：信息真实承诺'],
     ['tool', '截图看一眼'],
-    ['assistant', `能填的都填好了、也暂存了：\n- 基本信息、教育、两段实习、自我评价：按网申底稿和简历原文填的（不改写、不编）；\n- 照片和单页中文简历我已经传上去了；\n- **证件号那一栏留给你**：${COLORS[t.color][2]}框网页「基本信息」第 3 栏。\n替你做的选择：期望城市选了上海（底稿里的第一优先）。\n检查没问题就在网站上点提交，然后在网申页点「我已提交」。\n【网申记录】公司：${t.company}｜岗位：${t.job}｜账号：138****0000｜状态：已填待提交`],
+    ['assistant', `能填的都填好了、也暂存了：\n- 基本信息、教育、两段实习、自我评价：按网申底稿和简历原文填的（不改写、不编）；\n- 照片和单页中文简历我已经传上去了；\n- **证件号空着，你自己填**：${COLORS[t.color][2]}框网页「基本信息」第 3 栏。\n替你做的选择：期望城市选了上海（底稿里的第一优先）。\n检查没问题就在网站上点提交，然后在网申页点「我已提交」。\n【网申记录】公司：${t.company}｜岗位：${t.job}｜账号：138****0000｜状态：已填待提交`],
     ['system', `「网申」页：${t.company}｜${t.job} → 已填待提交（看板里记了一条草稿）`]];
   const CONTINUE = t => [
     ['tool', '看看标签页'], ['tool', '截图看一眼'],
     ['assistant', `看了一眼${COLORS[t.color][2]}框网页：已经登录好了，我接着填。`],
     ['tool', '连续 8 步：选择：志愿一 总行管培生；选择：志愿二 研究岗；填写：教育经历；填写：实习经历；填写：家庭成员；上传：证件照；上传：简历；勾选：是否服从调剂（按底稿：否）'],
-    ['assistant', `填好了、也暂存了。证件号那一栏留给你。\n【网申记录】公司：${t.company}｜岗位：总行管培生（第一志愿）、研究岗（第二志愿）｜状态：已填待提交`],
+    ['assistant', `填好了、也暂存了。证件号空着，你自己填。\n【网申记录】公司：${t.company}｜岗位：总行管培生（第一志愿）、研究岗（第二志愿）｜状态：已填待提交`],
     ['system', `「网申」页：${t.company} → 已填待提交（看板里记了一条草稿）`]];
   const READBACK = t => [
     ['user', `（面板）${t.company}｜${t.job} 本人已经提交了。请把这三样从网站上读回来记进投递看板，只看不改：投了哪些岗位、每个岗位的 JD、实际提交的简历。`],
@@ -239,7 +239,7 @@
     const d = RECORDS.find(r => r.company_name === '某产业资本 D'), a = RECORDS.find(r => r.company_name === '某美元VC A' && r.campaign === CUR);
     ax('a-' + d.id).next = {text: `参加面试（一面·线上，${ts(-1, 14, 0)}）`, due: ts(-1, 14, 0), source: '本人口述', done: false};
     tl('a-' + d.id, '进展', '面试邀请（一面）：「D 约了周四下午两点线上一面」', '本人', ts(1, 15, 10));
-    ax('a-' + a.id).sugg.push({id: 'sA', kind: '阶段', text: '来信像是面试邀请：把「投资实习生（可留用）」改成「面试」？', state: '待定', payload: {record_id: a.id, to: '面试中'}});
+    ax('a-' + a.id).sugg.push({id: 'sA', kind: '阶段', text: '来信像是面试邀请：「投资实习生（可留用）」的阶段改成「面试」？', state: '待定', payload: {record_id: a.id, to: '面试中'}});
     tl('a-' + a.id, '来信', '面试邀请：同学你好，简历已收到，方便明天下午电话聊一下吗？', '面板', ts(0, 11, 20));
     const z = WS[3];
     Object.assign(ax(z.id), {mode: '串行', note: '投递后志愿将按顺序依次流转'});
@@ -396,7 +396,8 @@
     if (path === '/api/wangshen-profile' && method === 'PUT') { PROFILE = body.profile || PROFILE; return json({ok: true, profile: PROFILE, missing: [], notes: []}); }
     if (path === '/api/wstasks' && method === 'GET') {
       const tasks = WS.map(t => { const c = CHATS[t.chat_id]; const busy = c && c.running;
-        return {...t, agent_state: busy ? '在干活' : '', agent_wait: '', last: busy ? lastLine(c) : ''}; });
+        return {...t, agent_state: busy ? '在干活' : '', agent_wait: '', last: busy ? lastLine(c) : '',
+          need_kind: t.status === '等你处理' ? (/登录|扫码/.test(t.todo || '') ? '登录' : /证件|身份证|护照/.test(t.todo || '') ? '证件号' : '回答') : ''}; });
       const counts = tasks.reduce((o, t) => (o[t.status] = (o[t.status] || 0) + 1, o), {});
       return json({tasks, counts, active: Object.values(CHATS).filter(c => c.running).length, waiting: 0, max_parallel: 3, colors: COLORS});
     }
@@ -517,8 +518,6 @@
       if (e.applied[0]) tl(e.applied[0].app_id, '撤销', `撤销了口述：「${e.text}」`, '本人');
       return json({ok: true, undone: e.applied.length});
     }
-    if (path === '/api/idcard' && method === 'GET') return json({saved: false, masked: ''});
-    if (path.startsWith('/api/idcard')) return json({error: '演示版不存证件号（真实面板里只存在本机的钥匙串里，点「复制证件号」时直接进本机剪贴板）'}, 400);
     return json({error: '演示版不支持这个操作'}, 400);
   };
 

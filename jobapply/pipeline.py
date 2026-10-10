@@ -318,7 +318,7 @@ def _reply_events(events):
             forward = stage and cur != stage and cur not in records.TERMINAL and \
                 (stage in records.TERMINAL or records.STAGE_ORDER.get(stage, 0) > records.STAGE_ORDER.get(cur, 0))
             if forward:
-                apps.suggest(app_id, "阶段", f"来信像是{c['kind']}：把「{rec.get('job_title') or '这个岗位'}」改成"
+                apps.suggest(app_id, "阶段", f"来信像是{c['kind']}：「{rec.get('job_title') or '这个岗位'}」的阶段改成"
                                             f"「{records.STAGE_LABEL.get(stage, stage)}」？",
                              {"record_id": rid, "to": stage, "subject": upd.get("reply_subject", ""), "evidence": c["evidence"]})
             if not first:

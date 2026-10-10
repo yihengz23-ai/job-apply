@@ -276,6 +276,7 @@ def test_wait_state_from_marker_and_from_silent_stop(store, monkeypatch, tmp_pat
     msg = _continue_message(x)                                          # 面板发的，不替本人说「我弄好了」
     assert msg.startswith("（面板）本人在网申页点了「让助手接着做」") and "在画了蓝框的网页里输证件号并保存" in msg
     assert "我弄好了" not in msg and "先看一眼网页确认" in msg
+    assert "__wsfill.hasValue" in msg and "不截那一栏、不点进去" in msg     # 证件号：只问填没填，不截图、不点
     agent._task_started(chat["id"])                                     # 本人点了接着做，助手接着干
     x = wstasks.get(t["id"])
     assert x["status"] == "助手在填" and x["todo"]                       # todo 只在助手报新状态时更新
@@ -350,11 +351,11 @@ def test_readback_blocks_in_reply_are_recorded(store, monkeypatch, tmp_path):
 
 
 def test_marker_back_to_filling_after_user_did_the_web_step(tmp_path, monkeypatch):
-    """助手在这一轮里等本人填证件号：先报「等你处理」（面板马上提醒），本人填好后它报「在填」，这一行回到「助手在填」。"""
+    """网站不填证件号就不让往下时，助手在这一轮里等本人填：先报「等你处理」（面板马上提醒），本人填好后它报「在填」，这一行回到「助手在填」。"""
     from jobapply import wstasks
     t = wstasks.add("https://jobs.example.com/idwait", "等号资本", "分析师")
     wstasks.set_status(t["id"], "助手在填")
-    wstasks.apply_markers("【网申记录】公司：等号资本｜状态：等你处理｜要你做：证件号（蓝框网页「基本信息」那一栏，光标已经放好）", task_id=t["id"])
+    wstasks.apply_markers("【网申记录】公司：等号资本｜状态：等你处理｜要你做：证件号（网站不填不让往下：蓝框网页「基本信息」那一栏）", task_id=t["id"])
     assert wstasks.get(t["id"])["status"] == "等你处理" and "证件号" in wstasks.get(t["id"])["todo"]
     wstasks.apply_markers("【网申记录】公司：等号资本｜状态：在填", task_id=t["id"])
     assert wstasks.get(t["id"])["status"] == "助手在填" and wstasks.get(t["id"])["todo"] == ""
@@ -370,3 +371,9 @@ def test_assistant_reports_volunteer_mode_but_never_overrides_the_user(tmp_path)
     apps.set_volunteer_mode(t["id"], "平行", by="本人")                          # 本人改过
     wstasks.apply_markers("【网申记录】公司：志愿社区｜志愿方式：串行", task_id=t["id"])
     assert apps.get(t["id"])["volunteer_mode"] == "平行"                          # 不覆盖本人的
+
+
+@pytest.mark.parametrize("word", ["在填", "在填（证件号你填好了，我接着填）", "在填（不用等你了）", "接着填", "继续填写"])
+def test_marker_filling_wins_over_words_in_brackets(word):
+    from jobapply import wstasks
+    assert wstasks._marker_status(word) == "助手在填"

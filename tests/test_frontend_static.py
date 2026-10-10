@@ -284,10 +284,6 @@ MADE_BY_SCRIPT = {
     "sideAuth": "core.js refreshGmail()：Gmail 没授权时生成的「授权」按钮",
     "posSelect": "mail.js renderInfo()：信息卡里的岗位类型下拉框",
     "wtAcctInput": "ws.js：改申请账号的弹窗里的输入框",
-    "idcardInput": "profile.js loadIdcard()：证件号框里的输入框（没存过、或点了「换一个」时生成）",
-    "idcardSave": "profile.js loadIdcard()：「存进钥匙串」按钮",
-    "idcardChange": "profile.js loadIdcard()：存过以后的「换一个」按钮",
-    "idcardForget": "profile.js loadIdcard()：存过以后的「删掉」按钮",
 }
 # 拼出来的 id：'#前缀' + 变量
 DYNAMIC_PREFIX = {
@@ -377,3 +373,14 @@ def test_static_urls_carry_a_version_that_changes(tmp_path):
         assert {u.split("?v=")[1] for u in _page().static if "?v=" in u} != vs
     finally:
         os.utime(f, (st.st_atime, st.st_mtime))
+
+
+def test_no_id_copy_or_keychain_left():
+    """证件号本人自己手动填：页面上没有「复制证件号」、钥匙串框，后端也没有 /api/idcard；网站不让往下、助手停了时只有「我填好了」。"""
+    js = "\n".join(p.read_text(encoding="utf-8") for p in sorted(JS_DIR.glob("*.js")))
+    html = "\n".join(p.read_text(encoding="utf-8") for p in sorted((ROOT / "templates").rglob("*.html")))
+    for w in ("复制证件号", "idcopy", "copyIdcard", "idcardBox", "/api/idcard", "钥匙串"):
+        assert w not in js and w not in html, w
+    assert not [r.rule for r in panel.app.url_map.iter_rules() if "idcard" in r.rule]
+    ws = (JS_DIR / "ws.js").read_text(encoding="utf-8")
+    assert "'我填好了'" in ws

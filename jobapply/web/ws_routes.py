@@ -4,7 +4,7 @@ import threading
 
 from flask import Blueprint, current_app, jsonify, request
 
-from jobapply import agent, checks, config, wstasks
+from jobapply import agent, apps, checks, config, wstasks
 
 from .common import LOCAL_HOSTS, _body, _err
 
@@ -47,6 +47,7 @@ def api_wstasks():
         t["agent_state"] = "在干活" if cid in active else "排队中" if cid in waiting else ""
         t["agent_wait"] = waiting.get(cid, "")
         t["last"] = agent.last_line(cid) if cid in active else ""   # 最新进展：它这会儿在做哪一步
+        t["need_kind"] = apps.need_kind(t.get("todo")) if t.get("status") == "等你处理" else ""
     return jsonify({"tasks": items, "counts": wstasks.counts(items), "active": len(active), "waiting": len(waiting),
                     "max_parallel": config.AGENT_MAX_PARALLEL, "colors": wstasks.COLORS})
 
@@ -92,6 +93,8 @@ def _continue_message(t):
     head = "（面板）本人在网申页点了「让助手接着做」。"
     if t.get("status") == "等你处理" and t.get("todo"):
         head += f"你上次说要本人做的是：{t['todo']}。先看一眼网页确认这件事做好了没有；没做好就跟本人说清楚还差什么。"
+        if apps.need_kind(t["todo"]) == "证件号":
+            head += "证件号那一栏用 __wsfill.hasValue 看填没填，不截那一栏、不点进去。"
     elif t.get("halted"):
         head += f"你上次停下的原因：{t['halted']}。"
     return (f"{head}接着填这家：{t.get('company') or '（公司见网页）'}｜{t.get('job') or '（岗位见网页）'}。"
