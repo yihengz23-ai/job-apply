@@ -66,6 +66,18 @@ def pytest_sessionfinish(session, exitstatus):
 # ── 每个测试：AI 不真调、真实文件不碰 ───────────────────────────────
 
 @pytest.fixture(autouse=True)
+def no_real_keychain(monkeypatch):
+    """证件号：测试一律碰不到本人的钥匙串和剪贴板（pytest 里不是测试环境，SERVICE 就是本人那条）。要测的自己换成假的。"""
+    from jobapply import idcard
+
+    def refuse(*a, **kw):
+        raise AssertionError("测试里不许碰真钥匙串 / 剪贴板：请在测试里 monkeypatch 掉 idcard._security / _pbcopy / _pbpaste")
+    monkeypatch.setattr(idcard, "_security", refuse)
+    monkeypatch.setattr(idcard, "_pbcopy", refuse)
+    monkeypatch.setattr(idcard, "_pbpaste", refuse)
+
+
+@pytest.fixture(autouse=True)
 def no_real_ai(monkeypatch):
     def refuse(**kw):
         raise RuntimeError("测试里不许真调 AI：请在测试里 monkeypatch 掉这一步")

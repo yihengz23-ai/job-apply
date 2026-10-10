@@ -670,6 +670,32 @@ def set_reply(app_id, *, status="", at="", sender="", snippet="", subject=""):
     return records.mutate_all(_do)
 
 
+def detach_task(task_id, *, by="本人"):
+    """网申页删了这条待办：申请里网申那一半跟着去掉。还剩别的岗位（比如「邮件+网申」的邮件那条）就留着卡，只清网申的状态、
+    要你做、颜色；什么都不剩就软删除（看板上本来也不列空卡）。"""
+    def _do(data):
+        a = _find(data, task_id)
+        if not a or a.get("deleted_at"):
+            return None
+        left = _positions(data, task_id)
+        if not left:
+            a["deleted_at"] = _now()
+            _timeline(a, "删除", "网申待办删了，这家没有别的岗位", by)
+            return a
+        if a.get("web_phase") != "已提交":
+            a["web_phase"] = ""
+            if a.get("channel") == "邮件+网申":
+                a["channel"] = "邮件"
+        rb = a.setdefault("readback", {})
+        if rb.get("state") in ("待读回", "读回中", "等你登录", "不完整"):
+            rb["state"] = "不读了"
+        a["need"], a["color"], a["halted"] = None, None, ""
+        _timeline(a, "网申", "网申待办删了（邮件 / 已交的岗位还在）", by)
+        _touch(a)
+        return a
+    return records.mutate_all(_do)
+
+
 def handle_reply(app_id, *, by="本人"):
     """本人看过这封来信 / 退信了：不再算轮到你。"""
     def _do(data):
@@ -952,6 +978,8 @@ def view(app, ctx=None):
     working, queued = bool(ag.get("working")), bool(ag.get("queued_why"))
     if (phase == "在填" or rb.get("state") == "读回中") and not working and not queued:
         why = ag.get("stopped_reason") or app.get("halted") or ("助手进程已结束" if ag.get("alive") is False else "没说明")
+        if phase == "已提交":       # 已经交了、停在读回上：按钮是再去读回（只看不改），不是「接着填」
+            return done("停了", "读回停了：" + why, {"label": "让助手再去读回", "action": "readback"}, why)
         return done("停了", "助手停了：" + why, {"label": "让助手接着做", "action": "continue"}, why)
     if ctx.get("job_failed"):
         return done("停了", ctx["job_failed"], {"label": "重试", "action": "retry"}, "出错")

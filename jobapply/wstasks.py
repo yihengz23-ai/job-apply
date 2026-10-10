@@ -198,11 +198,17 @@ def delete(task_id):
         t = next((x for x in items if x.get("id") == task_id), None)
         if not t:
             return False
-        if t.get("record_id") and t.get("status") != "已提交":   # 没提交的草稿记录一起删，看板里不留空记录
-            _drop_draft(t["record_id"])
+        if t.get("status") != "已提交":   # 没提交的草稿记录一起删（多个岗位的也都删），看板里不留空记录
+            for rid in {t.get("record_id"), *(t.get("position_records") or {}).values()} - {"", None}:
+                _drop_draft(rid)
         items.remove(t)
         _save(items)
-        return True
+    try:                                  # 申请里网申那一半跟着去掉（还剩邮件那条就留着卡）
+        from . import apps
+        apps.detach_task(task_id)
+    except Exception:
+        pass
+    return True
 
 
 def link_email_record(queue_id, record_id):

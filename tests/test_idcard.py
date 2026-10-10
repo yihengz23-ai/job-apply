@@ -8,6 +8,7 @@ from jobapply import idcard
 
 LOCAL = {"Host": "localhost:5001", "X-Requested-With": "jobapply"}
 FIRST17 = "12345619900101123"
+REAL_SECURITY = idcard._security          # conftest 默认把它换成「不许碰」；超时那条测试要用真的封装（底下的 subprocess 是假的）
 
 
 @pytest.fixture
@@ -103,6 +104,7 @@ def test_keychain_timeout_does_not_leak_the_number(monkeypatch):
 
     def slow(*a, **kw):
         raise subprocess.TimeoutExpired(a[0], 10)
+    monkeypatch.setattr(idcard, "_security", REAL_SECURITY)
     monkeypatch.setattr(idcard.subprocess, "run", slow)
     c = panel.app.test_client()
     r = c.put("/api/idcard", json={"number": good()}, headers=LOCAL)

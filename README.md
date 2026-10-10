@@ -3,7 +3,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 [![Claude](https://img.shields.io/badge/Claude-Opus_5.5-orange.svg)](https://www.anthropic.com/)
 [![Gmail API](https://img.shields.io/badge/Gmail-API-red.svg)](https://developers.google.com/gmail/api)
-[![Tests](https://img.shields.io/badge/tests-545-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-547-brightgreen.svg)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Demo](https://img.shields.io/badge/Demo-Live-brightgreen.svg)](https://yihengz23-ai.github.io/job-apply/demo/)
 
@@ -124,7 +124,7 @@ Claude 用 JSON Schema 结构化输出，一次给出：JD 的硬性要求（标
 - **状态只往前推**：已提交、不投了是终态，助手的上报只能补账号和进度；投递时间只写一次，笔试、面试中不会被改回已投递；自动识别的进展只当建议，本人点了才改；
 - **数据升级可退回**：从「一条投递一行」升级到「申请 + 岗位」时只建申请、给记录挂编号，别的一个字节不改；升级前整包备份、升级后逐条核对，核对不过自动退回；同一份输入跑两次结果逐字节相同；上线脚本在真实数据的副本上完整演练过（含重复跑）；
 - **数据**：线程锁 + 文件锁 + 原子写入，文件损坏时拒绝覆盖；滚动备份；不认识的顶层数据原样保留；
-- **测试**：545 个 pytest，覆盖检查规则、发信认领、定时发送、网申状态流转、读回、助手宿主（用假的 claude 进程端到端跑）、申请 + 岗位的数据模型和护栏、口述进展和撤销、来信识别、证件号不外露、前端脚本按页面顺序加载、填表脚本静态检查；测试一律在隔离目录里跑，**守卫测试**保证测试不碰真实数据，碰了就判失败；
+- **测试**：547 个 pytest，覆盖检查规则、发信认领、定时发送、网申状态流转、读回、助手宿主（用假的 claude 进程端到端跑）、申请 + 岗位的数据模型和护栏、口述进展和撤销、来信识别、证件号不外露、前端脚本按页面顺序加载、填表脚本静态检查；测试一律在隔离目录里跑，**守卫测试**保证测试不碰真实数据，碰了就判失败；
 - **测试环境**：`JOBAPPLY_ENV=test` 起在 5002 端口，独立数据目录、假的 claude、不连 Gmail、不开定时发送，随便点不会碰到正在用的面板。
 
 ## 隐私（这个公开仓库）

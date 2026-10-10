@@ -226,3 +226,29 @@ def test_ghost_cards_are_not_listed(store):
     aid = records.get(rid)["app_id"]
     records.delete(rid)
     assert aid not in [c["id"] for c in app_api.overview(now=NOW)]
+
+
+def test_deleting_the_web_task_detaches_the_web_part(store):
+    """「邮件+网申」：在网申页删了网申待办，卡片留着（邮件那条还在等回复），但不再挂着点了 404 的网申按钮；
+    多个岗位的待办没提交就删：几个草稿都删掉，不留半截。"""
+    t = wstasks.add("https://jobs.example.com/d1", "拆网资本", "分析师")
+    wstasks.update(t["id"], queue_id="q-d1")
+    rid = records.add(records.new_record(company_name="拆网资本", job_title="分析师", to_email="hr@d1.com", apply_channel="邮箱+网申"))
+    wstasks.link_email_record("q-d1", rid)
+    wstasks.delete(t["id"])
+    c = next(c for c in app_api.overview(now=NOW) if c["id"] == t["id"])
+    assert c["channel"] == "邮件" and c["web_phase"] == "" and c["turn"] == "等对方" and records.get(rid)
+    t2 = wstasks.add("https://jobs.example.com/d2", "多岗资本", "校招")
+    wstasks.save_readback(t2["id"], "status", "投递记录", positions="投资岗（上海）；研究岗（北京）", status="已填待提交")
+    drafts = [r["id"] for r in records.load() if r.get("app_id") == t2["id"]]
+    wstasks.delete(t2["id"])
+    assert all(records.get(x) is None for x in drafts)
+    assert t2["id"] not in [c["id"] for c in app_api.overview(now=NOW)]
+
+
+def test_stopped_readback_offers_readback_not_continue(store):
+    rid = records.add(rec(company_name="读回资本", to_email="", apply_channel="网申/链接", send_mode="未发邮件"))
+    aid = records.get(rid)["app_id"]
+    records.mutate_all(lambda d: next(a for a in d["applications"] if a["id"] == aid).update(web_phase="已提交", readback={"state": "读回中"}))
+    v = apps.view(apps.get(aid), {"now": NOW, "agent": {"working": False}})
+    assert v["turn"] == "停了" and v["button"] == {"label": "让助手再去读回", "action": "readback"}
