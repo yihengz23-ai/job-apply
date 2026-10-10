@@ -23,7 +23,7 @@ async function loadBoard() {
   try {
     const [recs, stats] = await Promise.all([api('/api/records?campaign=' + encodeURIComponent(camp)), api('/api/stats?campaign=' + encodeURIComponent(camp))]);
     S.records = recs;
-    $('#boardMetrics').innerHTML = metric('总投递', stats.total) + metric('本周新增', '+' + stats.week_new) +
+    $('#boardMetrics').innerHTML = metric('总投递', stats.total, '#005bbf', stats.drafts ? [`另有 ${stats.drafts} 条草稿（网申还没交 / 邮件还没发），不算在内`] : []) + metric('本周新增', '+' + stats.week_new) +
       metric('有回复', stats.replied, '#16a34a') + metric('待跟进（>7天无回复）', stats.followup.length, '#b45309', stats.followup) +
       (stats.bounced.length ? metric('退信·没送达（换邮箱重投）', stats.bounced.length, '#dc2626', stats.bounced) : '') +
       (stats.excel && !stats.excel.ok ? `<div class="col-span-full text-xs text-amber-700 bg-amber-50 rounded-xl p-2">桌面的 Excel 镜像没同步上（${esc(stats.excel.error)}）。多半是 Excel 正开着这个文件：关掉后下次保存会自动补上。</div>` : '');

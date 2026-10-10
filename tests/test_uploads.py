@@ -29,7 +29,7 @@ def up(tmp_path, monkeypatch):
 
 def test_prepare_without_photos_lists_resume_and_says_photos_missing(up):
     text = up.prepare()
-    names = sorted(p.name for p in up.DIR.iterdir())
+    names = sorted(p.name for p in up.DIR.iterdir() if p.is_file())
     assert set(names) == {config.RESUME_DEFAULT_ZH.removesuffix(".pdf") + ".pdf", "研究样本.pdf"}
     assert "还没有证件照" in text and "还没有生活照" in text and "还没有全身照" in text and str(up.DIR / "研究样本.pdf") in text
 
@@ -40,18 +40,18 @@ def test_photos_get_common_sizes_and_are_redone_only_when_changed(up):
     _img(up.DIR / "生活照.png", 1600, 1200)        # 横的、比 1200 大：只缩不裁
     text = up.prepare()
     g = uploads.GEN
-    assert up._dims(up.DIR / f"证件照_295x413{g}.jpg") == (295, 413)
-    assert up._dims(up.DIR / f"证件照_100x140{g}.jpg") == (100, 140)
-    assert up._dims(up.DIR / f"证件照_长边1200{g}.jpg") == (400, 600)          # 小图不放大
-    assert up._dims(up.DIR / f"生活照_长边1200{g}.jpg") == (1200, 900)
-    assert up._dims(up.DIR / f"生活照_长边320{g}.jpg") == (320, 240)
-    assert (up.DIR / f"生活照_1M到5M{g}.jpg").exists() and f"生活照_1M到5M{g}.jpg" in text   # 要求 1M 以上的网站用这份
-    assert not list(up.DIR.glob(f"证件照_1M到5M*"))                                       # 证件照不做（一寸照要的是小文件）
+    assert up._dims(up._out_dir() / "证件照_295x413.jpg") == (295, 413)
+    assert up._dims(up._out_dir() / "证件照_100x140.jpg") == (100, 140)
+    assert up._dims(up._out_dir() / "证件照_长边1200.jpg") == (400, 600)          # 小图不放大
+    assert up._dims(up._out_dir() / "生活照_长边1200.jpg") == (1200, 900)
+    assert up._dims(up._out_dir() / "生活照_长边320.jpg") == (320, 240)
+    assert (up._out_dir() / "生活照_1M到5M.jpg").exists() and "生活照_1M到5M.jpg" in text   # 要求 1M 以上的网站用这份
+    assert not list(up._out_dir().glob("证件照_1M到5M*"))                                       # 证件照不做（一寸照要的是小文件）
     assert "还没有证件照" not in text and "还没有生活照" not in text and "295×413 像素" in text   # 全身照没放：只提醒这一样
     assert set(up.masters()) == {"证件照", "生活照"} and up.masters()["证件照"].name == "我的证件照.png"   # 自动生成的不算
-    before = (up.DIR / f"证件照_295x413{g}.jpg").stat().st_mtime
+    before = (up._out_dir() / "证件照_295x413.jpg").stat().st_mtime
     up.prepare()
-    assert (up.DIR / f"证件照_295x413{g}.jpg").stat().st_mtime == before        # 没换照片：不重做
+    assert (up._out_dir() / "证件照_295x413.jpg").stat().st_mtime == before        # 没换照片：不重做
 
 
 def test_assistant_can_only_read_the_upload_folder(up, monkeypatch):
@@ -73,8 +73,8 @@ def test_full_body_photo_is_its_own_kind(up):
     m = up.masters()
     assert m["全身照"].name == "生活照-全身.png" and m["生活照"].name == "生活照.png"
     g = uploads.GEN
-    for name in (f"全身照_长边1200{g}.jpg", f"全身照_长边320{g}.jpg", f"全身照_1M到5M{g}.jpg", f"生活照_1M到5M{g}.jpg"):
-        assert (up.DIR / name).exists(), name
+    for name in ("全身照_长边1200.jpg", "全身照_长边320.jpg", "全身照_1M到5M.jpg", "生活照_1M到5M.jpg"):
+        assert (up._out_dir() / name).exists(), name
     assert "还没有全身照" not in text and "还没有生活照" not in text
 
 
@@ -98,3 +98,14 @@ def test_band_lands_between_1m_and_5m(up, monkeypatch, sizes, expect_calls, expe
     up.DIR.mkdir(parents=True)
     up._band(up.DIR / "src.jpg", up.DIR / "out.jpg")
     assert calls == expect_calls and (up.DIR / "out.jpg").stat().st_size == int(expect_mb * up.MB)
+
+
+def test_generated_files_have_plain_names_and_old_ones_go(up):
+    """传到网站上的文件名 HR 看得见：面板做的各种尺寸放子文件夹、名字不带「（自动生成）」；以前带的删掉，本人放的不动。"""
+    up.DIR.mkdir(parents=True)
+    _img(up.DIR / "证件照.png", 400, 600)
+    (up.DIR / f"证件照_295x413{uploads.GEN}.jpg").write_bytes(b"old")
+    text = up.prepare()
+    assert not list(up.DIR.rglob(f"*{uploads.GEN}*")) and "自动生成" not in text
+    assert (up._out_dir() / "证件照_295x413.jpg").exists() and (up.DIR / "证件照.png").exists()
+

@@ -347,6 +347,10 @@ def test_system_prompt_photo_and_waiting_rules(ag):
     assert "别猜着填" in s and "费时的" in s and "不要在页面脚本里等" in s
     assert "最多等 25 秒" not in s
     assert "不要把整段贴进去" in s and "性格关键词" in s and "〔提示：…〕〔≤N字〕" in s     # 「可用5个词描述你的性格」那种
+    assert "完整版放得下就用完整版，放不下才用" in s and "别拿旁边一栏的上限当它的" in s   # 某券商那次把旁边一栏的 250 字当成了它的
+    assert "只照底稿里写到的答" in s and "不要一律填「否」" in s                         # 另一家券商那次把有没有股票账户也答成了否
+    assert "牛客插件能填就先用它" in s and "由本人自己点，你不要点" in s and "等满 3 分钟还没填上" in s   # 牛客模板里有证件号：一键填写只能本人点
+    assert "你自己点面板里的「一键填写」" not in s
 
 
 def _ws_chat(ag, created_at=None):

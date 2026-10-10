@@ -57,19 +57,19 @@ def test_readback_learns_what_the_user_changed_and_asks_when_unsure(setup):
     tid, seen = setup
     seen["items"] = [
         item("经历精确日期", "A资本证明人", "李四，投资经理，13800000000", "本人补的", "以后都这样"),
-        item("其他", "兴趣爱好", "跑步、游泳", "本人改的", "以后都这样", old="跑步"),
+        item("其他", "自我评价", "新写的一段" * 20, "本人改的", "以后都这样", old="旧的一段" * 30),
         item("其他", "学号", "S2026001", "看不出", "以后都这样"),                     # 拿不准：问
         item("求职偏好与声明", "期望薪资", "20-25 万", "本人改的", "只这家这样"),       # 这家特有：不动
         item("其他", "兴趣爱好", "跑步、游泳、看书", "助手按网站限制改的", "看不出"),     # 助手改的：不动
         item("基本信息", "证件号码", "[证件号已隐去]", "本人补的", "以后都这样"),        # 证件号：永远不记
     ]
     out = learn.from_readback(tid)
-    assert cell("经历精确日期", "A资本证明人") == "李四，投资经理，13800000000" and cell("其他", "兴趣爱好") == "跑步、游泳"
+    assert cell("经历精确日期", "A资本证明人") == "李四，投资经理，13800000000" and cell("其他", "自我评价") == "新写的一段" * 20
     assert cell("其他", "学号") is None and cell("求职偏好与声明", "期望薪资") == "面议" and cell("基本信息", "证件号码") is None
     assert len(out["applied"]["items"]) == 2 and out["asked"] == 1
     sug = [s for s in apps.get(tid)["suggestions"] if s["kind"] == "底稿"]
     assert len(sug) == 1 and "学号" in sug[0]["text"] and sug[0]["payload"]["value"] == "S2026001"
-    assert "旧的一段" in seen["content"] and "新写的一段" in seen["content"]
+    assert "旧的一段" in seen["content"] and "实际提交的简历" in seen["content"]
     assert any(e["kind"] == "底稿" and "A资本证明人" in e["text"] for e in apps.get(tid)["timeline"])
     assert learn.from_readback(tid) is None and seen["calls"] == 1                    # 同一份读回只学一次
     assert [p["key"] for p in learn.pending()] == ["学号"]
@@ -80,10 +80,10 @@ def test_backfill_only_fills_gaps(setup):
     """补学以前交过的：底稿里没有的补上；已有的不覆盖，改成问。"""
     tid, seen = setup
     seen["items"] = [item("经历精确日期", "A资本证明人", "李四，投资经理，13800000000", "本人补的", "以后都这样"),
-                     item("其他", "兴趣爱好", "游泳", "本人改的", "以后都这样", old="跑步")]
+                     item("其他", "自我评价", "新写的一段" * 20, "本人改的", "以后都这样", old="旧的一段" * 30)]
     out = learn.from_readback(tid, backfill=True)
-    assert cell("经历精确日期", "A资本证明人") and cell("其他", "兴趣爱好") == "跑步"
-    assert out["asked"] == 1 and "兴趣爱好" in learn.pending()[0]["text"]
+    assert cell("经历精确日期", "A资本证明人") and cell("其他", "自我评价") == "旧的一段" * 30
+    assert out["asked"] == 1 and "自我评价" in learn.pending()[0]["text"]
 
 
 def test_user_edit_while_the_model_thinks_is_not_overwritten(setup):
@@ -92,12 +92,12 @@ def test_user_edit_while_the_model_thinks_is_not_overwritten(setup):
 
     def user_edits():
         profile, _ = wsprofile.load()
-        profile["其他"][2][1] = "本人刚改好的"
+        profile["其他"][0][1] = "本人刚改好的" * 20
         wsprofile.save(profile)
     seen["during"] = user_edits
-    seen["items"] = [item("其他", "兴趣爱好", "游泳", "本人改的", "以后都这样", old="跑步")]
+    seen["items"] = [item("其他", "自我评价", "新写的一段" * 20, "本人改的", "以后都这样", old="旧的一段" * 30)]
     out = learn.from_readback(tid, backfill=False)
-    assert cell("其他", "兴趣爱好") == "本人刚改好的" and out["applied"] is None and out["asked"] == 1
+    assert cell("其他", "自我评价") == "本人刚改好的" * 20 and out["applied"] is None and out["asked"] == 1
 
 
 def test_cells_changed_after_submission_are_not_relearned(setup):
@@ -125,10 +125,10 @@ def test_as_of_after_backups_rotated_is_not_trusted(setup, monkeypatch):
     wsprofile.save(profile)
     assert wsprofile.as_of("2020-01-01 10:00") == (False, None)
     monkeypatch.setattr(wsprofile, "changed_at", lambda *a, **k: "")              # 修改时间也没记：只能靠备份
-    seen["items"] = [item("其他", "兴趣爱好", "游泳", "本人改的", "以后都这样", old="跑步"),
+    seen["items"] = [item("其他", "自我评价", "新写的一段" * 20, "本人改的", "以后都这样", old="旧的一段" * 30),
                      item("其他", "学号", "无", "本人补的", "以后都这样")]
     out = learn.from_readback(tid, backfill=False)
-    assert cell("其他", "兴趣爱好") == "跑步" and cell("其他", "学号") == "无" and out["asked"] == 1
+    assert cell("其他", "自我评价") == "旧的一段" * 30 and cell("其他", "学号") == "无" and out["asked"] == 1
 
 
 def test_long_text_replaced_by_much_shorter_is_asked_not_written(setup):
@@ -179,13 +179,13 @@ def test_same_suggestion_from_several_applications_shows_once(setup):
 def test_undo_puts_cells_back_and_is_not_relearned(setup):
     tid, seen = setup
     seen["items"] = [item("经历精确日期", "A资本证明人", "李四", "本人补的", "以后都这样"),
-                     item("其他", "兴趣爱好", "游泳", "本人改的", "以后都这样", old="跑步")]
+                     item("其他", "自我评价", "新写的一段" * 20, "本人改的", "以后都这样", old="旧的一段" * 30)]
     entry = learn.from_readback(tid, backfill=False)["applied"]
     assert learn.undo(entry["id"]) == 2
-    assert cell("经历精确日期", "A资本证明人") is None and cell("其他", "兴趣爱好") == "跑步"
+    assert cell("经历精确日期", "A资本证明人") is None and cell("其他", "自我评价") == "旧的一段" * 30
     reread(tid, "补读了一次，文字稍有不同")                                               # 再读回一次：撤过的不再学
     out = learn.from_readback(tid, backfill=False)
-    assert out["applied"] is None and out["asked"] == 0 and cell("其他", "兴趣爱好") == "跑步"
+    assert out["applied"] is None and out["asked"] == 0 and cell("其他", "自我评价") == "旧的一段" * 30
 
 
 def test_undo_order_and_cells_changed_later(setup):
@@ -225,7 +225,7 @@ def test_failure_is_retried_later(setup, monkeypatch):
 
 def test_accept_does_not_overwrite_a_cell_changed_since(setup):
     tid, seen = setup
-    seen["items"] = [item("其他", "兴趣爱好", "游泳", "看不出", "以后都这样", old="跑步")]
+    seen["items"] = [item("其他", "兴趣爱好", "跑步、游泳", "看不出", "以后都这样", old="跑步")]     # 写得更完整：问
     learn.from_readback(tid)
     profile, _ = wsprofile.load()
     profile["其他"][2][1] = "本人后来改的"
@@ -367,4 +367,69 @@ def test_pending_hides_values_already_learned_from_another_application(setup):
     learn.from_readback(tid)
     learn.from_chat("学号：S1")
     assert learn.pending() == []
+
+
+# ── 写死的规则：底稿是准的，网站上的只拿来查错 ──────────────────────
+
+@pytest.mark.parametrize("new,old,verdict", [
+    ("开始时间：2024-06-07 结束时间：2024-08-01", "2024-06-07 至 2024-08-13", "drop"),     # 网站只选到月：存成 1 号
+    ("2024/09/01-2027/06/30", "2024-09-01 至 2027-06（预计毕业）", "drop"),                 # 非要填到某天：填了月底
+    ("2019/08/01", "", "drop"),                                                             # 底稿里没有的日期：不学
+    ("2024-05-27", "2024-05-20", "wrong"),                                                  # 两边都写到具体哪天、不一样
+    ("开始时间：2019-05-01 结束时间：2019-05-01", "2016-08 至 2019-05", "wrong"),           # 开始日期填成了毕业那天
+    ("否", "", "drop"), ("其它", "校招官网", "drop"), ("不涉及", "", "drop"),               # 默认答案 / 网站选项
+    ("上海-浦东新区", "上海", "ask"),                                                        # 写得更完整：问
+    ("上海", "上海-浦东新区", "drop"),                                                       # 更粗：不学
+    ("半导体与AI基础设施", "股权投资部", "wrong"),                                          # 短事实对不上：以底稿为准
+    ("甲省乙县", "甲省 / 丙市 / 乙县", "drop"),                                         # 按顺序抽字的简写：写粗了
+    ("甲省 丙市 乙县", "甲省乙县", "ask"),                                             # 反过来：写得更完整
+])
+def test_hard_rules(new, old, verdict):
+    row = ["栏目", old] if old else None
+    assert learn._judge({"new": new, "who": "看不出"}, row) == verdict
+
+
+def test_generic_answer_the_user_gave_is_kept():
+    assert learn._judge({"new": "无", "who": "本人补的"}, None) is None              # 助手留给本人、本人填了「无」：照模型的判断
+
+
+def test_readback_applies_the_rules(setup):
+    tid, seen = setup
+    seen["items"] = [item("其他", "是否贫困生", "否", "看不出", "以后都这样"),
+                     item("经历精确日期", "B资本证明人", "王五，副总裁，13900000000", "本人改的", "以后都这样",
+                          old="王五，董事总经理，13900000000")]
+    out = learn.from_readback(tid)
+    assert out["applied"] is None and out["asked"] == 0 and out["wrong"] == 1
+    p = learn.pending()
+    assert len(p) == 1 and p[0]["kind"] == "核对" and "两边不一样" in p[0]["text"]
+
+
+def test_tidy_cleans_up_old_suggestions(setup):
+    """上线前按旧规则出的建议：日期、默认答案点掉，短事实对不上的改成核对，写得更完整的留着。"""
+    tid, _seen = setup
+    for key, value, old in (("A资本实习（航空航天）", "2024-06-07 至 2024-08-01", ""), ("是否学生干部", "否", ""),
+                            ("所在城市", "某市", "上海"), ("兴趣爱好", "跑步、游泳", "跑步")):
+        apps.suggest(tid, "底稿", f"{key}：记进底稿？", {"section": "其他" if key != "所在城市" else "基本信息", "key": key,
+                                                       "value": value, "old": old, "old_exists": bool(old)})
+    assert learn.tidy() == (2, 1)
+    kinds = sorted((p["kind"], p["key"]) for p in learn.pending())
+    assert kinds == [("核对", "所在城市"), ("底稿", "兴趣爱好")] or kinds == [("底稿", "兴趣爱好"), ("核对", "所在城市")]
+
+
+def test_same_key_with_different_values_shows_one_card(setup):
+    tid, _seen = setup
+    t2 = wstasks.add("https://jobs.example.com/learn5", "某银行 V", "")
+    apps.ensure_for_task(wstasks.get(t2["id"]))
+    apps.suggest(tid, "底稿", "某银行 X网站上「特长」交的是「英语」：记进底稿？", {"section": "其他", "key": "特长", "value": "英语"})
+    apps.suggest(t2["id"], "底稿", "某银行 V网站上「特长」交的是「英语；Python」：记进底稿？", {"section": "其他", "key": "特长", "value": "英语；Python"})
+    p = learn.pending()
+    assert len(p) == 1 and len(p[0]["refs"]) == 2 and "写法不一样" in p[0]["text"]
+
+
+def test_company_falls_back_to_the_site(setup, monkeypatch):
+    tid, seen = setup
+    wstasks.update(tid, company="")
+    seen["items"] = [item("其他", "学号", "S1", "看不出", "以后都这样")]
+    learn.from_readback(tid)
+    assert learn.pending()[0]["text"].startswith("jobs.example.com网站上")
 

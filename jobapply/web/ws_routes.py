@@ -40,7 +40,8 @@ def _fill_message(t):
 
 @bp.route("/api/wstasks")
 def api_wstasks():
-    items = wstasks.list_tasks()
+    out = wstasks.gone()
+    items = [t for t in wstasks.list_tasks() if t.get("id") not in out]   # 本人说「整家删了」的不再列
     active, waiting = set(agent.active_chats()), agent.waiting_chats()
     for t in items:   # 助手这会儿在不在干这条：在干活 / 排队中（同时干活的满了、或者同一个网站有别的助手在填）
         cid = t.get("chat_id")

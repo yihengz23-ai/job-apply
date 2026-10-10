@@ -101,6 +101,13 @@ async function agSend(text, fresh = false) {
 async function agStart(text) { await agShow(true); await agSend(text, true); }   // 「让助手代填」：开一个新对话
 $('#agentFab').onclick = () => agShow(!AG.open);
 $('#agentClose').onclick = () => agShow(false);
+// 点抽屉外面就收起（不用每次去点右上角的叉）。按下时就收：外面那个按钮要是正好是「看对话」，它的点击随后会把抽屉重新打开到那个对话。
+// 弹窗、提示里的点击不算（它们常常是抽屉里的操作弹出来的）；抽屉自己的开关按钮交给它自己的点击处理。
+document.addEventListener('pointerdown', e => {
+  if (!AG.open || e.button !== 0) return;
+  if (e.target.closest('#agentDrawer, #agentFab, #modal, .modal, [role="dialog"], #toast, .toast')) return;
+  agShow(false);
+}, true);
 $('#agentNew').onclick = () => { agOpenChat(null); $('#agentChats').value = ''; $('#agentInput').focus(); };
 $('#agentChats').onchange = e => agOpenChat(e.target.value);
 $('#agentSend').onclick = () => agSend($('#agentInput').value);

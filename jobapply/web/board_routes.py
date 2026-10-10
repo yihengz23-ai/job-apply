@@ -16,7 +16,7 @@ bp = Blueprint("board", __name__)
 
 @bp.route("/api/records")
 def api_records():
-    recs = records.filter_campaign(records.load(), request.args.get("campaign"))
+    recs = records.filter_campaign(records.live(records.load()), request.args.get("campaign"))
     recs.sort(key=lambda r: r.get("sent_at") or "", reverse=True)
     for r in recs:
         r["_type"] = records.norm_company_type(r.get("company_type"))

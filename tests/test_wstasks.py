@@ -324,7 +324,7 @@ def test_multi_position_records_each_with_own_jd(store):
 def test_jd_before_submit_kept_until_record_exists(store):
     t = wstasks.add("https://job.example.com/b2", "某券商", "")
     t, rid = wstasks.save_readback(t["id"], "jd", "投研岗 JD", position="投研岗", location="上海")
-    assert rid == "" and t["jds"]["投研岗"]["text"] == "投研岗 JD" and t["positions"][0]["location"] == "上海"
+    assert rid == "" and t["jds"]["投研岗"]["text"] == "投研岗 JD" and not t.get("positions")   # 看了 JD 不算投（交的时候只读过这一个才算）
     t = wstasks.set_status(t["id"], "已提交")
     r = records.get(t["record_id"])
     assert r["job_title"] == "投研岗" and r["jd_text"] == "投研岗 JD" and r["job_location"] == "上海"

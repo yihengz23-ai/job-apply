@@ -10,7 +10,8 @@ from pathlib import Path
 from . import config, resume
 
 DIR = config.MATERIALS_DIR / "网申上传"
-GEN = "（自动生成）"                                  # 面板做的文件名都带这个；本人放的照片不带
+GEN = "（自动生成）"                                  # 以前面板做的文件名带这个（传到网站上 HR 看得见）：现在不带了，旧的上线后删掉
+SIZES = "各种尺寸"                                     # 面板做的各种尺寸放在这个子文件夹里，文件名就是「证件照_295x413.jpg」
 PHOTO_EXT = (".jpg", ".jpeg", ".png", ".heic")
 ID_SIZES = ((295, 413), (100, 140))                   # 一寸（5:7）；小尺寸（银行等老规格）
 KINDS = (("证件照", "证件"), ("全身照", "全身"), ("生活照", "生活"))   # 文件名里带哪个词算哪种（「生活照-全身」算全身照）
@@ -44,20 +45,24 @@ def _fresh(out, src):
     return out.exists() and out.stat().st_mtime >= src.stat().st_mtime
 
 
+def _out_dir():
+    return DIR / SIZES
+
+
 def _photo_variants(kind, src):
     """证件照：裁成一寸的 5:7 竖版（太宽左右各裁一点，太高从下面裁，头顶不动），出 295×413、100×140 两种；
     每种照片都再出一份长边 1200 的 JPG（原图太大、或者是 HEIC / PNG 时用）；生活照、全身照再出长边 320 和一份 1M 到 5M 的
     （有的网站要求文件不小于 1M，手机传过来的照片常常压得只有几百 KB）。源照片换了才重做。"""
-    jobs = [(f"{kind}_长边1200{GEN}.jpg", None)]
+    jobs = [(f"{kind}_长边1200.jpg", None)]
     if kind == "证件照":
-        jobs += [(f"证件照_{w}x{h}{GEN}.jpg", (w, h)) for w, h in ID_SIZES]
+        jobs += [(f"证件照_{w}x{h}.jpg", (w, h)) for w, h in ID_SIZES]
     else:
-        jobs += [(f"{kind}_长边320{GEN}.jpg", None), (f"{kind}_1M到5M{GEN}.jpg", "band")]
+        jobs += [(f"{kind}_长边320.jpg", None), (f"{kind}_1M到5M.jpg", "band")]
     for name, size in jobs:
-        out = DIR / name
+        out = _out_dir() / name
         if _fresh(out, src):
             continue
-        tmp = DIR / f".tmp_{kind}.jpg"
+        tmp = _out_dir() / f".tmp_{kind}.jpg"
         try:
             _sips("-s", "format", "jpeg", src, "--out", tmp)
             if size == "band":
@@ -113,6 +118,9 @@ def _copy_if_changed(blob, dest):
 def prepare():
     """放好要上传的材料（简历、研究样本、照片的各种规格），返回给助手看的清单文字。出错不影响助手干活。"""
     DIR.mkdir(parents=True, exist_ok=True)
+    _out_dir().mkdir(exist_ok=True)
+    for old in DIR.glob(f"*{GEN}*"):          # 以前做的、文件名带「（自动生成）」的：删掉（新的在子文件夹里，名字不带）
+        old.unlink(missing_ok=True)
     notes = []
     try:
         name = re.sub(r"\.pdf$", "", config.RESUME_DEFAULT_ZH, flags=re.I) + ".pdf"
@@ -136,7 +144,8 @@ def prepare():
 
 def listing():
     lines = []
-    for p in sorted(DIR.iterdir()) if DIR.exists() else []:
+    files = (sorted(DIR.iterdir()) if DIR.exists() else []) + (sorted(_out_dir().iterdir()) if _out_dir().exists() else [])
+    for p in files:
         if p.name.startswith(".") or not p.is_file():
             continue
         kb = max(1, round(p.stat().st_size / 1024))

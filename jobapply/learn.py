@@ -13,6 +13,7 @@ import re
 import threading
 import uuid
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
 
 from . import apps, config, llm, notify, wsprofile, wstasks
 
@@ -22,7 +23,9 @@ SCOPE = ("以后都这样", "只这家这样", "看不出")
 SENSITIVE = re.compile(r"证件|身份|护照|passport|id\s*no|银行|卡号|账号|账户|社保|医保|工资卡|已隐去", re.I)
 VARIANT = re.compile(r"拼音|英文|英语|精简|简短|短版|长版|完整|全称|简称|english|pinyin", re.I)   # 括号里是这些的是另一个版本，不是备注
 PLACEHOLDER = {"栏目", "栏目名", "某栏目", "XX", "xx", "X"}
-CHOICE = re.compile(r"替你|替本人|推测|空着|留给你|字数|上限|精简|最接近|是你写的|删了|删掉|改短|我选了|按网站|没有.*选")
+CHOICE = re.compile(r"替你|替本人|推测|空着|留给你|字数|上限|精简|最接近|是你写的|删了|删掉|改短|我选了|按网站|没有.*选|我写的|我补的|我拼|我编|是我按")
+DATE = re.compile(r"(\d{4})\s*[-/.年]\s*(\d{1,2})(?:\s*[-/.月]\s*(\d{1,2}))?")
+GENERIC = re.compile(r"是|否|有|无|没有|暂无|不适用|不涉及|其他|其它|无经验|无挂科|未挂科|不清楚|na|n/a", re.I)   # 整格只有这些的短答案
 KEEP = 300
 MAX_LINES = 10
 _lock = threading.RLock()
@@ -339,6 +342,64 @@ def _wrapup(chat_id):
     return "\n".join(dict.fromkeys(x for x in sents if x))[-6000:]
 
 
+def _dates(s):
+    return [(int(y), int(m), int(d) if d else None) for y, m, d in DATE.findall(str(s or ""))]
+
+
+def _dates_differ(new, old):
+    """两串日期真对不上：年月不一样；或者两边都写到了具体哪天（不是 1 号、不是月底这种占位）而且不一样。个数一样就按顺序一一比。"""
+    nd, od = _dates(new), _dates(old)
+    if not nd or not od:
+        return False
+
+    def clash(a, b):
+        if a[:2] != b[:2]:
+            return True
+        placeholder = lambda d: d is None or d == 1 or d >= 28
+        return not placeholder(a[2]) and not placeholder(b[2]) and a[2] != b[2]
+    if len(nd) == len(od):
+        return any(clash(a, b) for a, b in zip(nd, od))
+    return any(all(clash(a, b) for b in od) for a in nd)
+
+
+def _abbrev(short, long):
+    """short 是 long 按顺序抽字的简写（「甲省乙县」之于「甲省丙市乙县」）：同一个意思写粗了。只看短的。"""
+    if not short or len(short) >= len(long) or len(long) > 30:
+        return False
+    it = iter(long)
+    return all(ch in it for ch in short)
+
+
+def _judge(x, row):
+    """模型判断不了的几类先用写死的规则过一遍。返回 drop（不学也不问）、wrong（以底稿为准，提醒这家可能填错）、ask（问本人）、
+    None（照模型的判断）。原则：底稿是准的，网站上的只拿来查错——只有本人亲手补的、写得更完整的、整段改写的才学。
+    - 日期一律不学：网站常逼着只选到月（存成 1 号）、非要填到某天（1 号、月底）、在读的非要填结束日；真对不上的才提醒；
+    - 「是 / 否 / 无 / 其他 / 不适用」这类短答案：多半是助手按默认答的、或者网站只有这个选项，不学（底稿没有的让助手当场问本人）；
+    - 底稿里已有的短事实：网站上的更完整（多写到县、到区）才问；更粗的不学；对不上的以底稿为准、提醒。"""
+    new, old = x["new"], row[1] if row else ""
+    if _dates(new):
+        return "wrong" if row and _dates_differ(new, old) else "drop"
+    if GENERIC.fullmatch(_flat(new)) and x.get("who") != "本人补的":
+        return "drop"
+    if row:
+        fo, fn = _flat(old), _flat(new)
+        if fo and fo != fn and (fo in fn or _abbrev(fo, fn)):
+            return "ask"
+        if fn and (fn in fo or _abbrev(fn, fo)):
+            return "drop"
+        if max(len(old), len(new)) < 50:
+            return "wrong"
+    return None
+
+
+def _check_text(company, key, new, old, likely_wrong=False):
+    if likely_wrong:
+        return (f"{company}交上去的「{key}」是「{new[:80]}」，底稿里" + (f"是「{old[:40]}」" if old else "没有")
+                + "，像是填错了。已经交了：网站上还能改的话去改一下")
+    return (f"{company}交上去的「{key}」是「{new[:80]}」，底稿里是「{old[:40]}」，两边不一样："
+            "网站上填错了就去网站改；底稿该改的话直接在底稿里改")
+
+
 def _clean(it):
     it = {k: str((it or {}).get(k) or "").strip() for k in ("section", "key", "old", "new", "who", "scope", "evidence", "why")}
     it["who"] = it["who"] if it["who"] in WHO else "看不出"
@@ -393,7 +454,7 @@ def from_readback(task_id, *, backfill=None, fresh=None):
         backfill = _old_enough(when) if backfill is None else backfill
         fresh = set() if fresh is None else fresh
         known, then = wsprofile.as_of(when)
-        company = t.get("company") or ""
+        company = t.get("company") or urlparse(t.get("url") or "").hostname or "这家"
         content = (f"## 这家：{company}\n\n## 现在的网申底稿（能写的段：{'、'.join(PAIR_SECTIONS)}）\n{wsprofile.as_text(profile)}\n\n"
                    f"## 助手填这家时说过的选择\n{mask_for_model(_wrapup(t.get('chat_id'))) or '（没找到）'}\n\n"
                    f"## 交完以后从网站读回的、实际交上去的内容\n{mask_for_model(text)[:20000]}")
@@ -416,9 +477,16 @@ def from_readback(task_id, *, backfill=None, fresh=None):
             stale = False if not row or (sec, row[0]) in fresh else _stale(sec, row, when, then, known)
             if stale:
                 continue                  # 交了以后本人在底稿里又改过：网站上那是旧写法
+            if x["scope"] == "只这家这样" and x["who"] != "像是填错了":
+                continue                  # 这家特有的（投哪个岗位、期望薪资、意向城市）：不学也不提醒
+            verdict = _judge(x, row)
+            if verdict == "drop" or (verdict == "ask" and x["who"] in ("助手按网站限制改的", "助手猜的或替本人选的", "网站格式不同")):
+                continue                  # 规则挡掉的；写得更完整但助手说了是它改的 / 只是格式不同：不问（对不上的照样提醒）
             x["old_exists"], x["old"] = bool(row), row[1] if row else ""
-            if x["who"] == "像是填错了":
+            if verdict == "wrong" or x["who"] == "像是填错了":
                 wrong.append(x)
+            elif verdict == "ask":
+                ask.append(x)
             elif x["who"] in ("本人改的", "本人补的") and x["scope"] == "以后都这样":
                 shrink = bool(row) and len(row[1]) >= 100 and len(x["new"]) < 0.6 * len(row[1])   # 长段换成短得多的：多半是字数上限
                 if not row and how is None and not x["old"]:   # 底稿里确实没有：补上
@@ -436,7 +504,7 @@ def from_readback(task_id, *, backfill=None, fresh=None):
         for kind, xs in (("底稿", ask), ("核对", wrong)):
             for x in xs:
                 line = (f"{company}网站上「{x['key']}」交的是「{x['new'][:80]}」，底稿里" + (f"是「{x['old'][:40]}」" if x["old_exists"] else "没有")
-                        + ("：记进底稿？" if kind == "底稿" else "，像是填错了。已经交了：网站上还能改的话去改一下"))
+                        + "：记进底稿？") if kind == "底稿" else _check_text(company, x["key"], x["new"], x["old"], x["who"] == "像是填错了")
                 try:
                     apps.suggest(task_id, kind, line, {"section": x["section"], "key": x["key"], "value": x["new"],
                                                        "old": x["old"], "old_exists": x["old_exists"], "why": x["why"]})
@@ -467,8 +535,42 @@ def later(task_id):
     threading.Thread(target=_safe, args=(task_id,), daemon=True).start()
 
 
+def tidy():
+    """按现在的规则把还没点的「记进底稿？」过一遍：不该问的点掉，该提醒的改成「核对」。返回 (点掉几条, 改成核对几条)。"""
+    profile, example = wsprofile.load()
+    if example:
+        return 0, 0
+    dropped = moved = 0
+    for a in apps.list_apps():
+        for s in list(a.get("suggestions") or []):
+            if s.get("kind") != "底稿" or s.get("state") != "待定":
+                continue
+            p = s.get("payload") or {}
+            x = {"section": p.get("section", ""), "key": p.get("key", ""), "new": p.get("value", ""), "who": "看不出"}
+            row = _find(profile, x["section"], x["key"])[1]
+            if not row and p.get("old"):
+                same = [it for sec in PAIR_SECTIONS for it in profile.get(sec) or []
+                        if isinstance(it, list) and len(it) == 2 and _flat(it[1]) == _flat(p["old"])]
+                row = same[0] if len(same) == 1 else None
+            verdict = _judge(x, row)
+            if verdict not in ("drop", "wrong"):
+                continue
+            apps.dismiss(a["id"], s["id"], by="面板")
+            if verdict == "drop":
+                dropped += 1
+                continue
+            apps.suggest(a["id"], "核对", _check_text(a.get("company") or "这家", x["key"], x["new"], row[1] if row else ""),
+                         {"section": x["section"], "key": x["key"], "value": x["new"], "old": row[1] if row else "", "why": "按规则核对"})
+            moved += 1
+    return dropped, moved
+
+
 def backfill():
-    """面板启动后：交过、读回过、还没学过（或者上次没学成）的几家，按交的先后学一遍。返回学了几家。"""
+    """面板启动后：先按现在的规则清一遍还没点的建议；再把交过、读回过、还没学过（或者上次没学成）的几家，按交的先后学一遍。返回学了几家。"""
+    try:
+        tidy()
+    except Exception as e:
+        print(f"底稿学习：清理建议没做成：{type(e).__name__}: {e}")
     sigs = _state()["sigs"]
     todo = []
     for t in wstasks.list_tasks():
@@ -493,16 +595,22 @@ def pending():
             p = s.get("payload") or {}
             if s["kind"] == "底稿" and already_there(p.get("section"), p.get("key"), p.get("value")):
                 continue                     # 底稿里已经是这个了（别家先学进去了）：不用再问
-            key = (s["kind"], _norm(p.get("key")), _flat(p.get("value"))) if s["kind"] == "底稿" else (s["kind"], a["id"], s["id"])
-            g = groups.setdefault(key, {"kind": s["kind"], "text": s.get("text", ""), "at": s.get("at", ""), "refs": [],
-                                        **{k: p.get(k, "") for k in ("key", "value", "old", "why")}})
-            g["refs"].append({"app_id": a["id"], "sid": s["id"], "company": a.get("company", "")})
-            g["at"] = max(g["at"], s.get("at", ""))
+            key = (s["kind"], _norm(p.get("key"))) if s["kind"] == "底稿" else (s["kind"], a["id"], s["id"])
+            g = groups.setdefault(key, {"kind": s["kind"], "text": "", "at": "", "refs": [], "values": set()})
+            g["refs"].append({"app_id": a["id"], "sid": s["id"], "company": a.get("company", ""), "at": s.get("at", "")})
+            g["values"].add(_flat(p.get("value")))
+            if s.get("at", "") >= g["at"]:          # 显示最新那一家的（采纳时记的也是它）
+                g.update(text=s.get("text", ""), at=s.get("at", ""), **{k: p.get(k, "") for k in ("key", "value", "old", "why")})
     out = []
     for g in groups.values():
-        if g["kind"] == "底稿" and len(g["refs"]) > 1:   # 几家都这样：不写某一家的名字
-            names = "、".join(dict.fromkeys(r["company"] for r in g["refs"]))
-            g["text"] = (f"「{g['key']}」{names}交的都是「{g['value'][:80]}」，底稿里" + (f"是「{g['old'][:40]}」" if g["old"] else "没有")
-                         + "：记进底稿？")
+        g["refs"].sort(key=lambda r: r["at"], reverse=True)   # 最新的排第一：「记进底稿」按它记，其余几家的点掉
+        if g["kind"] == "底稿" and len(g["refs"]) > 1:
+            names = "、".join(dict.fromkeys(r["company"] or "这家" for r in g["refs"]))
+            if len(g.pop("values")) == 1:            # 几家都这样：不写某一家的名字
+                g["text"] = (f"「{g['key']}」{names}交的都是「{g['value'][:80]}」，底稿里" + (f"是「{g['old'][:40]}」" if g["old"] else "没有")
+                             + "：记进底稿？")
+            else:
+                g["text"] += f"（{names}几家写法不一样，这是最新的一家）"
+        g.pop("values", None)
         out.append(g)
     return sorted(out, key=lambda x: x["at"], reverse=True)

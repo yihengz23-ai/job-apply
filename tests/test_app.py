@@ -53,7 +53,7 @@ def test_records_and_stats(client):
     recs = client.get("/api/records?campaign=全部", headers=LOCAL).get_json()
     assert isinstance(recs, list) and all("_type" in r for r in recs)
     st = client.get("/api/stats?campaign=全部", headers=LOCAL).get_json()
-    assert st["total"] == len(recs)
+    assert st["total"] + st["drafts"] == len(recs)   # 草稿列在表里，但不算投递
 
 
 @pytest.mark.skipif(not panel.config.RESUME_PATH.exists(), reason="没有简历文件")

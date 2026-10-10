@@ -455,9 +455,71 @@ def soft_delete(app_id, *, by, dry_run=False):
         a["deleted_at"] = at
         a["color"] = None
         for r in _positions(data, app_id):
-            r["deleted_at"] = at
+            if not r.get("deleted_at"):        # 之前单独收起的岗位（记错的、多记的）不算进来，恢复这家时也不放回
+                r["deleted_at"], r["deleted_with_app"] = at, True
         _timeline(a, "删除", "删除了（7 天内可恢复）", by, at=at)
         return impact
+    return records.mutate_all(_do)
+
+
+def clear_first_submitted(app_id, *, by="本人"):
+    """退回「还没交」以后，这家一个投出去的岗位都不剩了：「首次投出」清掉（再交的时候重新记）。返回清掉之前的值（没清返回 None）。"""
+    def _do(data):
+        a = _find(data, app_id)
+        if not a:
+            raise NotFound(app_id)
+        live = [r for r in _positions(data, app_id) if not r.get("deleted_at")]
+        if not a.get("first_submitted_at") or any((r.get("status") or "已投递") != "草稿" for r in live):
+            return None
+        prev = a["first_submitted_at"]
+        a["first_submitted_at"] = ""
+        _timeline(a, "投出", f"首次投出时间 {prev} 清掉了（都退回还没交）", by)
+        return prev
+    return records.mutate_all(_do)
+
+
+def set_first_submitted(app_id, at, *, by="本人"):
+    """本人改投递时间：「首次投出」跟着改。返回改之前的值。"""
+    def _do(data):
+        a = _find(data, app_id)
+        if not a:
+            raise NotFound(app_id)
+        prev = a.get("first_submitted_at", "")
+        a["first_submitted_at"] = at
+        _touch(a)
+        return prev
+    return records.mutate_all(_do)
+
+
+def hide_position(record_id, *, by, reason=""):
+    """把一个记错的岗位收起来（软删除，能放回）：本人说「这条记错了」「只投了另一个」。"""
+    def _do(data):
+        r = next((x for x in data["records"] if x.get("id") == record_id), None)
+        if not r:
+            raise NotFound(record_id)
+        if r.get("deleted_at"):
+            return r
+        at = _now()
+        r["deleted_at"] = at
+        a = _find(data, r.get("app_id"))
+        if a:
+            _timeline(a, "删除", f"删了岗位「{r.get('job_title') or '（没写岗位名）'}」" + (f"：{reason}" if reason else ""), by, at=at)
+            _touch(a, at)
+        return r
+    return records.mutate_all(_do)
+
+
+def unhide_position(record_id, *, by="本人"):
+    def _do(data):
+        r = next((x for x in data["records"] if x.get("id") == record_id), None)
+        if not r:
+            raise NotFound(record_id)
+        r.pop("deleted_at", None)
+        a = _find(data, r.get("app_id"))
+        if a:
+            _timeline(a, "恢复", f"放回了岗位「{r.get('job_title') or '（没写岗位名）'}」", by)
+            _touch(a)
+        return r
     return records.mutate_all(_do)
 
 
@@ -466,9 +528,12 @@ def restore(app_id, *, by="本人"):
         a = _find(data, app_id)
         if not a:
             raise NotFound(app_id)
-        a["deleted_at"] = ""
-        for r in _positions(data, app_id):
+        when, a["deleted_at"] = a.get("deleted_at"), ""
+        pos = _positions(data, app_id)
+        flagged = [r for r in pos if r.get("deleted_with_app")]
+        for r in flagged or [r for r in pos if r.get("deleted_at") == when]:   # 旧数据没有标记：按删除时间认
             r.pop("deleted_at", None)
+            r.pop("deleted_with_app", None)
         _timeline(a, "恢复", "恢复了", by)
         _touch(a)
         return a
@@ -657,6 +722,12 @@ def accept(app_id, sid, *, by="本人", to=None):
         target = to if to in records.STATUSES else s["payload"]["to"]
         advance(s["payload"]["record_id"], target, by=by, manual=True,
                 reason="采纳了建议" if target == s["payload"]["to"] else "本人改了建议的阶段")
+    if s.get("kind") == "岗位数":          # 网站上没有的那几条从看板上收起（软删；跟助手说「把 X 的 Y 放回来」能放回）
+        for rid in (s.get("payload") or {}).get("hide") or []:
+            try:
+                hide_position(rid, by=by, reason="网站「我的投递」上没有这个岗位")
+            except NotFound:
+                pass
     return s
 
 
@@ -1054,7 +1125,8 @@ def _readback_state(t, a):
         got = t.get("readback") or {}
         missing = [label for kind, label in (("status", "投递记录"), ("resume", "实际提交的简历")) if not (got.get(kind) or {}).get("text")]
         jds = t.get("jds") or {}
-        missing += [f"{p['name']} 的 JD" for p in t.get("positions") or [] if p.get("name") not in jds]
+        from . import wstasks          # JD 页上的名字跟岗位单上的写法略有不同（「（甲集团）」「（甲集团有限公司）」）也算有
+        missing += [f"{p['name']} 的 JD" for p in t.get("positions") or [] if not wstasks.jd_for(t, p)]
         rb["checklist"] = {"投递记录": "status" in got, "实际提交的简历": "resume" in got, "岗位 JD": len(jds)}
         rb["missing"] = missing
         rb["state"] = "不完整" if missing else "完成"

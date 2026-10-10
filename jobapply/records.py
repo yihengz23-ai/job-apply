@@ -301,7 +301,7 @@ def find_related(company_name, emails, records=None, exclude_id=None):
     key = norm_company(company_name)
     out = []
     for r in records:
-        if r.get("id") == exclude_id:
+        if r.get("id") == exclude_id or r.get("deleted_at"):
             continue
         old = split_emails(r.get("to_email")) + split_emails(r.get("cc_email"))
         match = ""
@@ -377,6 +377,11 @@ def norm_industries(value):
     return out
 
 
+def live(records):
+    """看板上算数的岗位：本人删掉的（整个申请删了，或者这个岗位记错了收起来）不算、不列、不查重。"""
+    return [r for r in records if not r.get("deleted_at")]
+
+
 def filter_campaign(records, campaign):
     if not campaign or campaign == "全部":
         return records
@@ -393,14 +398,18 @@ def stats(records):
         except ValueError:
             return None
 
-    out = {"total": len(records), "week_new": 0, "followup": [], "status_dist": {}, "type_dist": {},
+    records = live(records)
+    sent = [r for r in records if (r.get("status") or "已投递") != "草稿"]   # 草稿（网申没交、邮件没发）不算投递
+    out = {"total": len(sent), "drafts": len(records) - len(sent), "week_new": 0, "followup": [], "status_dist": {}, "type_dist": {},
            "loc_dist": {}, "industry_dist": {}, "position_dist": {}, "daily": {}, "daily_detail": {},
            "replied": 0, "bounced": []}
-    out["companies"] = len({norm_company(r.get("company_name")) for r in records if r.get("company_name")})
+    out["companies"] = len({norm_company(r.get("company_name")) for r in sent if r.get("company_name")})
     for r in records:
         dt = _dt(r)
         status = r.get("status") or "已投递"
         out["status_dist"][status] = out["status_dist"].get(status, 0) + 1
+        if status == "草稿":
+            continue
         ctype = norm_company_type(r.get("company_type"))
         out["type_dist"][ctype] = out["type_dist"].get(ctype, 0) + 1
         city = norm_city(r.get("job_location"))
@@ -476,6 +485,7 @@ def export_excel(records, path=None, applications=None):
     from openpyxl.styles import Alignment, Font, PatternFill
 
     path = path or config.EXCEL_MIRROR_PATH
+    records = live(records)
     apps_by_id = {a.get("id"): a for a in applications or []}
     wb = Workbook()
     ws = wb.active
