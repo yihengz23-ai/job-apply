@@ -6,7 +6,7 @@ import threading
 
 from flask import Flask
 
-from jobapply import agent, config, jobqueue, records
+from jobapply import agent, config, jobqueue, learn, records
 from jobapply.web import agent_routes, apps_routes, board_routes, common, mail_routes, profile_routes, ws_routes
 # 测试和别处还从 app 模块上取这些名字：和蓝图里用的是同一个对象
 from jobapply.web.board_routes import _gmail_job_lock  # noqa: F401
@@ -38,6 +38,7 @@ if __name__ == "__main__":
     agent.tidy_chats()           # 一家网申只留一个对话：多出来的旧对话收起来
     if not config.IS_TEST_ENV:
         threading.Thread(target=jobqueue.startup_tasks, daemon=True).start()   # 定时草稿对齐 + 旧条目按新规则重查
+        threading.Thread(target=learn.backfill, daemon=True).start()         # 交过、读回过、还没学过的几家：补学进底稿
     env = f"【测试环境】数据 {config.DATA_DIR}  " if config.IS_TEST_ENV else ""
     print(f"投递面板：{config.PANEL_BASE}   {env}模型：{config.CLAUDE_MODEL}   代理：{config.PROXY or '无'}", flush=True)
     app.run(host="127.0.0.1", port=config.PORT, debug=False, threaded=True)

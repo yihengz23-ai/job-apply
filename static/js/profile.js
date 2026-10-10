@@ -3,6 +3,7 @@
 // ━━━ 我的资料（网申常用栏目，一键复制）━━━
 async function loadKitPage() {
   loadWsProfile();
+  loadLearn();
   if (!S.kitData) {
     try { S.kitData = await api('/api/kit'); } catch (e) { $('#kitBody').innerHTML = `<p class="text-red-600 text-sm">${esc(e.message)}</p>`; return; }
   }
@@ -112,6 +113,7 @@ async function saveWsProfile() {
 // 别处改了底稿（助手、另一个窗口、直接改文件）：停在「网申」页时每 10 秒看一眼，你没在打字就刷新显示（「还缺几项」也跟着更新）
 setInterval(async () => {
   if (document.hidden || S.tab !== 'kit' || wsSaveTimer) return;
+  loadLearn();   // 后台刚学到的、刚出的「记进底稿？」也跟着出来
   try {
     const d = await api('/api/wangshen-profile');
     renderWsAlert(d.missing, d.notes || [], d.example);   // 「还缺几项」不管光标在哪都按服务器结果更新
@@ -123,3 +125,44 @@ setInterval(async () => {
     S.wsProfile = d.profile; S.wsProfileBase = JSON.parse(JSON.stringify(d.profile));
   } catch (e) {}
 }, 10000);
+
+// ━━━ 底稿学到的：交完读回、或者在助手对话里说的，记进了底稿（能撤销）；拿不准的「记进底稿？」等本人点；像是填错的提醒 ━━━
+async function loadLearn() {
+  let d;
+  try { d = await api('/api/profile-learn'); } catch (e) { return; }
+  const box = $('#learnBox'), items = (d.items || []).slice(0, 10), pend = d.pending || [];
+  if (!items.length && !pend.length) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+  const cut = (v, n) => { v = String(v ?? ''); return esc(v.slice(0, n)) + (v.length > n ? '…' : ''); };
+  const cell = x => `<b>${esc(String(x.key ?? ''))}</b>：${cut(x.new, 80)}` + (x.old ? `<span class="text-slate-400">（原来：${cut(x.old, 30)}）</span>` : '');
+  const btn = (p, action, label, cls) => `<button class="lr-sugg px-2 py-1 rounded-lg text-xs ${cls}" data-refs="${esc(JSON.stringify(p.refs || []))}" data-action="${action}">${label}</button>`;
+  const html = `<div class="flex items-center gap-2 mb-1"><span class="material-symbols-outlined text-teal-600">school</span><b>底稿学到的</b>
+      <span class="text-[11px] text-slate-400">交完以后从网站读回的、你在助手对话里说的，记进了下面的底稿，下一家照新的填；记错了点「撤销」</span></div>` +
+    pend.map(p => p.kind === '核对'
+      ? `<div class="flex flex-wrap items-center gap-2 py-1.5 border-t"><span class="material-symbols-outlined text-amber-600 text-base">warning</span><span class="flex-1 min-w-[14rem]">${esc(p.text)}</span>${btn(p, 'dismiss', '知道了', 'bg-slate-100')}</div>`
+      : `<div class="flex flex-wrap items-center gap-2 py-1.5 border-t"><span class="flex-1 min-w-[14rem]">${esc(p.text)}</span>${btn(p, 'accept', '记进底稿', 'bg-primary text-white font-bold')}${btn(p, 'dismiss', '不用', 'bg-slate-100')}</div>`).join('') +
+    items.map(e => `<div class="flex flex-wrap items-start gap-2 py-1.5 border-t ${e.undone ? 'opacity-50' : ''}">
+      <span class="text-[11px] text-slate-400 shrink-0 w-32">${esc(e.at)}<br>${esc(e.source)}</span>
+      <span class="flex-1 min-w-[14rem]">${(e.items || []).map(cell).join('<br>')}</span>
+      ${e.undone ? '<span class="text-xs text-slate-400">已撤销</span>' : `<button class="lr-undo copy-btn" data-id="${esc(e.id)}">撤销</button>`}</div>`).join('');
+  if (box.innerHTML !== html) box.innerHTML = html;   // 没变就不重画（免得 10 秒刷新打断正在点的按钮）
+  box.classList.remove('hidden');
+}
+document.addEventListener('click', async e => {
+  const b = e.target.closest('.lr-undo, .lr-sugg');
+  if (!b || b.disabled) return;
+  b.closest('div').querySelectorAll('button').forEach(x => { x.disabled = true; x.classList.add('opacity-50'); });
+  try {
+    if (b.classList.contains('lr-undo')) {
+      const d = await api(`/api/profile-learn/${encodeURIComponent(b.dataset.id)}/undo`, {method: 'POST'});
+      toast(d.cells ? `撤销了，底稿改回原来的 ${d.cells} 格` : '这几格后来又改过，没动', 3000);
+    } else {
+      // 几家都有的合成了一条：「记进底稿」只按第一家（就是显示的那个值）记，其余几家的点掉；「不用」「知道了」每家都点掉
+      const refs = JSON.parse(b.dataset.refs || '[]'), accept = b.dataset.action === 'accept';
+      for (const [i, r] of refs.entries())
+        await api(`/api/apps/${encodeURIComponent(r.app_id)}/suggestions/${encodeURIComponent(r.sid)}`, {method: 'POST', body: {action: accept && i === 0 ? 'accept' : 'dismiss'}});
+      toast(accept ? '记进底稿了' : b.textContent.trim() === '知道了' ? '好' : '好，以后不再问这一条', 2500);
+    }
+  } catch (er) { toast(er.message, 6000); }
+  loadLearn();
+  loadWsProfile();
+});

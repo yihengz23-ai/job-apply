@@ -581,6 +581,9 @@ def save_readback(task_id, kind, text, *, url="", title="", status="", account="
             apps.set_volunteer_mode(task_id, mode, line, by="读回")
     except (apps.NotFound, ValueError):
         pass
+    if kind == "resume":   # 交上去的简历读回来了：后台和底稿比一比，本人在网站上改过、补过的学回底稿
+        from . import learn
+        learn.later(task_id)
     return t, rid
 
 

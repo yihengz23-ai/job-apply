@@ -282,6 +282,24 @@ def test_board_line_in_chat_goes_through_progress(ag, monkeypatch):
     assert progress.recent()[0]["text"] == "聊改资本那封不是拒信，是笔试，13 号截止"
 
 
+
+def test_profile_line_in_chat_goes_into_the_profile(ag, monkeypatch):
+    """本人在对话里说「所在部门应该是股权投资部」：助手写一行【底稿】栏目：内容 → 面板记进网申底稿（能撤销），结果写回对话。"""
+    from jobapply import learn
+    wsprofile.save(SAMPLE)
+    monkeypatch.setattr(ag, "_bg", lambda fn, *a: fn(*a))                       # 测试里同步跑
+    t = wstasks.add("https://jobs.example.com/pl", "部门资本", "实习生")
+    c = ag.new_chat(task_id=t["id"])
+    ag.apply_event(c["id"], {"type": "assistant", "message": {"content": [
+        {"type": "text", "text": "好，按你说的改。\n【底稿】实习所在部门：股权投资部\n【底稿】证件号码：123456199001011234"}]}})
+    msgs = [m["text"] for m in ag.get(c["id"])["messages"] if m["role"] == "system"]
+    assert any(m.startswith("底稿记上了：实习所在部门：股权投资部") for m in msgs)
+    assert any("不进底稿" in m for m in msgs)
+    profile, _ = wsprofile.load()
+    assert ["实习所在部门", "股权投资部"] in profile["其他"] and "证件号码" not in json.dumps(profile, ensure_ascii=False)
+    assert learn.recent()[0]["source"] == "对话" and learn.recent()[0]["company"] == "部门资本"
+
+
 class _LiveStub:
     pid = 1
 

@@ -136,7 +136,23 @@
   const qCounts = () => QUEUE.reduce((o, it) => (o[it.status] = (o[it.status] || 0) + 1, o), {});
 
   // ── 网申页（演示）：一家一行、一个颜色；助手代填 → 停下等你 → 填好记看板 → 你提交后它去网站读回实际提交的内容 ──
-  const COLORS = [['🔵', '#2563eb', '蓝'], ['🟢', '#16a34a', '绿'], ['🟣', '#9333ea', '紫'], ['🟠', '#ea580c', '橙'],
+  // 底稿学到的：交完读回 / 对话里说的（虚构）；还没点的「记进底稿？」和「像是填错了」
+const LEARN_PENDING = [
+  {kind: '底稿', key: '户口所在地', value: '某省 / 某市 / 某县', old: '某省某市', at: '2026-10-10 21:41',
+   text: '「户口所在地」某国有银行 B、某国有银行 C交的都是「某省 / 某市 / 某县」，底稿里是「某省某市」：记进底稿？',
+   refs: [{app_id: 'demo', sid: 'L-1', company: '某国有银行 B'}, {app_id: 'demo', sid: 'L-2', company: '某国有银行 C'}]},
+  {kind: '核对', key: '籍贯', value: '上海', old: '某省某市', at: '2026-10-10 21:41',
+   text: '某互联网公司 Z网站上「籍贯」交的是「上海」，底稿里是「某省某市」，像是填错了。已经交了：网站上还能改的话去改一下',
+   refs: [{app_id: 'demo', sid: 'L-3', company: '某互联网公司 Z'}]},
+];
+const LEARN = [
+  {id: 'L2', at: '2026-10-10 21:40', source: '对话', app_id: '', company: '', undone: false,
+   items: [{section: '经历精确日期', key: '实习所在部门', old: null, new: '股权投资部', why: '本人在对话里说的'}]},
+  {id: 'L1', at: '2026-10-09 10:12', source: '读回：某国有银行 B', app_id: '', company: '某国有银行 B', undone: false,
+   items: [{section: '经历精确日期', key: 'A资本证明人', old: null, new: '李四，投资经理，138****0000', why: '本人在网站上补的'},
+           {section: '其他', key: '自我评价', old: '原来那一段', new: '本人在网站上改过的新一段（下一家就照这个填）', why: '本人改的'}]},
+];
+const COLORS = [['🔵', '#2563eb', '蓝'], ['🟢', '#16a34a', '绿'], ['🟣', '#9333ea', '紫'], ['🟠', '#ea580c', '橙'],
     ['🔴', '#dc2626', '红'], ['🟡', '#ca8a04', '黄'], ['🟤', '#92400e', '棕'], ['⚫', '#334155', '黑']];
   const task = o => Object.assign({id: 't' + (++id), created_at: ts(1, 20), updated_at: ts(0, 9), status: '待填', company: '', job: '', url: '',
     source: '投递页（只能网申）', deadline: '', note: '', record_id: '', email_record_id: '', queue_id: '', chat_id: '', result: {}, jd_text: '',
@@ -393,6 +409,18 @@
     if (path === '/api/gmail-sync') { await sleep(900); return json({ok: true, logs: ['（演示）Gmail 已发送里没有遗漏的投递']}); }
     if (path === '/api/health') return json({app: 'jobapply', env: 'demo', version: 'demo'});
     if (path === '/api/wangshen-profile' && method === 'GET') return json({profile: await loadProfile(), example: false, missing: [], notes: []});
+    if (path === '/api/profile-learn' && method === 'GET') return json({pending: LEARN_PENDING, items: LEARN});
+    if (/^\/api\/profile-learn\/[^/]+\/undo$/.test(path)) {
+      const e = LEARN.find(x => x.id === path.split('/')[3]);
+      if (!e || e.undone) return json({ok: true, cells: 0});
+      e.undone = true;
+      return json({ok: true, cells: e.items.length});
+    }
+    if (/^\/api\/apps\/[^/]+\/suggestions\/L-/.test(path)) {   // 底稿页上的「记进底稿 / 不用 / 知道了」
+      const sid = path.split('/')[5];
+      LEARN_PENDING.splice(0, LEARN_PENDING.length, ...LEARN_PENDING.filter(p => !p.refs.some(r => r.sid === sid)));
+      return json({ok: true});
+    }
     if (path === '/api/wangshen-profile' && method === 'PUT') { PROFILE = body.profile || PROFILE; return json({ok: true, profile: PROFILE, missing: [], notes: []}); }
     if (path === '/api/wstasks' && method === 'GET') {
       const tasks = WS.map(t => { const c = CHATS[t.chat_id]; const busy = c && c.running;

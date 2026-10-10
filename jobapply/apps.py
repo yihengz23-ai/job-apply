@@ -646,6 +646,10 @@ def _resolve(app_id, sid, state, by):
 
 def accept(app_id, sid, *, by="本人", to=None):
     """采纳一条建议。to：本人说「不是这个，改成 X」——阶段建议照本人选的阶段改。"""
+    peek = next((x for x in get(app_id).get("suggestions") or [] if x.get("id") == sid), None)
+    if peek and peek.get("kind") == "底稿" and peek.get("state") == "待定":
+        from . import learn
+        learn.accept(app_id, peek)        # 先写底稿：写不成（这一格后来改过）就报错，建议留着
     s = _resolve(app_id, sid, "采纳", by)
     if s.get("already"):
         return s
@@ -674,7 +678,13 @@ def reopen_suggestion(app_id, sid, *, by="本人"):
 
 
 def dismiss(app_id, sid, *, by="本人"):
-    return _resolve(app_id, sid, "不用", by)
+    s = _resolve(app_id, sid, "不用", by)
+    if s.get("kind") == "底稿" and not s.get("already"):   # 「记进底稿？」点了不用：以后读回再看到这一条不再问
+        from . import learn
+        p = s.get("payload") or {}
+        if not learn.already_there(p.get("section"), p.get("key"), p.get("value")):   # 底稿里已经是这个值的（几家合成一条时）不算不要
+            learn.reject(p.get("key"), p.get("value"))
+    return s
 
 
 def set_reply(app_id, *, status="", at="", sender="", snippet="", subject=""):
@@ -948,7 +958,7 @@ def view(app, ctx=None):
 
     # 1 已结束
     finished = pos and all((p.get("status") in ("offer", *records.TERMINAL)) for p in pos if not p.get("deleted_at"))
-    pending_suggest = [s for s in app.get("suggestions") or [] if s.get("state") == "待定"]
+    pending_suggest = [s for s in app.get("suggestions") or [] if s.get("state") == "待定" and s.get("kind") not in ("底稿", "核对")]   # 这两类在底稿页上列
     pending_diffs = [d for d in app.get("diffs") or [] if d.get("state", "待定") == "待定"]
     if app.get("deleted_at"):
         return done("已结束", why="已删除")

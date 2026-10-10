@@ -8,6 +8,9 @@ records.json
 .records.lock
 application_kit.json
 wangshen_profile.json
+wangshen_profile.meta.json
+profile_learn.json
+*.json.tmp
 wangshen_sites.json
 agent_chats/
 queue.json

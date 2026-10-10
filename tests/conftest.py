@@ -24,7 +24,8 @@ config.PANEL_KEY_PATH = _TMP_ROOT / ".panel_key"
 # ── 守卫：真实文件一个都不许动 ───────────────────────────────────
 _DATA = getattr(config, "DATA_DIR", config.BASE_DIR)   # 面板会写的数据（正式环境就是项目目录）
 _REAL_FILES = [_DATA / n for n in ("records.json", ".records.lock", "queue.json", "wangshen_tasks.json",
-                                   "wangshen_profile.json", "wangshen_sites.json", "gmail_state.json", "token.json",
+                                   "wangshen_profile.json", "wangshen_profile.meta.json", "profile_learn.json",
+                                   "wangshen_sites.json", "gmail_state.json", "token.json",
                                    ".wsreadback_key", ".panel_key")] + \
               [config.BASE_DIR / n for n in ("application_kit.json", "candidate_settings.json", "candidate_profile.md",
                                              "email_rules.md", "wangshen_rules.md")]
@@ -73,6 +74,22 @@ def no_real_ai(monkeypatch):
     monkeypatch.setattr(llm, "_call", refuse)
     # 写完自查默认「没问题」：大部分测试只关心别的环节
     monkeypatch.setattr(llm, "self_review", lambda jd_text, result, **kw: ({"changes": [], "email_subject": "", "email_body": ""}, {}))
+
+
+@pytest.fixture(autouse=True)
+def no_background_learning(monkeypatch):
+    """读回以后的底稿学习在后台线程里跑：测试里不起线程（线程可能在测试结束、路径换回真实文件以后才写），只记下被叫过。"""
+    from jobapply import learn
+    calls = []
+    monkeypatch.setattr(learn, "later", lambda task_id: calls.append(task_id))
+    return calls
+
+
+@pytest.fixture(autouse=True)
+def no_real_notifications(monkeypatch):
+    """测试里不弹真的 Mac 通知（面板页里的通知照记）。"""
+    from jobapply import notify
+    monkeypatch.setattr(notify, "_mac", lambda title, text: None)
 
 
 @pytest.fixture(autouse=True)

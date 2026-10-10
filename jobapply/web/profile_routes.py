@@ -5,7 +5,7 @@ import json
 
 from flask import Blueprint, jsonify, request, send_file
 
-from jobapply import checks, config, resume, wsprofile
+from jobapply import checks, config, learn, resume, wsprofile
 
 from .common import _body, _err
 
@@ -58,10 +58,26 @@ def api_wsprofile_save():
     d = _body()
     if "base" not in d:   # 面板升级前打开的旧页面：整份发回来会冲掉别处的改动
         return _err("面板更新过了：刷新一下页面再改（免得把别处刚改的内容盖掉）", 409)
-    current, example = wsprofile.load()
     edited = d.get("profile") or {}
     try:
-        profile = wsprofile.save(edited if example else wsprofile.merge(d.get("base"), edited, current))
+        with wsprofile.LOCK:   # 后台的底稿学习也在存：读、合并、存连着做
+            current, example = wsprofile.load()
+            profile = wsprofile.save(edited if example else wsprofile.merge(d.get("base"), edited, current))
     except wsprofile.Invalid as e:
         return _err(str(e))
     return jsonify({"ok": True, "profile": profile, "missing": wsprofile.missing(profile), "notes": profile.get("_核对提示") or []})
+
+
+# ── 底稿学习：读回 / 对话里学到的（能撤销），还没点的「记进底稿？」 ─────────────
+
+@bp.route("/api/profile-learn")
+def api_profile_learn():
+    return jsonify({"items": learn.recent(20), "pending": learn.pending()})
+
+
+@bp.route("/api/profile-learn/<entry_id>/undo", methods=["POST"])
+def api_profile_learn_undo(entry_id):
+    try:
+        return jsonify({"ok": True, "cells": learn.undo(entry_id)})
+    except KeyError:
+        return _err("没找到这一笔", 404)

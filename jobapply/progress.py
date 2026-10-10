@@ -72,7 +72,7 @@ def _context(now):
         nxt = a.get("next_step") or {}
         if nxt.get("text") and not nxt.get("done"):
             extra += f"｜下一步：{nxt['text']}" + (f"（截止 {nxt['due']}）" if nxt.get("due") and nxt["due"] not in nxt["text"] else "")
-        pend = [x.get("text", "") for x in a.get("suggestions") or [] if x.get("state") == "待定"]
+        pend = [x.get("text", "") for x in a.get("suggestions") or [] if x.get("state") == "待定" and x.get("kind") not in ("底稿", "核对")]
         if pend:
             extra += "｜待确认：" + "；".join(pend)[:200]
         lines.append(f"{a['id']}｜{a.get('company')}｜{jobs or '还没有岗位'}{extra}")
@@ -180,7 +180,7 @@ def _apply_fix(app, ev, entry):
         apps.set_next_step(aid, val, due=ev.get("due") or "", source="本人口述")
         entry["changes"].append({"kind": "next_step", "app_id": aid, "prev": prev, "new": _step_sig(apps.get(aid).get("next_step"))})
     elif kind in ("不用建议", "采纳建议"):
-        pend = [x for x in apps.get(aid).get("suggestions") or [] if x.get("state") == "待定"]
+        pend = [x for x in apps.get(aid).get("suggestions") or [] if x.get("state") == "待定" and x.get("kind") not in ("底稿", "核对")]
         if ev.get("position"):
             want = re.sub(r"\s+", "", ev["position"])
             pend = [x for x in pend if want in re.sub(r"\s+", "", x.get("text", ""))] or pend

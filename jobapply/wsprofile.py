@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import tempfile
+import threading
 from datetime import datetime
 
 from . import config
@@ -20,6 +21,7 @@ KIT_EXAMPLE = config.BASE_DIR / "application_kit.example.json"
 SECTIONS = ("基本信息", "联系方式", "高中", "家庭成员", "经历精确日期", "项目经历", "资格与考试", "求职偏好与声明", "其他")
 LONG_NUMBER = re.compile(r"(?<![\dA-Za-z])\d{15,19}[Xx]?(?![\dA-Za-z])")   # 身份证号 / 银行卡号
 KEEP_BACKUPS = 20
+LOCK = threading.RLock()   # 读 → 改 → 存要连着做的（页面保存、底稿学习）都拿这把锁，免得互相冲掉
 
 
 class Invalid(ValueError):
@@ -97,6 +99,10 @@ def save(profile):
     from . import backup
     backup.tick()
     clean = validate(profile)
+    try:
+        before = json.loads(PATH.read_text(encoding="utf-8")) if PATH.exists() else {}
+    except (OSError, ValueError):
+        before = {}
     if PATH.exists():
         config.BACKUP_DIR.mkdir(exist_ok=True)
         shutil.copy2(PATH, config.BACKUP_DIR / f"wangshen_profile-{datetime.now():%Y%m%d-%H%M%S}.json")
@@ -110,7 +116,67 @@ def save(profile):
     finally:
         if os.path.exists(tmp):
             os.unlink(tmp)
+    try:
+        _touch_meta(before, clean)
+    except OSError:
+        pass
     return clean
+
+
+def as_of(when):
+    """那个时候的底稿：返回 (拿得准吗, 底稿)；底稿是 None = 那之后没再存过（就是现在这份）。
+    每次保存前会先把旧的备份一份，那之后第一次保存前备份下来的就是那时的底稿。备份只留最近 KEEP_BACKUPS 份：
+    留着的都比那个时候晚、而且已经满了（中间可能还存过几次、被轮换掉了），就说不准。"""
+    digits = re.sub(r"\D", "", when or "")
+    if len(digits) < 12:
+        return False, None
+    stamp = f"{digits[:8]}-{(digits[8:14] + '00')[:6]}"
+    files = sorted(config.BACKUP_DIR.glob("wangshen_profile-*.json"))
+    after = next((i for i, p in enumerate(files) if p.stem.removeprefix("wangshen_profile-") > stamp), None)
+    if after is None:
+        return True, None
+    if after == 0 and len(files) >= KEEP_BACKUPS:
+        return False, None
+    try:
+        return True, json.loads(files[after].read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False, None
+
+
+def _meta_path():
+    return PATH.with_name(PATH.stem + ".meta.json")
+
+
+def _cellkey(k):
+    return json.dumps(list(k), ensure_ascii=False)
+
+
+def _touch_meta(old, new):
+    """存底稿时记下每一格最后改的时间（改了、新加的记现在，删掉的去掉）：底稿学习判断「交了以后本人又改过没有」用。"""
+    path = _meta_path()
+    try:
+        meta = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        meta = {}
+    a, b = _cells(old or {}), _cells(new)
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    for k, v in b.items():
+        if a.get(k) != v:
+            meta[_cellkey(k)] = now
+    for k in a:
+        if k not in b:
+            meta.pop(_cellkey(k), None)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(path)
+
+
+def changed_at(section, key, sub=None):
+    """这一格最后一次改的时间（「2026-10-10 21:35:22」）；记时间以前就有、之后没改过的返回空。"""
+    try:
+        return json.loads(_meta_path().read_text(encoding="utf-8")).get(_cellkey((section, key, sub)), "")
+    except (OSError, ValueError):
+        return ""
 
 
 def _cells(profile):

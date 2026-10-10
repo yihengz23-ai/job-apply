@@ -20,7 +20,7 @@ import uuid
 from datetime import datetime
 from urllib.parse import urlparse
 
-from . import agent_runner, apps, checks, config, notify, records, uploads, wsprofile, wstasks
+from . import agent_runner, apps, checks, config, learn, notify, records, uploads, wsprofile, wstasks
 from .llm import _claude_bin
 
 CHATS_DIR = config.DATA_DIR / "agent_chats"
@@ -41,7 +41,7 @@ BOARD_LINE = re.compile(r"【看板】\s*([^\n]+)")   # 本人在对话里说的
 PREFIX = "mcp__claude-in-chrome__"
 # 助手进程只在起来时拿一次提示词，能活十几个小时。规则改了、要让已经在跑的进程马上知道的：PROMPT_VERSION 加一，
 # 在 RULE_CHANGES 里用几句话写清改了什么；面板下次递话给老进程时先补这几句（新起的进程拿的就是新提示词，不补）。
-PROMPT_VERSION = 3
+PROMPT_VERSION = 4
 RULE_CHANGES = {
     2: "证件号这一栏空着、什么都不做：不填、不点进去、不放光标、不标框、不截这一栏、不为它停（focusField 没有了），本人自己手动填；"
        "表上有这一栏的，收尾清单里说一句「证件号空着，你自己填」，不写进「要你做」。只有网站不填它就进不了后面，才报「等你处理」、"
@@ -52,6 +52,8 @@ RULE_CHANGES = {
        "页面脚本里别等（标签页在后台会被放慢、超过 45 秒掐断），要等用 computer 的 wait，每次最多 10 秒。"
        "填文字栏前先看灰字提示和字数上限（view 里的〔提示：…〕〔≤N字〕），要几个词的用底稿「性格关键词」，"
        "限字数的自我评价用「自我评价（精简版）」原文，不要把整段贴进去。",
+    4: "本人在对话里说了以后填别家也用得上的信息（证明人、所在部门、学号、自我评价换一版……），单独写一行【底稿】栏目：内容"
+       "（照本人原话），面板会记进网申底稿；只这家用的不写，证件号、银行卡号永远不写。",
 }
 
 _lock = threading.RLock()
@@ -388,22 +390,6 @@ def _profile_sig(profile):
             for k, v in wsprofile._cells(profile).items()}
 
 
-def _profile_at(created_at):
-    """对话开始时用的那份底稿（还没记指纹的老对话用）：底稿每次保存前先把旧的备份一份，对话开始以后第一次保存前
-    备份下来的那份就是；之后没存过就返回 None（底稿没变）。"""
-    stamp = re.sub(r"\D", "", created_at or "")
-    if len(stamp) < 14:
-        return None
-    stamp = f"{stamp[:8]}-{stamp[8:14]}"
-    for p in sorted(config.BACKUP_DIR.glob("wangshen_profile-*.json")):
-        if p.stem.removeprefix("wangshen_profile-") > stamp:
-            try:
-                return json.loads(p.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                return None
-    return None
-
-
 def _profile_note(chat_id):
     """（锁内调用）网申对话开始以来底稿改了哪几格：返回要先告诉助手的话（同一处改动只说一次）；没改就返回空。
     助手的提示词只在进程起来时拿一次底稿，本人中途改了底稿（自我评价、证明人……），不说它不知道。"""
@@ -417,8 +403,8 @@ def _profile_note(chat_id):
         return ""
     old = chat.get("profile_sig")
     if old is None:
-        base = _profile_at(chat.get("created_at"))
-        old = _profile_sig(base) if base else now
+        known, base = wsprofile.as_of(chat.get("created_at"))   # 还没记指纹的老对话：它起来时看到的那份（说不准就不比）
+        old = _profile_sig(base) if known and base else now
     chat["profile_sig"] = now
     _save(chat)
 
@@ -1015,6 +1001,11 @@ def apply_event(chat_id, ev, runner=None):
                 _apply_readback_blocks(chat_id, chat, block["text"])   # 先收原文，再看【网申记录】（这样报「已提交」时已经读回过了）
                 for said in BOARD_LINE.findall(block["text"])[:3]:
                     _bg(_board_from_chat, chat_id, said.strip())
+                said_list = learn.chat_items(block["text"])   # 本人在对话里说的、以后填别家也用得上的：照原话记进网申底稿
+                for said in said_list[:learn.MAX_LINES]:
+                    _bg(_profile_from_chat, chat_id, said)
+                if len(said_list) > learn.MAX_LINES:
+                    _append(chat_id, "system", f"【底稿】一次最多记 {learn.MAX_LINES} 条，后面 {len(said_list) - learn.MAX_LINES} 条没记，分开再说一次")
                 try:
                     for task in wstasks.apply_markers(block["text"], task_id=chat.get("task_id", ""), chat_id=chat_id):
                         _append(chat_id, "system", f"「网申」页：{task.get('company') or ''}｜{task.get('job') or ''} → {task['status']}"
@@ -1069,6 +1060,19 @@ def _board_from_chat(chat_id, said):
                    + "）" for a in e["ask"])
     parts = (["看板已改：" + did + "（看板「最近说过的进展」里可以撤销）"] if did else []) + (["这几件没对上：" + ask + "。说清楚是哪一家我再记"] if ask else [])
     _append(chat_id, "system", "\n".join(parts) or "这句话没听出要改看板的什么")
+
+
+def _profile_from_chat(chat_id, said):
+    """对话里的【底稿】行：照本人原话记进网申底稿（能撤销），结果写回这个对话。"""
+    try:
+        chat = _load(chat_id)
+        t = wstasks.get(chat["task_id"]) if chat.get("task_id") else {}
+        _entry, msg = learn.from_chat(said, app_id=t.get("id", ""), company=t.get("company", ""))
+    except Exception as ex:
+        _append(chat_id, "system", f"底稿没记上：{ex}", error=True)
+        return
+    if msg:
+        _append(chat_id, "system", msg + ("（「网申」页下面的底稿里能看到、能撤销）" if _entry else ""))
 
 
 def _apply_readback_blocks(chat_id, chat, text):
@@ -1262,6 +1266,7 @@ def system_prompt(chat=None):
 - 操作浏览器时少说多做；一段做完再简短汇报。
 - 本人可能在你干活时插话（新消息会跟在某一步的工具结果后面出现）：先按新消息调整（比如换个写法、跳过某段、先填别的），再接着做，不用等做完才理。
 - 本人在对话里说投递进展、或者要改看板（比如「A 公司那封不是拒信，是笔试，13 号截止」「把 B 证券改回已投递」「C 公司那条建议不用」「D 公司 AI 面做完了」）：单独写一行【看板】后面照抄本人的原话（公司说得含糊可以补上全称），面板会去改，结果会出现在这个对话里；你不要自己说「已经改好了」。
+- 本人在对话里说了以后填别家也用得上的信息（证明人、所在部门、学号、自我评价换一版、某个问题以后都这么答……）：单独写一行【底稿】栏目：内容（照本人原话；底稿里已有的栏目照抄栏目名），面板会记进网申底稿，以后所有助手都照这个填。只这家用的不写；证件号、银行卡号永远不写。
 
 # 代填网申的规则
 {rules}
