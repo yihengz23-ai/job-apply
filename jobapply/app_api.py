@@ -158,8 +158,15 @@ def detail(app_id):
 
 # ── 操作 ────────────────────────────────────────────────────
 
-def accept_suggestion(app_id, sid):
-    return apps.accept(app_id, sid, by="本人")
+def accept_suggestion(app_id, sid, to=None):
+    if to is not None and to not in records.STATUSES:
+        raise ValueError(f"不认识的阶段：{to}")
+    return apps.accept(app_id, sid, by="本人", to=to)
+
+
+def set_next_step(app_id, text, due=""):
+    """本人在详情里手动改下一步（空 = 清掉）。"""
+    return apps.set_next_step(app_id, text, due=due if text else "", source="本人")
 
 
 def dismiss_suggestion(app_id, sid):

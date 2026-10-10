@@ -75,6 +75,7 @@ def no_real_keychain(monkeypatch):
     monkeypatch.setattr(idcard, "_security", refuse)
     monkeypatch.setattr(idcard, "_pbcopy", refuse)
     monkeypatch.setattr(idcard, "_pbpaste", refuse)
+    monkeypatch.setattr(idcard, "_osascript", lambda script: None)    # 不真去切 Chrome
 
 
 @pytest.fixture(autouse=True)

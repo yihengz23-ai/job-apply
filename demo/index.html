@@ -1964,9 +1964,12 @@ document.addEventListener('click', async e => {
     try { await api('/api/idcard', {method: 'DELETE'}); toast('删掉了', 2000); loadIdcard(); } catch (er) { toast(er.message, 6000); }
   }
 });
-async function copyIdcard() {   // 网申页、看板上「复制证件号」：放进本机剪贴板，号码不经过网页
-  try { const d = await api('/api/idcard/copy', {method: 'POST'}); toast(`证件号已复制（${d.clear_after} 秒后自动清掉）：去那一栏 ⌘V，填好点「我填好了」`, 6000); }
-  catch (er) { toast(er.message, 8000); }
+async function copyIdcard(appId) {   // 网申页、看板上「复制证件号」：放进本机剪贴板（号码不经过网页），顺手把 Chrome 切到这家的网页
+  try {
+    const d = await api('/api/idcard/copy', {method: 'POST', body: {app_id: appId || ''}});
+    toast(d.jumped ? `已复制，Chrome 已切到那个网页：光标在证件号那一栏，按 ⌘V（${d.clear_after} 秒后剪贴板自动清掉）。助手看到填好了会自己接着做`
+      : `证件号已复制（${d.clear_after} 秒后自动清掉）：去那一栏按 ⌘V，助手看到填好了会自己接着做`, 8000);
+  } catch (er) { toast(er.message, 8000); }
 }
 </script>
 <script>
@@ -2102,12 +2105,15 @@ async function loadWsTasks(force = false) {
 }
 function wtTurn(x) {   // 这一行最显眼的那句：现在轮到谁
   if (x.agent_state === '排队中') return {chip: '排队中', cls: 'bg-slate-200 text-slate-600', line: x.agent_wait};
+  if (x.agent_state === '在干活' && x.status === '等你处理')   // 助手留在这一轮里等本人（证件号、登录）：先说要你做什么
+    return {chip: '等你处理', cls: WT_CLS['等你处理'], warn: true, line: '要你做：' + (x.todo || '看对话') + '（助手在等，你做好了它自己接着干）'};
   if (x.agent_state === '在干活') return {chip: '助手在填', cls: WT_CLS['助手在填'], spin: true, line: x.last ? '最新进展：' + x.last : '助手正在做'};
   if (x.status === '等你处理') return {chip: '等你处理', cls: WT_CLS['等你处理'], warn: true, line: '要你做：' + (x.todo || '助手没写，看对话')};
   if (x.status === '助手在填') return {chip: '助手停了', cls: 'bg-red-100 text-red-800', warn: true, line: (x.halted || '助手进程已经结束') + '；要它接着做就点「让助手接着做」'};
   return {chip: x.status, cls: WT_CLS[x.status] || '', line: x.status === '已填待提交' ? '填好了：你检查一下，在网站上提交后点「我已提交」' : ''};
 }
 function renderWsTasks(c) {
+  const onMac = !!(S.cfg && S.cfg.local);   // 在电脑本机打开（手机隧道上不给复制证件号）；下面 map 里的 S 是按钮样式，不是全局状态
   $('#wsTasksSummary').textContent = Object.entries(c).map(([k, v]) => `${k} ${v}`).join(' ｜ ');
   $('#wsTaskList').innerHTML = WT.items.map(x => {
     const done = ['已提交', '不投了'].includes(x.status), url = safeUrl(x.url), turn = wtTurn(x), col = wtColor(x);
@@ -2117,8 +2123,8 @@ function renderWsTasks(c) {
     const P = 'px-3 py-1.5 rounded-lg text-xs font-bold text-white ', S = 'px-2 py-1.5 border rounded-lg text-xs ';
     let main = '';   // 最该点的那个按钮
     const idNeed = x.status === '等你处理' && /证件|身份证|护照/.test(x.todo || '');
-    if (!busy && idNeed) main = (S.cfg && S.cfg.local ? btn('wt-idcopy ' + P + 'bg-slate-900', '复制证件号', '', '放进这台 Mac 的剪贴板（60 秒后自动清掉），去那一栏 ⌘V') : '') +
-      btn('wt-run ' + P + 'bg-amber-600', '我填好了', '', '叫助手接着做：它会先看一眼网页确认填好了');
+    if (idNeed) main = (onMac ? btn('wt-idcopy ' + P + 'bg-slate-900', '复制证件号并跳过去', '', '放进这台 Mac 的剪贴板（60 秒后自动清掉）、Chrome 切到那个网页，按 ⌘V；助手看到填好了自己接着做') : '') +
+      (!busy ? btn('wt-run ' + S, '我填好了', '', '助手已经停了的话：叫它接着做') : '');
     else if (!busy && x.status === '等你处理') main = btn('wt-run ' + P + 'bg-amber-600', '让助手接着做', '', '助手会先看一眼网页，确认你那边做好了再接着填');
     else if (!busy && x.status === '已填待提交') main = btn('wt-set ' + P + 'bg-blue-600', '我已提交', 'data-status="已提交"', '记进投递看板，助手再去网站把实际提交的内容读回来');
     else if (!busy && !done) main = btn('wt-run ' + P + 'bg-teal-600', x.chat_id ? '让助手接着做' : '让助手填');
@@ -2202,7 +2208,7 @@ $('#wsTaskList').addEventListener('click', async e => {
   const b = e.target.closest('button'); if (!b) return;
   try {
     if (b.classList.contains('wt-run')) return wtRun(b.dataset.id);
-    if (b.classList.contains('wt-idcopy')) return copyIdcard();
+    if (b.classList.contains('wt-idcopy')) return copyIdcard(b.dataset.id);
     if (b.classList.contains('wt-rb')) return wtReadback(b.dataset.id);
     if (b.classList.contains('wt-acct')) {
       const cur = (WT.items.find(x => x.id === b.dataset.id) || {}).account || '';
@@ -2247,7 +2253,10 @@ $('#wsResumeDl2').onclick = async () => {
 const AP = {apps: [], today: null, view: 'app', detailId: null, inflight: new Set(), lastProg: null};
 const TURN_CLS = {'轮到你': 'bg-amber-300 text-amber-950', '停了': 'bg-red-100 text-red-700', '面板在做': 'bg-teal-100 text-teal-700',
   '等对方': 'bg-slate-100 text-slate-600', '已结束': 'bg-slate-100 text-slate-400'};
-const VOL_LABEL = {'串行': '串行志愿', '平行': '平行', '单个': '单个岗位', '': '志愿方式未知'};
+const VOL_LABEL = {'串行': '串行志愿', '平行': '平行', '单个': '单个岗位', '': ''};
+const STAGE_OPTS = [['草稿', '准备中'], ['已投递', '已投递'], ['笔试', '笔试/测评'], ['已电联', '已电联'], ['面试中', '面试'], ['offer', 'offer'],
+  ['拒绝', '未通过'], ['无回复', '无回复'], ['放弃', '放弃']];
+const stageSelect = (cls, cur, extra = '') => `<select class="${cls} field !w-auto !py-0.5 !px-2 text-xs" ${extra}>${STAGE_OPTS.map(([k, l]) => opt(k, l, cur)).join('')}</select>`;
 const turnChip = c => `<span class="chip ${TURN_CLS[c.turn] || ''}">${esc(c.turn)}</span>`;
 const apStage = (key, label) => `<span class="chip ${STATUS_CLS[key] || 'bg-slate-100 text-slate-600'}">${esc(label || key)}</span>`;
 const apCounts = c => Object.entries(c.stage_counts || {}).map(([k, n]) => `${k} ${n}`).join(' · ');
@@ -2261,10 +2270,11 @@ function apViewToggle() {   // 「按申请看 / 按岗位看」两块的显示�
 }
 apViewToggle();
 
-function apVolLine(c) {
+function apVolLine(c) {   // 「3 个岗位」；网站写了志愿规则的才多一句「串行志愿 / 平行」（不知道就不提，不打扰）
   const n = c.positions.length;
   if (n <= 1) return '';
-  return `${n} 个${c.volunteer_mode === '串行' ? '志愿' : '岗位'} · ${esc(VOL_LABEL[c.volunteer_mode] ?? c.volunteer_mode)}`;
+  const mode = VOL_LABEL[c.volunteer_mode] ?? c.volunteer_mode;
+  return `${n} 个${c.volunteer_mode === '串行' ? '志愿' : '岗位'}` + (mode ? ` · ${esc(mode)}` : '');
 }
 function apNext(c) {
   const n = c.next || {};
@@ -2276,7 +2286,7 @@ function apBtn(c, cls = '') {   // 这张卡上「轮到你 / 停了」那一个
   const b = c.button;
   if (!b) return '';
   const id = (c.need || {}).kind === '证件号' && b.action === 'need_done' && S.cfg && S.cfg.local   // 手机上复制不到电脑的剪贴板：不显示
-    ? `<button class="ap-idcopy shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 text-white ${cls}" title="放进这台 Mac 的剪贴板（60 秒后自动清掉）">复制证件号</button>` : '';
+    ? `<button class="ap-idcopy shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 text-white ${cls}" data-id="${esc(c.id)}" title="放进这台 Mac 的剪贴板（60 秒后自动清掉）、Chrome 切到那个网页，按 ⌘V；助手看到填好了自己接着做">复制证件号并跳过去</button>` : '';
   return id + `<button class="ap-act shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold ${c.turn === '停了' ? 'bg-red-600' : 'bg-amber-600'} text-white ${cls}" data-id="${esc(c.id)}" data-action="${esc(b.action)}">${esc(b.label)}</button>`;
 }
 
@@ -2402,32 +2412,35 @@ async function apDetail(id, quiet = false) {
   $('#appDrawerTitle').innerHTML = `${apDot(c)}<span class="font-bold truncate">${esc(c.company)}</span><span class="chip bg-slate-100 text-slate-600">${esc(c.channel)}</span>`;
   const kv = (k, v) => v ? `<div class="kv flex gap-2 py-0.5 text-sm"><span class="k">${esc(k)}</span><span class="v">${v}</span></div>` : '';
   const entry = safeUrl(c.entry_url);
-  const vol = d.positions.length > 1 ? `<div class="flex items-center gap-2 mb-2 text-xs"><span class="text-slate-400">志愿方式</span>
-      <select class="ap-vol field !w-auto !py-1" data-id="${esc(c.id)}">${[['', '不知道'], ['串行', '串行（前一个没结果才看下一个）'], ['平行', '平行（同时看）'], ['单个', '单个岗位']].map(([v, l]) => opt(v, l, c.volunteer_mode)).join('')}</select></div>
-      ${c.volunteer_note ? `<p class="text-[11px] text-slate-500 mb-2">网站原话：${esc(c.volunteer_note)}</p>`
-        : (d.volunteer_hints || []).length ? `<div class="text-[11px] text-slate-500 mb-2">网站上讲志愿规则的原话（你判断一下选哪种）：${d.volunteer_hints.map(h => `<div class="mt-0.5">「${esc(h)}」</div>`).join('')}</div>` : ''}` : '';
+  const vol = d.positions.length > 1 && c.volunteer_mode ? `<p class="text-[11px] text-slate-500 mb-2">${c.volunteer_mode === '串行' ? '串行志愿：前一个志愿有结果才看下一个' : c.volunteer_mode === '平行' ? '平行：几个岗位同时看' : esc(c.volunteer_mode)}${c.volunteer_note ? `（网站原话：${esc(c.volunteer_note)}）` : ''}<span class="text-slate-400"> · 不对的话在口述框说一句「${esc(c.company)} 是${c.volunteer_mode === '串行' ? '平行' : '串行'}的」</span></p>` : '';
   const serial = c.volunteer_mode === '串行';
   const pos = d.positions.map((p, i) => `<div class="${serial ? 'relative pl-5' : ''} rounded-xl border p-3 ${p.serial_state === '在看' ? 'border-teal-400 bg-teal-50/40' : 'bg-white'}">
       ${serial && i < d.positions.length - 1 ? '<span class="absolute left-2 top-8 bottom-[-0.75rem] border-l-2 border-dashed border-slate-300"></span>' : ''}
       ${serial ? `<span class="absolute left-0.5 top-3 w-3 h-3 rounded-full ${p.serial_state === '在看' ? 'bg-teal-500' : 'bg-slate-300'}"></span>` : ''}
       <div class="flex items-center gap-2 flex-wrap"><span class="text-xs text-slate-400">${p.choice_no ? '志愿 ' + esc(p.choice_no) + (p.choice_guessed ? '*' : '') : ''}</span>
-        <span class="font-semibold text-sm ${p.serial_state.startsWith('未通过') ? 'line-through text-slate-400' : ''}">${esc(p.job_title || '—')}</span>${apStage(p.status, p.stage_label)}
+        <span class="font-semibold text-sm ${p.serial_state.startsWith('未通过') ? 'line-through text-slate-400' : ''}">${esc(p.job_title || '—')}</span>${stageSelect('ap-pos-stage', p.status, `data-rid="${esc(p.id)}" title="改阶段（往回改也可以，记进时间线）"`)}
         ${p.serial_state ? `<span class="chip ${p.serial_state === '在看' ? 'bg-teal-100 text-teal-800' : 'bg-slate-100 text-slate-500'}">${esc(p.serial_state)}</span>` : ''}</div>
       <div class="text-[11px] text-slate-400 mt-0.5">${[p.org, p.location, p.sent_at ? (p.status === '草稿' ? '建立 ' : '投出 ') + p.sent_at : ''].filter(Boolean).map(esc).join(' · ')}</div>
       ${p.site_status ? `<div class="text-xs text-cyan-800 mt-1">网站进度：${esc(p.site_status)}</div>` : ''}
       ${p.jd_text ? `<details class="mt-1 text-xs"><summary class="cursor-pointer text-slate-500">JD 原文</summary><div class="mt-1 bg-slate-50 rounded-lg p-2 max-h-60 overflow-y-auto">${escBr(p.jd_text)}</div></details>` : '<p class="text-[11px] text-slate-400 mt-1">JD：缺</p>'}
       ${(p.history || []).length ? `<details class="mt-1 text-xs"><summary class="cursor-pointer text-slate-500">这个岗位的改动（${p.history.length}）</summary><div class="mt-1 space-y-0.5">${p.history.slice().reverse().map(h => `<div><span class="text-slate-400">${esc((h.at || '').slice(5, 16))}</span> ${esc(h.text || '')}</div>`).join('')}</div></details>` : ''}
     </div>`).join('');
-  const sugg = (c.suggestions || []).map(s => `<div class="flex items-center gap-2 py-1 text-sm"><span class="flex-1">${esc(s.text)}</span>
+  const sugg = (c.suggestions || []).map(s => `<div class="flex flex-wrap items-center gap-2 py-1 text-sm"><span class="flex-1 min-w-[12rem]">${esc(s.text)}</span>
       <button class="ap-sugg px-2 py-1 rounded-lg bg-primary text-white text-xs font-bold" data-id="${esc(c.id)}" data-sid="${esc(s.id)}" data-action="accept">采纳</button>
+      ${s.kind === '阶段' && (s.payload || {}).to ? `<span class="text-xs text-slate-400">认错了，改成</span>${stageSelect('ap-sugg-to', s.payload.to, `data-id="${esc(c.id)}" data-sid="${esc(s.id)}"`)}` : ''}
       <button class="ap-sugg px-2 py-1 rounded-lg bg-slate-100 text-xs" data-id="${esc(c.id)}" data-sid="${esc(s.id)}" data-action="dismiss">不用</button></div>`).join('');
   const nxt = c.next || {};
   $('#appDrawerBody').innerHTML = `<div class="p-4 space-y-4">
     <div class="rounded-xl bg-slate-50 p-3">
       <div class="flex items-center gap-2 flex-wrap">${turnChip(c)}<span class="text-sm">${esc(c.todo || '')}</span><span class="ml-auto">${apBtn(c)}</span></div>
       <div class="mt-2">${kv('阶段', esc(c.stage_label) + ((c.sub || []).length ? ` <span class="text-slate-400">· ${esc(c.sub.join(' · '))}</span>` : ''))}
-        ${kv('下一步', nxt.text ? apNext(c) + (!nxt.done ? ` <button class="ap-step text-xs text-primary hover:underline" data-id="${esc(c.id)}">做完了</button>`
-          : ` <button class="ap-step-undo text-xs text-slate-500 hover:underline" data-id="${esc(c.id)}">点错了，还没做完</button>`) : '')}
+        ${kv('下一步', (nxt.text ? apNext(c) + (!nxt.done ? ` <button class="ap-step text-xs text-primary hover:underline" data-id="${esc(c.id)}">做完了</button>`
+          : ` <button class="ap-step-undo text-xs text-slate-500 hover:underline" data-id="${esc(c.id)}">点错了，还没做完</button>`) : '<span class="text-slate-400">没有</span>')
+          + ` <button class="ap-step-edit text-xs text-slate-500 hover:underline">改</button>
+          <span class="ap-step-form hidden"><input class="ap-step-text field !w-48 !py-1 text-xs" value="${esc(nxt.done ? '' : nxt.text || '')}" placeholder="比如：二面（线上）"/>
+          <input class="ap-step-due field !w-36 !py-1 text-xs" type="date" value="${esc((nxt.done ? '' : nxt.due || '').slice(0, 10))}"/>
+          <button class="ap-step-save text-xs font-bold text-primary" data-id="${esc(c.id)}">保存</button>
+          <button class="ap-step-clear text-xs text-slate-500" data-id="${esc(c.id)}">清掉</button></span>`)}
         ${kv('首次投出', esc(c.first_submitted_at) + (c.first_submitted_guess ? ' <span class="text-slate-400 text-xs">（按岗位记录）</span>' : ''))}${kv('申请账号', esc(c.account))}${kv('网站进度', esc(c.site_progress))}
         ${kv('入口', entry ? `<a class="text-primary hover:underline break-all" target="_blank" rel="noopener" href="${esc(entry)}">${esc(entry)}</a>` : '')}</div></div>
     ${rep.status ? `<div class="rounded-xl p-3 text-xs ${rep.status === '退信' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-800'}"><b>${esc(rep.status)}</b> ${esc(rep.at || '')} ${esc(rep.from || '')}
@@ -2487,7 +2500,7 @@ document.addEventListener('click', async e => {
   const t = e.target;
   const act = t.closest('.ap-act');
   if (act) { e.stopPropagation(); setBusy(act, true, ''); await apAction(act.dataset.id, act.dataset.action); setBusy(act, false); return; }
-  if (t.closest('.ap-idcopy')) { e.stopPropagation(); return copyIdcard(); }
+  if (t.closest('.ap-idcopy')) { e.stopPropagation(); return copyIdcard(t.closest('.ap-idcopy').dataset.id); }
   const open = t.closest('.ap-open');
   if (open) { e.stopPropagation(); return apDetail(open.dataset.id); }
   const row = t.closest('tr.ap-row');
@@ -2502,6 +2515,16 @@ document.addEventListener('click', async e => {
   const sg = t.closest('.ap-sugg');
   if (sg) {
     try { await api(`/api/apps/${encodeURIComponent(sg.dataset.id)}/suggestions/${encodeURIComponent(sg.dataset.sid)}`, {method: 'POST', body: {action: sg.dataset.action}}); toast(sg.dataset.action === 'accept' ? '已采纳' : '好的，不用', 2000); }
+    catch (er) { toast(er.message, 6000); }
+    return loadBoard();
+  }
+  if (t.closest('.ap-step-edit')) { const f = t.closest('.kv').querySelector('.ap-step-form'); f.classList.toggle('hidden'); f.querySelector('input').focus(); return; }
+  const sv = t.closest('.ap-step-save') || t.closest('.ap-step-clear');
+  if (sv) {
+    const f = sv.closest('.ap-step-form'), clear = sv.classList.contains('ap-step-clear');
+    const body = clear ? {text: '', due: ''} : {text: f.querySelector('.ap-step-text').value.trim(), due: f.querySelector('.ap-step-due').value};
+    if (!clear && !body.text) return toast('下一步写点什么（比如「二面」）；不要了就点「清掉」', 3000);
+    try { await api(`/api/apps/${encodeURIComponent(sv.dataset.id)}/next-step`, {method: 'POST', body}); toast(clear ? '下一步清掉了' : '下一步改好了', 2000); }
     catch (er) { toast(er.message, 6000); }
     return loadBoard();
   }
@@ -2531,11 +2554,18 @@ document.addEventListener('click', async e => {
   }
 });
 document.addEventListener('change', async e => {
-  const v = e.target.closest('.ap-vol');
-  if (!v) return;
-  try { await api(`/api/apps/${encodeURIComponent(v.dataset.id)}/volunteer-mode`, {method: 'POST', body: {mode: v.value}}); toast('改好了', 1500); }
-  catch (er) { toast(er.message, 6000); }
-  loadBoard();
+  const ps = e.target.closest('.ap-pos-stage');
+  if (ps) {   // 详情里改某个岗位的阶段（本人手动改，往回也可以；记进这家的时间线）
+    try { await api(`/api/records/${encodeURIComponent(ps.dataset.rid)}`, {method: 'PUT', body: {status: ps.value}}); toast('阶段改好了', 1500); }
+    catch (er) { toast(er.message, 6000); }
+    return loadBoard();
+  }
+  const st = e.target.closest('.ap-sugg-to');
+  if (st) {   // 建议认错了：按本人选的阶段采纳
+    try { await api(`/api/apps/${encodeURIComponent(st.dataset.id)}/suggestions/${encodeURIComponent(st.dataset.sid)}`, {method: 'POST', body: {action: 'accept', to: st.value}}); toast('按你选的改好了', 2000); }
+    catch (er) { toast(er.message, 6000); }
+    return loadBoard();
+  }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#appDrawer').classList.contains('open')) { $('#appDrawer').classList.remove('open'); AP.detailId = null; } });
 $('#progSend').addEventListener('click', () => { const x = $('#progText').value.trim(); if (x) progSend(x); });

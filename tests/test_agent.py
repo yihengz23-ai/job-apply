@@ -249,3 +249,22 @@ def test_one_chat_per_wangshen_and_archived_hidden(ag):
     assert ids == {keep["id"], free["id"]}
     assert {c["id"] for c in ag.list_chats(include_archived=True)} >= {old1["id"], old2["id"]}   # 记录还在
     assert ag.get(old1["id"])["archived"] and ag.tidy_chats() == 0
+
+
+def test_board_line_in_chat_goes_through_progress(ag, monkeypatch):
+    """本人在助手对话里说「X 那封不是拒信，是笔试」：助手写一行【看板】原话 → 面板按口述那一套改看板，结果写回对话。"""
+    from jobapply import apps, llm, progress, records
+    monkeypatch.setattr(config, "DATA_DIR", ag.CHATS_DIR.parent)
+    rid = records.add(records.new_record(company_name="聊改资本", job_title="分析师", to_email="hr@lg.com"))
+    aid = records.get(rid)["app_id"]
+    monkeypatch.setattr(llm, "_call", lambda **kw: ({"events": [{"app_id": aid, "company": "聊改资本", "position": "", "event": "笔试邀请",
+                                                                "round": "", "happened_at": "", "due": "2026-10-13", "quote": "是笔试，13 号截止",
+                                                                "value": ""}]}, {}))
+    monkeypatch.setattr(ag, "_bg", lambda fn, *a: fn(*a))                       # 测试里同步跑
+    c = ag.new_chat()
+    ag.apply_event(c["id"], {"type": "assistant", "message": {"content": [
+        {"type": "text", "text": "好的，记下。\n【看板】聊改资本那封不是拒信，是笔试，13 号截止"}]}})
+    msgs = [(m["role"], m["text"]) for m in ag.get(c["id"])["messages"]]
+    assert any(r == "system" and t.startswith("看板已改：聊改资本：笔试邀请，截止 2026-10-13") for r, t in msgs)
+    assert records.get(rid)["status"] == "笔试" and apps.get(aid)["next_step"]["due"] == "2026-10-13"
+    assert progress.recent()[0]["text"] == "聊改资本那封不是拒信，是笔试，13 号截止"

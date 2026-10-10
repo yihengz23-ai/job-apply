@@ -11,7 +11,7 @@
  * 写值、点下拉选项、分级地区、单选按文字匹配的做法参考了 OpenJobAutofill（MIT License, Br1an67）。
  */
 (() => {
-  const VERSION = '2.32';
+  const VERSION = '2.33';
   if (window.__wsfill && window.__wsfill.version === VERSION && !window.__wsfillReload) return;   // 改脚本调试时先设 window.__wsfillReload = true
 
   const ID = 'data-wsf-id';
@@ -896,6 +896,28 @@
     }
   }
 
+  // 证件号这一栏（只能本人填）：助手只把光标放进去、标个橙框；之后只问「填了没有」，不回内容
+  function inputOf(id) {
+    let root = byId(id);
+    if (!root) { const nid = relocate(id); root = nid && byId(nid); if (root) id = nid; }
+    if (!root) return null;
+    return document.querySelector(`[${ID}-inner="${CSS.escape(id)}"]`) || (root.matches(CONTROL) ? root : root.querySelector('input,textarea')) || root;
+  }
+  function focusField(id) {
+    const el = inputOf(id);
+    if (!el) return '页面上找不到 ' + id + '（重新 view 看编号）';
+    el.scrollIntoView({block: 'center'});
+    focusOn(el);
+    el.style.outline = '3px solid #f59e0b';
+    el.style.outlineOffset = '2px';
+    return '光标已放进 ' + id + '，这一栏标了橙框';
+  }
+  function hasValue(id) {
+    const el = inputOf(id);
+    if (!el) return '找不到';
+    return currentValue(el, kindOf(el)) ? '已填' : '空';
+  }
+
   function mark(id, ok) {
     const el = byId(id);
     if (!el) return;
@@ -1150,5 +1172,5 @@
   try { const m = JSON.parse(sessionStorage.getItem('__wsfill_mark') || 'null'); if (m && m.label) markPage(m); } catch (e) {}
 
   window.__wsfill = {version: VERSION, scan, fill, fillOne, clickAdd, options, clear, start, progress, peek,
-    view, more, opts, peekText, job, fillText, snapshot, snapshotText, readback, mark: markPage};
+    view, more, opts, peekText, job, fillText, snapshot, snapshotText, readback, mark: markPage, focusField, hasValue};
 })();

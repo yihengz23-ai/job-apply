@@ -330,6 +330,8 @@ def _marker_status(word):
         return "已填待提交"
     if any(w in word for w in WAIT_WORDS):
         return "等你处理"
+    if any(w in word for w in ("在填", "接着填", "继续填")):   # 等本人做的事（证件号、登录）做好了，助手接着填
+        return "助手在填"
     return ""
 
 
@@ -438,9 +440,28 @@ def apply_markers(text, *, task_id="", chat_id=""):
                 t = set_status(t["id"], status)
             elif jobs or progress:
                 sync_readback(t)
+        mode_said = (d.get("志愿方式") or "").strip()
+        if mode_said:
+            _record_volunteer_mode(t["id"], mode_said)
         if t.get("status") != before:
             done.append(t)
     return done
+
+
+def _record_volunteer_mode(task_id, said):
+    """助手报的「志愿方式：串行（原话：……）」：记到申请上。本人自己改过（不是助手 / 读回记的）就不覆盖。"""
+    from . import apps
+    mode = "串行" if re.search(r"串行|依次|按顺序", said) else "平行" if re.search(r"平行|同时", said) else ""
+    if not mode:
+        return
+    quote = (re.search(r"原话[：:]\s*(.+?)[）)]?\s*$", said) or [None, ""])[1]
+    try:
+        a = apps.get(task_id)
+        by_user = any(e.get("kind") == "志愿" and e.get("by") == "本人" for e in a.get("timeline") or [])
+        if not by_user and a.get("volunteer_mode") != mode:
+            apps.set_volunteer_mode(task_id, mode, (quote or said)[:160], by="助手")
+    except (apps.NotFound, ValueError):
+        pass
 
 
 # ── 读回：网站上实际提交的内容 → 看板 ──────────────────────────

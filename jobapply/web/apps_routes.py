@@ -1,6 +1,8 @@
 """申请（一次投出 = 看板上一张卡）：按申请成组的看板、单家详情、「今天」、进展口述和撤销、建议采纳 / 不用、志愿方式、
 「做完了」、来信看过了。数据都由 jobapply/app_api.py 算好，这里只转发。"""
 
+import re
+
 from flask import Blueprint, jsonify, request
 
 from jobapply import app_api, apps, llm, progress
@@ -42,10 +44,23 @@ def _act(fn, *args):
 
 @bp.route("/api/apps/<app_id>/suggestions/<sid>", methods=["POST"])
 def api_app_suggestion(app_id, sid):
-    action = _body().get("action")
+    d = _body()
+    action = d.get("action")
     if action not in ("accept", "dismiss"):
         return _err("action 只能是 accept 或 dismiss")
-    return _act(app_api.accept_suggestion if action == "accept" else app_api.dismiss_suggestion, app_id, sid)
+    if action == "accept":   # to：本人在「改成…」里选了别的阶段
+        return _act(app_api.accept_suggestion, app_id, sid, str(d.get("to") or "") or None)
+    return _act(app_api.dismiss_suggestion, app_id, sid)
+
+
+@bp.route("/api/apps/<app_id>/next-step", methods=["POST"])
+def api_app_next_step(app_id):
+    """本人手动改下一步和截止（text 空 = 清掉）。"""
+    d = _body()
+    due = str(d.get("due") or "").strip()
+    if due and not re.fullmatch(r"\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?", due):
+        return _err("截止写成 2026-10-15 或 2026-10-15 14:00")
+    return _act(lambda a: bool(app_api.set_next_step(a, str(d.get("text") or "").strip()[:200], due)), app_id)
 
 
 @bp.route("/api/apps/<app_id>/volunteer-mode", methods=["POST"])

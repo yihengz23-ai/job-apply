@@ -19,7 +19,7 @@ import uuid
 from datetime import datetime
 from urllib.parse import urlparse
 
-from . import agent_runner, checks, config, records, uploads, wsprofile, wstasks
+from . import agent_runner, checks, config, notify, records, uploads, wsprofile, wstasks
 from .llm import _claude_bin
 
 CHATS_DIR = config.DATA_DIR / "agent_chats"
@@ -36,6 +36,7 @@ _clock = time.time                  # 测试里换成假时钟
 SITE_NOTE = re.compile(r"【网站笔记】\s*([^\s：:]+)\s*[：:]\s*(.+)")
 # 网站连不上面板（有的银行网站只许跟自己服务器通信）时，助手把读到的原文按这个格式写在回复里，面板摘出来记进看板
 READBACK_BLOCK = re.compile(r"【网申读回】([^\n]*)\n([\s\S]*?)【/网申读回】")
+BOARD_LINE = re.compile(r"【看板】\s*([^\n]+)")   # 本人在对话里说的进展 / 看板更正：照原话转给口述那一套（progress.apply）
 PREFIX = "mcp__claude-in-chrome__"
 
 _lock = threading.RLock()
@@ -924,11 +925,16 @@ def apply_event(chat_id, ev, runner=None):
                 chat = _append(chat_id, "assistant", block["text"].strip())
                 save_site_notes(block["text"])
                 _apply_readback_blocks(chat_id, chat, block["text"])   # 先收原文，再看【网申记录】（这样报「已提交」时已经读回过了）
+                for said in BOARD_LINE.findall(block["text"])[:3]:
+                    _bg(_board_from_chat, chat_id, said.strip())
                 try:
                     for task in wstasks.apply_markers(block["text"], task_id=chat.get("task_id", ""), chat_id=chat_id):
                         _append(chat_id, "system", f"「网申」页：{task.get('company') or ''}｜{task.get('job') or ''} → {task['status']}"
                                 + ("（看板里记了一条草稿）" if task["status"] == "已填待提交" else
                                    "（看板里记成已投递）" if task["status"] == "已提交" else ""))
+                        if task["status"] == "等你处理":   # 助手在这一轮里等本人（证件号、登录……）：马上提醒，不等这一轮结束
+                            notify.send("等你：" + ("填证件号" if re.search(r"证件|身份证|护照", task.get("todo") or "") else "要你做"),
+                                        task.get("todo") or "看对话", app_id=task["id"], kind="need")
                         if task["status"] == "已提交" and not task.get("readback") and not task.get("readback_state"):
                             with _lock:   # 跟它说「交了」：这一轮做完让它去网站读回提交的内容
                                 if task["id"] not in _after_turn.setdefault(chat_id, []):
@@ -954,6 +960,27 @@ def apply_event(chat_id, ev, runner=None):
             _save(chat)
         return True
     return False
+
+
+def _bg(fn, *args):
+    threading.Thread(target=fn, args=args, daemon=True).start()
+
+
+def _board_from_chat(chat_id, said):
+    """对话里的【看板】行：按口述那一套改看板（AI 拆事件、对上申请、可撤销），结果写回这个对话。"""
+    from . import progress
+    try:
+        e = progress.apply(said)
+    except Exception as ex:   # AI 没调通等：说一声，不影响助手干活
+        _append(chat_id, "system", f"看板没改成：{ex}", error=True)
+        return
+    did = "；".join(f"{a.get('company_name') or a.get('company')}：{a['event']}" + (f"→{a['value']}" if a.get("value") else "")
+                   + (f"，截止 {a['due']}" if a.get("due") else "") + (f"（{a['note']}）" if a.get("note") else "") for a in e["applied"])
+    ask = "；".join(f"{a.get('company') or '？'}：{a['event']}（"
+                   + ("是哪一家？" + "、".join(c.get("label") or c.get("company", "") for c in a["candidates"]) if a["candidates"] else "看板里没找到这家")
+                   + "）" for a in e["ask"])
+    parts = (["看板已改：" + did + "（看板「最近说过的进展」里可以撤销）"] if did else []) + (["这几件没对上：" + ask + "。说清楚是哪一家我再记"] if ask else [])
+    _append(chat_id, "system", "\n".join(parts) or "这句话没听出要改看板的什么")
 
 
 def _apply_readback_blocks(chat_id, chat, text):
@@ -1131,19 +1158,22 @@ def system_prompt(chat=None):
 面板靠你回复里单独一行的【网申记录】知道这家现在轮到谁（「网申」页每一行、投递看板都跟着变），格式：
 【网申记录】公司：XX｜岗位：XX｜网址：网申页面的网址｜账号：登录这家网站用的手机号或邮箱（页面上看得到才写，打码的照抄，比如 138****0000）｜状态：……
 - 一打开这家网申、看清是哪家公司哪个岗位，就先写一行（状态先不写），面板那一行马上就有名字。
+- 投了几个岗位 / 志愿、网站上又写了志愿规则的（比如「志愿将按顺序依次流转」「可同时投递多个职位」），在那一行里加一项「志愿方式：串行（原话：……）」或「志愿方式：平行（原话：……）」；网站没写就不写，不要猜。
 - 每次停下来（这一轮做完）都要写一行，状态三选一：
   - 「已填待提交」：能填的都填了、能存的都存了，等本人检查提交；
   - 「等你处理」：卡在只有本人能做的事上，再加一项「要你做：……」，一句话写清（比如「要你做：告诉我高中信息」）。要本人登录的，照规则请本人在画了颜色框的网页里登录、留在这一轮里等，不用先报「等你处理」结束这一轮；
   - 本人说已经提交了：写「已提交」。
+- 在这一轮里等本人做完网页上的事（证件号、登录）、本人已经做好了：写一行「在填」再接着干，面板那一行就从「等你」回到「助手在填」。
 
 # 说话方式
 - 一律用中文，包括做事过程中的简短说明。简洁，先说结论。本人不是工程师，不说技术术语。
 - 能自己判断的直接做，不要问。照片、简历这些附件自己传（用 file_upload，文件见下面「可以上传的文件」）。要本人登录、扫码的，照规则在这一轮里等。
 - 真正只有本人能做的事（证件号这一栏、最后提交、资料里没有而只有本人知道的信息）先跳过、把别的都做完，最后一次性说清楚：在哪个颜色框的网页、哪一栏。
-- 证件号（身份证号、护照号）一律不填：哪怕资料里有、哪怕本人说过可以，也留给本人自己输。也不要往这一栏粘贴任何东西（剪贴板里可能就是证件号）。
-  要本人填证件号时，【网申记录】的「要你做」里写明「证件号」三个字和哪个颜色框的网页、哪一栏：面板会给本人一个「复制证件号」按钮，本人粘贴后点「我填好了」叫你接着做。
+- 证件号（身份证号、护照号）一律不填：哪怕资料里有、哪怕本人说过可以，也留给本人自己输。不往这一栏粘贴、不按 ⌘V（剪贴板里可能就是证件号），不读这一栏的内容，不打开面板（localhost:5001）的网页。
+  做法见规则里「证件号这一栏」：把光标放进去（__wsfill.focusField）→ 马上写一行【网申记录】…｜状态：等你处理｜要你做：证件号（哪个颜色框的网页、哪一栏）→ 留在这一轮里用 __wsfill.hasValue 每 30 秒看一眼，「已填」了就写【网申记录】…｜状态：在填，接着干。
 - 操作浏览器时少说多做；一段做完再简短汇报。
 - 本人可能在你干活时插话（新消息会跟在某一步的工具结果后面出现）：先按新消息调整（比如换个写法、跳过某段、先填别的），再接着做，不用等做完才理。
+- 本人在对话里说投递进展、或者要改看板（比如「A 公司那封不是拒信，是笔试，13 号截止」「把 B 证券改回已投递」「C 公司那条建议不用」「D 公司 AI 面做完了」）：单独写一行【看板】后面照抄本人的原话（公司说得含糊可以补上全称），面板会去改，结果会出现在这个对话里；你不要自己说「已经改好了」。
 
 # 代填网申的规则
 {rules}

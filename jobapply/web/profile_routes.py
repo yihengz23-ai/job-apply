@@ -2,6 +2,7 @@
 
 import io
 import json
+from urllib.parse import urlparse
 
 from flask import Blueprint, jsonify, request, send_file
 
@@ -100,4 +101,14 @@ def api_idcard_copy():
         return _err("复制证件号只能在电脑上点（手机上复制不到电脑的剪贴板）", 403)
     if not idcard.copy_to_clipboard():
         return _err("还没存证件号：去「网申」页的「我的资料」里存一次（只存在这台 Mac 的钥匙串里）", 404)
-    return jsonify({"ok": True, "clear_after": idcard.CLEAR_AFTER})
+    app_id = str((request.get_json(silent=True) or {}).get("app_id") or "")
+    host = ""
+    if app_id:      # 顺手把 Chrome 切到这家的网页（助手已经把光标放进证件号那一栏）
+        from jobapply import apps
+        try:
+            a = apps.get(app_id)
+            host = a.get("site") or (urlparse(a.get("entry_url") or "").hostname or "")
+        except apps.NotFound:
+            pass
+    idcard.bring_tab(host)
+    return jsonify({"ok": True, "clear_after": idcard.CLEAR_AFTER, "jumped": bool(host)})

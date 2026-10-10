@@ -644,13 +644,33 @@ def _resolve(app_id, sid, state, by):
     return records.mutate_all(_do)
 
 
-def accept(app_id, sid, *, by="本人"):
+def accept(app_id, sid, *, by="本人", to=None):
+    """采纳一条建议。to：本人说「不是这个，改成 X」——阶段建议照本人选的阶段改。"""
     s = _resolve(app_id, sid, "采纳", by)
     if s.get("already"):
         return s
     if s.get("kind") == "阶段" and (s.get("payload") or {}).get("record_id"):
-        advance(s["payload"]["record_id"], s["payload"]["to"], by=by, manual=True, reason="采纳了建议")
+        target = to if to in records.STATUSES else s["payload"]["to"]
+        advance(s["payload"]["record_id"], target, by=by, manual=True,
+                reason="采纳了建议" if target == s["payload"]["to"] else "本人改了建议的阶段")
     return s
+
+
+def reopen_suggestion(app_id, sid, *, by="本人"):
+    """撤销口述时：采纳过 / 不用过的建议放回「待定」。"""
+    def _do(data):
+        a = _find(data, app_id)
+        if not a:
+            raise NotFound(app_id)
+        s = next((x for x in a.get("suggestions", []) if x.get("id") == sid), None)
+        if s and s.get("state") != "待定":
+            s["state"] = "待定"
+            s.pop("resolved_at", None)
+            s.pop("by", None)
+            _timeline(a, "建议", f"放回待确认：{s.get('text')}", by)
+            _touch(a)
+        return s
+    return records.mutate_all(_do)
 
 
 def dismiss(app_id, sid, *, by="本人"):
@@ -970,7 +990,7 @@ def view(app, ctx=None):
     if nxt.get("due") and not nxt.get("done") and _due_within(nxt["due"], 72, now):
         text = nxt.get("text") or "下一步"
         return done("轮到你", text if nxt["due"] in text else f"{text}（截止 {nxt['due']}）", {"label": "做完了", "action": "step_done"})
-    if nxt.get("text") and not nxt.get("due") and not nxt.get("done") and nxt.get("source") == "本人口述":
+    if nxt.get("text") and not nxt.get("due") and not nxt.get("done") and nxt.get("source") in ("本人口述", "本人"):
         return done("轮到你", nxt["text"], {"label": "做完了", "action": "step_done"})     # 本人说过要做、没说截止：也算轮到你
     if phase == "待开始":
         return done("轮到你", "还没开始填", {"label": "让助手填", "action": "run"})

@@ -347,3 +347,26 @@ def test_readback_blocks_in_reply_are_recorded(store, monkeypatch, tmp_path):
     sysmsgs = [m["text"] for m in agent.get(chat["id"])["messages"] if m["role"] == "system"]
     assert any("岗位 JD「投募资岗」" in m for m in sysmsgs) and any("实际提交的简历" in m for m in sysmsgs)
     assert agent._after_turn.get(chat["id"]) in (None, [])                # 已经读回过：不再另开一轮去读
+
+
+def test_marker_back_to_filling_after_user_did_the_web_step(tmp_path, monkeypatch):
+    """助手在这一轮里等本人填证件号：先报「等你处理」（面板马上提醒），本人填好后它报「在填」，这一行回到「助手在填」。"""
+    from jobapply import wstasks
+    t = wstasks.add("https://jobs.example.com/idwait", "等号资本", "分析师")
+    wstasks.set_status(t["id"], "助手在填")
+    wstasks.apply_markers("【网申记录】公司：等号资本｜状态：等你处理｜要你做：证件号（蓝框网页「基本信息」那一栏，光标已经放好）", task_id=t["id"])
+    assert wstasks.get(t["id"])["status"] == "等你处理" and "证件号" in wstasks.get(t["id"])["todo"]
+    wstasks.apply_markers("【网申记录】公司：等号资本｜状态：在填", task_id=t["id"])
+    assert wstasks.get(t["id"])["status"] == "助手在填" and wstasks.get(t["id"])["todo"] == ""
+
+
+def test_assistant_reports_volunteer_mode_but_never_overrides_the_user(tmp_path):
+    from jobapply import apps, wstasks
+    t = wstasks.add("https://jobs.example.com/vol", "志愿社区", "")
+    wstasks.apply_markers("【网申记录】公司：志愿社区｜岗位：科技投资（第一志愿）、财务管培生（第二志愿）｜志愿方式：串行（原话：投递后志愿将按顺序依次流转）",
+                          task_id=t["id"])
+    a = apps.get(t["id"])
+    assert a["volunteer_mode"] == "串行" and "依次流转" in a["volunteer_note"]
+    apps.set_volunteer_mode(t["id"], "平行", by="本人")                          # 本人改过
+    wstasks.apply_markers("【网申记录】公司：志愿社区｜志愿方式：串行", task_id=t["id"])
+    assert apps.get(t["id"])["volunteer_mode"] == "平行"                          # 不覆盖本人的

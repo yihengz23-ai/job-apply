@@ -154,7 +154,10 @@ document.addEventListener('click', async e => {
     try { await api('/api/idcard', {method: 'DELETE'}); toast('删掉了', 2000); loadIdcard(); } catch (er) { toast(er.message, 6000); }
   }
 });
-async function copyIdcard() {   // 网申页、看板上「复制证件号」：放进本机剪贴板，号码不经过网页
-  try { const d = await api('/api/idcard/copy', {method: 'POST'}); toast(`证件号已复制（${d.clear_after} 秒后自动清掉）：去那一栏 ⌘V，填好点「我填好了」`, 6000); }
-  catch (er) { toast(er.message, 8000); }
+async function copyIdcard(appId) {   // 网申页、看板上「复制证件号」：放进本机剪贴板（号码不经过网页），顺手把 Chrome 切到这家的网页
+  try {
+    const d = await api('/api/idcard/copy', {method: 'POST', body: {app_id: appId || ''}});
+    toast(d.jumped ? `已复制，Chrome 已切到那个网页：光标在证件号那一栏，按 ⌘V（${d.clear_after} 秒后剪贴板自动清掉）。助手看到填好了会自己接着做`
+      : `证件号已复制（${d.clear_after} 秒后自动清掉）：去那一栏按 ⌘V，助手看到填好了会自己接着做`, 8000);
+  } catch (er) { toast(er.message, 8000); }
 }

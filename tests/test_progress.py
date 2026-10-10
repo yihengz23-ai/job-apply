@@ -234,3 +234,34 @@ def test_first_choice_uses_readback_order_and_never_all_positions(store, monkeyp
     out = progress.apply("另一社区二志愿挂了", now=NOW)
     assert records.get(w1)["status"] == "笔试" and records.get(w2)["status"] == "已投递"   # 认不出：一个都不改
     assert "阶段没改" in out["applied"][0]["note"]
+
+
+def test_corrections_by_chat_fix_a_wrong_detection_and_can_be_undone(store, monkeypatch):
+    """来信认错了：本人一句「那封不是拒信，是笔试，13 号截止」→ 建议不用 + 记成笔试邀请（带截止）；撤销能整句退回。"""
+    a, (r1,) = web_app("更正科技", [("分析师", "已投递")])
+    apps.set_web_phase(a["id"], "已提交", by="本人")
+    s = apps.suggest(a["id"], "阶段", "来信像是拒信：把「分析师」改成「未通过」？", {"record_id": r1, "to": "拒绝"})
+    seen = fake_ai(monkeypatch, [ev(a["id"], "更正科技", "不用建议", "那封不是拒信"),
+                                 {**ev(a["id"], "更正科技", "笔试邀请", "是笔试，13 号截止", due="2026-10-13"), "value": ""}])
+    out = progress.apply("更正科技那封不是拒信，是笔试，13 号截止", now=NOW)
+    assert "待确认：来信像是拒信" in seen["content"]                                   # AI 看得到哪条建议待确认
+    app = apps.get(a["id"])
+    assert [x["state"] for x in app["suggestions"]] == ["不用"] and records.get(r1)["status"] == "笔试"
+    assert app["next_step"]["due"] == "2026-10-13"
+    progress.undo(out["id"])
+    app = apps.get(a["id"])
+    assert [x["state"] for x in app["suggestions"]] == ["待定"] and records.get(r1)["status"] == "已投递"
+
+
+def test_correction_events_stage_back_next_step_mode(store, monkeypatch):
+    a, (v1, v2) = web_app("回改资本", [("投资岗", "面试中"), ("研究岗", "拒绝")])
+    fake_ai(monkeypatch, [{**ev(a["id"], "回改资本", "改阶段", "研究岗改回已投递", position="研究岗"), "value": "已投递"},
+                          {**ev(a["id"], "回改资本", "改下一步", "下一步改成二面，15 号", due="2026-10-15"), "value": "二面"},
+                          {**ev(a["id"], "回改资本", "志愿方式", "他们是平行的"), "value": "平行"}])
+    out = progress.apply("回改资本研究岗改回已投递，下一步改成二面 15 号，他们是平行的", now=NOW)
+    assert records.get(v2)["status"] == "已投递" and records.get(v1)["status"] == "面试中"     # 往回改只动说到的那个岗位
+    app = apps.get(a["id"])
+    assert app["next_step"]["text"] == "二面" and app["next_step"]["due"] == "2026-10-15" and app["volunteer_mode"] == "平行"
+    progress.undo(out["id"])
+    app = apps.get(a["id"])
+    assert records.get(v2)["status"] == "拒绝" and app["volunteer_mode"] == "" and not app["next_step"].get("text")

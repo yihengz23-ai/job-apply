@@ -124,3 +124,24 @@ def test_mask_leaves_phones_and_long_numbers():
     from jobapply import apps
     t = "电话 13800000000，订单 202610091200，编号 1791568678339"
     assert apps.mask(t) == t
+
+
+def test_copy_jumps_to_the_application_tab(fake_mac, monkeypatch, tmp_path):
+    from jobapply import apps, config, records
+    monkeypatch.setattr(config, "RECORDS_PATH", tmp_path / "records.json")
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    scripts = []
+    monkeypatch.setattr(idcard, "_osascript", scripts.append)
+    a = apps.create("网申", "跳页资本", entry_url="https://jobs.example.com/apply/9")
+    c = panel.app.test_client()
+    c.put("/api/idcard", json={"number": good()}, headers=LOCAL)
+    r = c.post("/api/idcard/copy", json={"app_id": a["id"]}, headers=LOCAL).get_json()
+    assert r["jumped"] is True and 'contains "jobs.example.com"' in scripts[-1] and "activate" in scripts[-1]
+    assert fake_mac["clip"] == good()
+
+
+def test_bring_tab_only_takes_hostname_characters(monkeypatch):
+    scripts = []
+    monkeypatch.setattr(idcard, "_osascript", scripts.append)
+    idcard.bring_tab('evil" & do shell script "x')
+    assert "contains" not in scripts[-1] and "do shell script" not in scripts[-1]          # 不像域名的一律不拼进去

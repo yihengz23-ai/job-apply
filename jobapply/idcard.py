@@ -96,6 +96,31 @@ def _clear_later(n, delay):
     return t
 
 
+def _osascript(script):
+    subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=5)
+
+
+def bring_tab(host=""):
+    """把 Chrome 切到前台，切到地址里有 host 的那个标签页（助手把光标放好的那一页）；找不到就只把 Chrome 切到前台。失败不要紧。"""
+    host = host if re.fullmatch(r"[A-Za-z0-9.-]{1,120}", host or "") else ""   # 只认域名字符：拼进 AppleScript 不会出事
+    find = f"""
+  repeat with w in windows
+    set i to 0
+    repeat with t in tabs of w
+      set i to i + 1
+      if (URL of t) contains "{host}" then
+        set active tab index of w to i
+        set index of w to 1
+        return
+      end if
+    end repeat
+  end repeat""" if host else ""
+    try:
+        _osascript(f'tell application "Google Chrome"\n  activate{find}\nend tell')
+    except (subprocess.SubprocessError, OSError):
+        pass
+
+
 def copy_to_clipboard(delay=CLEAR_AFTER):
     """把号码放进本机剪贴板，delay 秒后剪贴板里还是它就清掉。没存过返回 False。"""
     n = _read()

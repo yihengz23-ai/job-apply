@@ -20,12 +20,15 @@ async function loadWsTasks(force = false) {
 }
 function wtTurn(x) {   // 这一行最显眼的那句：现在轮到谁
   if (x.agent_state === '排队中') return {chip: '排队中', cls: 'bg-slate-200 text-slate-600', line: x.agent_wait};
+  if (x.agent_state === '在干活' && x.status === '等你处理')   // 助手留在这一轮里等本人（证件号、登录）：先说要你做什么
+    return {chip: '等你处理', cls: WT_CLS['等你处理'], warn: true, line: '要你做：' + (x.todo || '看对话') + '（助手在等，你做好了它自己接着干）'};
   if (x.agent_state === '在干活') return {chip: '助手在填', cls: WT_CLS['助手在填'], spin: true, line: x.last ? '最新进展：' + x.last : '助手正在做'};
   if (x.status === '等你处理') return {chip: '等你处理', cls: WT_CLS['等你处理'], warn: true, line: '要你做：' + (x.todo || '助手没写，看对话')};
   if (x.status === '助手在填') return {chip: '助手停了', cls: 'bg-red-100 text-red-800', warn: true, line: (x.halted || '助手进程已经结束') + '；要它接着做就点「让助手接着做」'};
   return {chip: x.status, cls: WT_CLS[x.status] || '', line: x.status === '已填待提交' ? '填好了：你检查一下，在网站上提交后点「我已提交」' : ''};
 }
 function renderWsTasks(c) {
+  const onMac = !!(S.cfg && S.cfg.local);   // 在电脑本机打开（手机隧道上不给复制证件号）；下面 map 里的 S 是按钮样式，不是全局状态
   $('#wsTasksSummary').textContent = Object.entries(c).map(([k, v]) => `${k} ${v}`).join(' ｜ ');
   $('#wsTaskList').innerHTML = WT.items.map(x => {
     const done = ['已提交', '不投了'].includes(x.status), url = safeUrl(x.url), turn = wtTurn(x), col = wtColor(x);
@@ -35,8 +38,8 @@ function renderWsTasks(c) {
     const P = 'px-3 py-1.5 rounded-lg text-xs font-bold text-white ', S = 'px-2 py-1.5 border rounded-lg text-xs ';
     let main = '';   // 最该点的那个按钮
     const idNeed = x.status === '等你处理' && /证件|身份证|护照/.test(x.todo || '');
-    if (!busy && idNeed) main = (S.cfg && S.cfg.local ? btn('wt-idcopy ' + P + 'bg-slate-900', '复制证件号', '', '放进这台 Mac 的剪贴板（60 秒后自动清掉），去那一栏 ⌘V') : '') +
-      btn('wt-run ' + P + 'bg-amber-600', '我填好了', '', '叫助手接着做：它会先看一眼网页确认填好了');
+    if (idNeed) main = (onMac ? btn('wt-idcopy ' + P + 'bg-slate-900', '复制证件号并跳过去', '', '放进这台 Mac 的剪贴板（60 秒后自动清掉）、Chrome 切到那个网页，按 ⌘V；助手看到填好了自己接着做') : '') +
+      (!busy ? btn('wt-run ' + S, '我填好了', '', '助手已经停了的话：叫它接着做') : '');
     else if (!busy && x.status === '等你处理') main = btn('wt-run ' + P + 'bg-amber-600', '让助手接着做', '', '助手会先看一眼网页，确认你那边做好了再接着填');
     else if (!busy && x.status === '已填待提交') main = btn('wt-set ' + P + 'bg-blue-600', '我已提交', 'data-status="已提交"', '记进投递看板，助手再去网站把实际提交的内容读回来');
     else if (!busy && !done) main = btn('wt-run ' + P + 'bg-teal-600', x.chat_id ? '让助手接着做' : '让助手填');
@@ -120,7 +123,7 @@ $('#wsTaskList').addEventListener('click', async e => {
   const b = e.target.closest('button'); if (!b) return;
   try {
     if (b.classList.contains('wt-run')) return wtRun(b.dataset.id);
-    if (b.classList.contains('wt-idcopy')) return copyIdcard();
+    if (b.classList.contains('wt-idcopy')) return copyIdcard(b.dataset.id);
     if (b.classList.contains('wt-rb')) return wtReadback(b.dataset.id);
     if (b.classList.contains('wt-acct')) {
       const cur = (WT.items.find(x => x.id === b.dataset.id) || {}).account || '';

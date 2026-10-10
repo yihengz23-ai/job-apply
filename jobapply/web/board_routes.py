@@ -39,7 +39,7 @@ def api_update_record(record_id):
     fields = {k: v for k, v in _body().items() if k in EDITABLE}
     if "reply_status" in fields:  # 手动纠正过的回复状态，以后查回复不再覆盖
         fields["reply_locked"] = True
-    if not records.update(record_id, fields):
+    if not records.update(record_id, fields, by="本人"):
         return _err("记录不存在", 404)
     return jsonify({"ok": True})
 
